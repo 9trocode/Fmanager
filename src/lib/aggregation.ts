@@ -1,5 +1,11 @@
 import "server-only";
-import { listAccountsWithEffective, listFlows, listGrants } from "@/lib/db/queries";
+import {
+  listAccountsWithEffective,
+  listBudgets,
+  listFlows,
+  listGrants,
+  listTransactions,
+} from "@/lib/db/queries";
 import { convert } from "@/lib/fx";
 import { isLiability } from "@/lib/account-types";
 import { monthlyEquivalent } from "@/lib/flows";
@@ -176,5 +182,101 @@ export async function computeCashRunway(
     netMonthly: flow.net,
     monthsRunway,
     monthsNetRunway,
+  };
+}
+
+export type BudgetStatus = {
+  id: number;
+  category: string;
+  monthlyLimit: number;
+  spentThisMonth: number;
+  remaining: number;
+  percentUsed: number;
+  /** Currency the budget is tracked in (typically the user's base currency). */
+  baseCurrency: string;
+  notes: string | null;
+};
+
+export type BudgetSummary = {
+  baseCurrency: string;
+  rows: BudgetStatus[];
+  overBudget: BudgetStatus[];
+  totalLimit: number;
+  totalSpent: number;
+};
+
+function currentMonthRange(): { from: string; to: string } {
+  const now = new Date();
+  const y = now.getUTCFullYear();
+  const m = now.getUTCMonth();
+  const from = new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10);
+  // Last day of this month: day 0 of next month.
+  const to = new Date(Date.UTC(y, m + 1, 0)).toISOString().slice(0, 10);
+  return { from, to };
+}
+
+export async function computeBudgetStatus(
+  baseCurrency: string,
+): Promise<BudgetSummary> {
+  const budgets = await listBudgets();
+  if (budgets.length === 0) {
+    return {
+      baseCurrency,
+      rows: [],
+      overBudget: [],
+      totalLimit: 0,
+      totalSpent: 0,
+    };
+  }
+
+  const { from, to } = currentMonthRange();
+  const monthTxs = await listTransactions({
+    kind: "expense",
+    dateFrom: from,
+    dateTo: to,
+  });
+
+  const rows: BudgetStatus[] = [];
+  let totalLimit = 0;
+  let totalSpent = 0;
+
+  for (const b of budgets) {
+    let spent = 0;
+    for (const t of monthTxs) {
+      if (t.kind !== "expense") continue;
+      if (!t.category || t.category !== b.category) continue;
+      const inBudgetCcy = await convert(t.amount, t.currency, b.currency);
+      spent += inBudgetCcy;
+    }
+    const remaining = b.monthlyLimit - spent;
+    const percentUsed =
+      b.monthlyLimit > 0 ? (spent / b.monthlyLimit) * 100 : 0;
+    const status: BudgetStatus = {
+      id: b.id,
+      category: b.category,
+      monthlyLimit: b.monthlyLimit,
+      spentThisMonth: spent,
+      remaining,
+      percentUsed,
+      baseCurrency: b.currency,
+      notes: b.notes ?? null,
+    };
+    rows.push(status);
+    // Roll up totals into the overall base currency for the summary cards.
+    const limitInBase = await convert(b.monthlyLimit, b.currency, baseCurrency);
+    const spentInBase = await convert(spent, b.currency, baseCurrency);
+    totalLimit += limitInBase;
+    totalSpent += spentInBase;
+  }
+
+  rows.sort((a, b) => b.percentUsed - a.percentUsed);
+  const overBudget = rows.filter((r) => r.percentUsed > 100);
+
+  return {
+    baseCurrency,
+    rows,
+    overBudget,
+    totalLimit,
+    totalSpent,
   };
 }

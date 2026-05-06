@@ -11,6 +11,7 @@ import {
   Receipt,
   Sparkles,
   Settings,
+  Target,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +20,7 @@ const NAV = [
   { href: "/accounts", label: "Accounts", icon: Wallet },
   { href: "/equity", label: "Equity", icon: Briefcase },
   { href: "/cash-flow", label: "Cash flow", icon: Repeat },
+  { href: "/budgets", label: "Budgets", icon: Target },
   { href: "/transactions", label: "Transactions", icon: Receipt },
   { href: "/projections", label: "Projections", icon: TrendingUp },
   { href: "/advisor", label: "Advisor", icon: Sparkles },

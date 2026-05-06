@@ -1,4 +1,5 @@
-import { Wallet, Plus, Briefcase } from "lucide-react";
+import { Wallet, Plus, Briefcase, AlertTriangle } from "lucide-react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -17,6 +18,7 @@ import { getBaseCurrency } from "@/lib/db/queries";
 import {
   computeNetWorth,
   computeCashRunway,
+  computeBudgetStatus,
   CATEGORY_LABEL,
   CATEGORY_DISPLAY_ORDER,
   type CategoryKey,
@@ -32,9 +34,10 @@ import { formatMoney } from "@/lib/format";
 
 export default async function DashboardPage() {
   const baseCurrency = await getBaseCurrency();
-  const [summary, runway] = await Promise.all([
+  const [summary, runway, budgets] = await Promise.all([
     computeNetWorth(baseCurrency),
     computeCashRunway(baseCurrency),
+    computeBudgetStatus(baseCurrency),
   ]);
 
   return (
@@ -83,6 +86,41 @@ export default async function DashboardPage() {
               base · {baseCurrency}
             </Badge>
           </div>
+
+          {budgets.overBudget.length > 0 ? (
+            <Card className="border-destructive/40 bg-destructive/5">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2 text-destructive">
+                  <AlertTriangle className="size-4" />
+                  Over budget this month
+                </CardTitle>
+                <CardDescription>
+                  {budgets.overBudget.length === 1
+                    ? "1 category"
+                    : `${budgets.overBudget.length} categories`}{" "}
+                  past the monthly limit.{" "}
+                  <Link
+                    href="/budgets"
+                    className="underline underline-offset-2 hover:text-foreground"
+                  >
+                    Review budgets
+                  </Link>
+                  .
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="pt-0 flex flex-wrap gap-2">
+                {budgets.overBudget.map((b) => (
+                  <Badge
+                    key={b.id}
+                    variant="outline"
+                    className="border-destructive/40 text-destructive font-mono text-[11px]"
+                  >
+                    {b.category} · +{(b.percentUsed - 100).toFixed(0)}%
+                  </Badge>
+                ))}
+              </CardContent>
+            </Card>
+          ) : null}
 
           {SCENARIOS.map((s) => (
             <TabsContent key={s} value={s} className="space-y-6">

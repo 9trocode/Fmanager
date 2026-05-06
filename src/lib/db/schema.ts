@@ -1,5 +1,11 @@
 import { sql } from "drizzle-orm";
-import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import {
+  integer,
+  real,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from "drizzle-orm/sqlite-core";
 
 const id = () => integer("id").primaryKey({ autoIncrement: true });
 const createdAt = () =>
@@ -126,6 +132,25 @@ export const settings = sqliteTable("settings", {
 
 export const transactionKinds = ["expense", "income", "transfer"] as const;
 export type TransactionKind = (typeof transactionKinds)[number];
+
+export const budgets = sqliteTable(
+  "budgets",
+  {
+    id: id(),
+    category: text("category").notNull(),
+    monthlyLimit: real("monthly_limit").notNull(),
+    currency: text("currency").notNull(),
+    notes: text("notes"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    uniqueCategoryCurrency: uniqueIndex("budgets_category_currency").on(
+      t.category,
+      t.currency,
+    ),
+  }),
+);
 
 export const transactions = sqliteTable("transactions", {
   id: id(),

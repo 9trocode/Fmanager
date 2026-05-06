@@ -8,6 +8,7 @@ import {
   computeNetWorth,
   computeMonthlyCashFlow,
   computeCashRunway,
+  computeBudgetStatus,
 } from "@/lib/aggregation";
 import { getBaseCurrency, listRecentTransactions } from "@/lib/db/queries";
 import { convert } from "@/lib/fx";
@@ -42,26 +43,36 @@ function fmt(value: number, currency: string): string {
 
 async function buildSystemPrompt(): Promise<string> {
   const baseCurrency = await getBaseCurrency();
-  const [decisions, accounts, grants, flows, summary, cashFlow, runway, recentTxs] =
-    await Promise.all([
-      db
-        .select()
-        .from(schema.decisions)
-        .where(eq(schema.decisions.status, "open")),
-      db
-        .select()
-        .from(schema.accounts)
-        .where(eq(schema.accounts.archived, false)),
-      db.select().from(schema.equityGrants),
-      db
-        .select()
-        .from(schema.recurringFlows)
-        .where(eq(schema.recurringFlows.archived, false)),
-      computeNetWorth(baseCurrency),
-      computeMonthlyCashFlow(baseCurrency),
-      computeCashRunway(baseCurrency),
-      listRecentTransactions(30),
-    ]);
+  const [
+    decisions,
+    accounts,
+    grants,
+    flows,
+    summary,
+    cashFlow,
+    runway,
+    recentTxs,
+    budgets,
+  ] = await Promise.all([
+    db
+      .select()
+      .from(schema.decisions)
+      .where(eq(schema.decisions.status, "open")),
+    db
+      .select()
+      .from(schema.accounts)
+      .where(eq(schema.accounts.archived, false)),
+    db.select().from(schema.equityGrants),
+    db
+      .select()
+      .from(schema.recurringFlows)
+      .where(eq(schema.recurringFlows.archived, false)),
+    computeNetWorth(baseCurrency),
+    computeMonthlyCashFlow(baseCurrency),
+    computeCashRunway(baseCurrency),
+    listRecentTransactions(30),
+    computeBudgetStatus(baseCurrency),
+  ]);
 
   // Aggregate transactions in base currency.
   let txIncomeBase = 0;
@@ -158,6 +169,21 @@ async function buildSystemPrompt(): Promise<string> {
           })
           .join("\n")
       : "(no recurring flows tracked)",
+    "",
+    "## Budgets vs spending (this month)",
+    budgets.rows.length === 0
+      ? "(no budgets configured)"
+      : [
+          ...budgets.rows.map((b) => {
+            const flag = b.percentUsed > 100 ? " ⚠ OVER" : "";
+            return `- ${b.category}: ${fmt(b.spentThisMonth, b.baseCurrency)} / ${fmt(b.monthlyLimit, b.baseCurrency)} (${b.percentUsed.toFixed(0)}% used)${flag}`;
+          }),
+          budgets.overBudget.length
+            ? `- Over-budget categories: ${budgets.overBudget.map((b) => `${b.category} (+${(b.percentUsed - 100).toFixed(0)}%)`).join(", ")}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
     "",
     "## Income vs expense by category (monthly, base currency)",
     `- Income breakdown: ${

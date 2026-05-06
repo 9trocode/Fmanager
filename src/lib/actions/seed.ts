@@ -173,6 +173,25 @@ const FLOWS: Array<{
   { name: "Travel float", kind: "expense", category: "Personal", amount: 600, currency: "USD", cadence: "monthly", notes: "Annualized — actual is lumpy." },
 ];
 
+const BUDGETS: Array<{
+  category: string;
+  monthlyLimit: number;
+  currency: string;
+  notes?: string;
+}> = [
+  // Tuned against the seeded ~30 transactions so a couple categories run hot.
+  // Personal monthly spend ~$2,259 USD + ~145k NGN (~$94) → above $2,200 limit.
+  { category: "Personal", monthlyLimit: 2200, currency: "USD", notes: "Groceries, dining, travel float, etc." },
+  // Family ~850k NGN ≈ $548 + school fee tranches; below 1800.
+  { category: "Family", monthlyLimit: 1800, currency: "USD", notes: "Lagos household + school fees." },
+  // Cloud / SaaS roughly $95/mo → well under.
+  { category: "Cloud / SaaS", monthlyLimit: 250, currency: "USD" },
+  // Subscription bundle ~$78/mo → under, but visible.
+  { category: "Subscription", monthlyLimit: 120, currency: "USD" },
+  // Mortgage payments ~$1850/mo, single line. Limit 1900 → close to cap.
+  { category: "Housing", monthlyLimit: 1900, currency: "USD", notes: "Mortgage + housing fees." },
+];
+
 const DECISIONS = [
   {
     question:
@@ -201,6 +220,7 @@ async function wipe() {
   await db.delete(schema.equityGrants);
   await db.delete(schema.decisions);
   await db.delete(schema.recurringFlows);
+  await db.delete(schema.budgets);
   await db.delete(schema.fxRates);
   // Settings: keep API key + advisor model untouched (user-entered),
   // but reset base_currency to USD.
@@ -371,6 +391,10 @@ export async function seedSampleData() {
     await db.insert(schema.transactions).values(txRows);
   }
 
+  if (BUDGETS.length > 0) {
+    await db.insert(schema.budgets).values(BUDGETS);
+  }
+
   revalidatePath("/", "layout");
   return {
     accounts: ACCOUNTS.length,
@@ -378,5 +402,6 @@ export async function seedSampleData() {
     decisions: DECISIONS.length,
     flows: FLOWS.length,
     transactions: txRows.length,
+    budgets: BUDGETS.length,
   };
 }

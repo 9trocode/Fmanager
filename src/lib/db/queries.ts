@@ -340,5 +340,35 @@ export async function listRecentTransactions(days = 30) {
     .orderBy(desc(schema.transactions.occurredAt), desc(schema.transactions.id));
 }
 
+export async function listBudgets() {
+  return db
+    .select()
+    .from(schema.budgets)
+    .orderBy(asc(schema.budgets.category));
+}
+
+export async function getBudget(id: number) {
+  const rows = await db
+    .select()
+    .from(schema.budgets)
+    .where(eq(schema.budgets.id, id))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function getBudgetByCategory(category: string, currency: string) {
+  const rows = await db
+    .select()
+    .from(schema.budgets)
+    .where(
+      and(
+        eq(schema.budgets.category, category),
+        eq(schema.budgets.currency, currency),
+      ),
+    )
+    .limit(1);
+  return rows[0] ?? null;
+}
+
 // Re-export sql so other modules can build raw fragments if needed.
 export { sql };
