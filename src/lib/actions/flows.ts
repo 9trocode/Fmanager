@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { flowCadences, flowKinds } from "@/lib/db/schema";
+import { assertAdmin } from "@/lib/auth/session";
 
 function revalidate() {
   revalidatePath("/", "layout");
@@ -47,6 +48,7 @@ function commonFields(formData: FormData) {
 }
 
 export async function createFlow(formData: FormData) {
+  await assertAdmin();
   const fields = commonFields(formData);
   if (!fields.name) throw new Error("Name is required.");
   await db.insert(schema.recurringFlows).values(fields);
@@ -54,6 +56,7 @@ export async function createFlow(formData: FormData) {
 }
 
 export async function updateFlow(formData: FormData) {
+  await assertAdmin();
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
   const fields = commonFields(formData);
@@ -66,6 +69,7 @@ export async function updateFlow(formData: FormData) {
 }
 
 export async function deleteFlow(formData: FormData) {
+  await assertAdmin();
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
   await db.delete(schema.recurringFlows).where(eq(schema.recurringFlows.id, id));
@@ -73,6 +77,7 @@ export async function deleteFlow(formData: FormData) {
 }
 
 export async function toggleFlowArchived(formData: FormData) {
+  await assertAdmin();
   const id = Number(formData.get("id"));
   const archived = String(formData.get("archived") ?? "false") === "true";
   if (!Number.isFinite(id)) throw new Error("Invalid id.");

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { accountTypes } from "@/lib/db/schema";
+import { assertAdmin } from "@/lib/auth/session";
 
 function revalidate(path?: string) {
   if (path) revalidatePath(path);
@@ -27,6 +28,7 @@ function parseAmount(value: FormDataEntryValue | null): number {
 }
 
 export async function createAccount(formData: FormData) {
+  await assertAdmin();
   const name = String(formData.get("name") ?? "").trim();
   if (!name) throw new Error("Name is required.");
   const type = parseAccountType(formData.get("type"));
@@ -57,6 +59,7 @@ export async function createAccount(formData: FormData) {
 }
 
 export async function updateAccount(formData: FormData) {
+  await assertAdmin();
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
   const name = String(formData.get("name") ?? "").trim();
@@ -82,6 +85,7 @@ export async function updateAccount(formData: FormData) {
 }
 
 export async function archiveAccount(formData: FormData) {
+  await assertAdmin();
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
   await db
@@ -93,6 +97,7 @@ export async function archiveAccount(formData: FormData) {
 }
 
 export async function unarchiveAccount(formData: FormData) {
+  await assertAdmin();
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
   await db
@@ -103,6 +108,7 @@ export async function unarchiveAccount(formData: FormData) {
 }
 
 export async function deleteAccount(formData: FormData) {
+  await assertAdmin();
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
   await db.delete(schema.accounts).where(eq(schema.accounts.id, id));
@@ -111,6 +117,7 @@ export async function deleteAccount(formData: FormData) {
 }
 
 export async function addSnapshot(formData: FormData) {
+  await assertAdmin();
   const accountId = Number(formData.get("account_id"));
   if (!Number.isFinite(accountId)) throw new Error("Invalid account id.");
   const value = parseAmount(formData.get("value"));
@@ -130,6 +137,7 @@ export async function addSnapshot(formData: FormData) {
 }
 
 export async function deleteSnapshot(formData: FormData) {
+  await assertAdmin();
   const id = Number(formData.get("id"));
   const accountId = Number(formData.get("account_id"));
   if (!Number.isFinite(id)) throw new Error("Invalid id.");

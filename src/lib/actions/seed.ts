@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { db, schema } from "@/lib/db";
 import { setSetting } from "@/lib/db/queries";
+import { assertAdmin } from "@/lib/auth/session";
 
 const ACCOUNTS = [
   {
@@ -194,6 +195,7 @@ const DECISIONS = [
 ];
 
 async function wipe() {
+  await db.delete(schema.transactions);
   await db.delete(schema.valueSnapshots);
   await db.delete(schema.accounts);
   await db.delete(schema.equityGrants);
@@ -204,18 +206,134 @@ async function wipe() {
   // but reset base_currency to USD.
 }
 
+/**
+ * Build a deterministic-ish set of ~30 sample transactions spread across
+ * the last ~60 days, using accounts that already exist after seeding.
+ * Categories align with the seeded recurring flows so a future budget
+ * feature can join them.
+ */
+function buildSampleTransactions(idsByName: Record<string, number>) {
+  const today = new Date();
+  function daysAgo(n: number): string {
+    const d = new Date(today);
+    d.setDate(d.getDate() - n);
+    return d.toISOString().slice(0, 10);
+  }
+
+  const mercury = idsByName["Mercury USD checking"];
+  const gtbank = idsByName["GTBank naira savings"];
+  const wise = idsByName["Wise EUR"];
+  const brokerage = idsByName["Public brokerage"];
+  const crypto = idsByName["Coinbase"];
+
+  type Tx = {
+    accountId: number;
+    destAccountId?: number | null;
+    kind: "expense" | "income" | "transfer";
+    amount: number;
+    currency: string;
+    category: string | null;
+    occurredAt: string;
+    notes?: string | null;
+  };
+
+  const rows: Tx[] = [];
+  const push = (t: Tx) => {
+    if (Number.isFinite(t.accountId)) rows.push(t);
+  };
+
+  // Salary + consulting income (USD)
+  push({ accountId: mercury, kind: "income", amount: 6500, currency: "USD", category: "Salary", occurredAt: daysAgo(58), notes: "Founder draw" });
+  push({ accountId: mercury, kind: "income", amount: 6500, currency: "USD", category: "Salary", occurredAt: daysAgo(28), notes: "Founder draw" });
+  push({ accountId: mercury, kind: "income", amount: 2500, currency: "USD", category: "Consulting", occurredAt: daysAgo(21), notes: "Acme retainer" });
+  push({ accountId: mercury, kind: "income", amount: 1800, currency: "USD", category: "Consulting", occurredAt: daysAgo(7), notes: "Half-month side project" });
+
+  // Mortgage + housing
+  push({ accountId: mercury, kind: "expense", amount: 1850, currency: "USD", category: "Housing", occurredAt: daysAgo(55), notes: "Mortgage payment" });
+  push({ accountId: mercury, kind: "expense", amount: 1850, currency: "USD", category: "Housing", occurredAt: daysAgo(25), notes: "Mortgage payment" });
+
+  // Insurance
+  push({ accountId: mercury, kind: "expense", amount: 480, currency: "USD", category: "Insurance", occurredAt: daysAgo(50) });
+  push({ accountId: mercury, kind: "expense", amount: 480, currency: "USD", category: "Insurance", occurredAt: daysAgo(20) });
+
+  // Subscriptions / SaaS
+  push({ accountId: mercury, kind: "expense", amount: 78, currency: "USD", category: "Subscription", occurredAt: daysAgo(48), notes: "Anthropic + Linear + Notion" });
+  push({ accountId: mercury, kind: "expense", amount: 95, currency: "USD", category: "Cloud / SaaS", occurredAt: daysAgo(46), notes: "AWS personal" });
+  push({ accountId: mercury, kind: "expense", amount: 78, currency: "USD", category: "Subscription", occurredAt: daysAgo(18) });
+  push({ accountId: mercury, kind: "expense", amount: 95, currency: "USD", category: "Cloud / SaaS", occurredAt: daysAgo(16) });
+
+  // Personal
+  push({ accountId: mercury, kind: "expense", amount: 220, currency: "USD", category: "Personal", occurredAt: daysAgo(42), notes: "Groceries" });
+  push({ accountId: mercury, kind: "expense", amount: 64, currency: "USD", category: "Personal", occurredAt: daysAgo(35), notes: "Dinner out" });
+  push({ accountId: mercury, kind: "expense", amount: 410, currency: "USD", category: "Transport", occurredAt: daysAgo(32), notes: "Flights" });
+  push({ accountId: mercury, kind: "expense", amount: 175, currency: "USD", category: "Personal", occurredAt: daysAgo(11), notes: "Pharmacy + groceries" });
+  push({ accountId: mercury, kind: "expense", amount: 1200, currency: "USD", category: "Personal", occurredAt: daysAgo(4), notes: "New laptop battery + repairs" });
+
+  // NGN family + contractor expenses
+  push({ accountId: gtbank, kind: "expense", amount: 850_000, currency: "NGN", category: "Family", occurredAt: daysAgo(51), notes: "Lagos rent + nanny" });
+  push({ accountId: gtbank, kind: "expense", amount: 850_000, currency: "NGN", category: "Family", occurredAt: daysAgo(21), notes: "Lagos rent + nanny" });
+  push({ accountId: gtbank, kind: "expense", amount: 320_000, currency: "NGN", category: "Contractors", occurredAt: daysAgo(40), notes: "Local dev contractor" });
+  push({ accountId: gtbank, kind: "expense", amount: 145_000, currency: "NGN", category: "Personal", occurredAt: daysAgo(13), notes: "Groceries + transport" });
+
+  // EUR travel float
+  push({ accountId: wise, kind: "expense", amount: 320, currency: "EUR", category: "Transport", occurredAt: daysAgo(45), notes: "Berlin trip" });
+  push({ accountId: wise, kind: "expense", amount: 180, currency: "EUR", category: "Personal", occurredAt: daysAgo(43), notes: "Hotel + meals" });
+  push({ accountId: wise, kind: "expense", amount: 95, currency: "EUR", category: "Subscription", occurredAt: daysAgo(15), notes: "EU contractor invoice" });
+
+  // Crypto / brokerage activity
+  push({ accountId: brokerage, kind: "income", amount: 32, currency: "USD", category: "Dividends", occurredAt: daysAgo(38), notes: "VTI dividend" });
+  push({ accountId: crypto, kind: "income", amount: 18, currency: "USD", category: "Interest", occurredAt: daysAgo(9), notes: "Staking yield" });
+
+  // Transfers — money movement, not P&L.
+  push({
+    accountId: mercury,
+    destAccountId: gtbank,
+    kind: "transfer",
+    amount: 1500,
+    currency: "USD",
+    category: "Internal transfer",
+    occurredAt: daysAgo(36),
+    notes: "USD → NGN top-up (rate-converted at bank)",
+  });
+  push({
+    accountId: mercury,
+    destAccountId: brokerage,
+    kind: "transfer",
+    amount: 1000,
+    currency: "USD",
+    category: "Internal transfer",
+    occurredAt: daysAgo(30),
+    notes: "Monthly investing top-up",
+  });
+  push({
+    accountId: mercury,
+    destAccountId: wise,
+    kind: "transfer",
+    amount: 800,
+    currency: "USD",
+    category: "Internal transfer",
+    occurredAt: daysAgo(14),
+    notes: "EUR float refill",
+  });
+
+  return rows.filter((r) => Number.isFinite(r.accountId));
+}
+
 export async function wipeAllData() {
+  await assertAdmin();
   await wipe();
   await db.delete(schema.settings);
   revalidatePath("/", "layout");
 }
 
 export async function seedSampleData() {
+  await assertAdmin();
   await wipe();
 
   await setSetting("base_currency", "USD");
   await setSetting("advisor_model", "claude-sonnet-4-6");
 
+  const idsByName: Record<string, number> = {};
   for (const a of ACCOUNTS) {
     const [created] = await db
       .insert(schema.accounts)
@@ -228,6 +346,7 @@ export async function seedSampleData() {
       })
       .returning();
     if (!created) continue;
+    idsByName[a.name] = created.id;
     for (const s of a.snapshots) {
       await db.insert(schema.valueSnapshots).values({
         accountId: created.id,
@@ -247,11 +366,17 @@ export async function seedSampleData() {
 
   await db.insert(schema.recurringFlows).values(FLOWS);
 
+  const txRows = buildSampleTransactions(idsByName);
+  if (txRows.length > 0) {
+    await db.insert(schema.transactions).values(txRows);
+  }
+
   revalidatePath("/", "layout");
   return {
     accounts: ACCOUNTS.length,
     grants: GRANTS.length,
     decisions: DECISIONS.length,
     flows: FLOWS.length,
+    transactions: txRows.length,
   };
 }

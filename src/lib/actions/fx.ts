@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { db, schema } from "@/lib/db";
 import { SUPPORTED_CURRENCIES } from "@/lib/format";
+import { assertAdmin } from "@/lib/auth/session";
 
 const ENDPOINT = "https://open.er-api.com/v6/latest";
 
@@ -15,6 +16,7 @@ type ApiResponse = {
 };
 
 export async function refreshFxRates(base = "USD") {
+  await assertAdmin();
   const res = await fetch(`${ENDPOINT}/${base}`, {
     cache: "no-store",
   });

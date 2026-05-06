@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 const SESSION_COOKIE = "ff_session";
 
-const PUBLIC_PATHS = ["/login", "/api/auth/login"];
+const PUBLIC_PATHS = ["/", "/login", "/api/auth/login", "/api/health"];
 
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;

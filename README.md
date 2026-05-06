@@ -79,10 +79,15 @@ All config is via env vars:
 | Var                | Required | Default                          | Notes |
 |--------------------|----------|----------------------------------|-------|
 | `ADMIN_PASSWORD`   | prod     | (auth disabled)                  | Single admin password. Without this, anyone can sign in. |
+| `VIEWER_PASSWORD`  | no       | (viewer disabled)                | Optional read-only password. Share with spouse / co-founder. |
 | `SESSION_SECRET`   | prod     | falls back to `ADMIN_PASSWORD`   | HMAC secret for session cookies. Set explicitly in prod. |
 | `DATABASE_URL`     | no       | `./data/app.db`                  | SQLite file path. In Docker: `/data/app.db`. |
 | `ANTHROPIC_API_KEY`| no       | (unset)                          | Optional fallback. Settings → Advisor takes precedence. |
 | `APP_URL`          | no       | `http://localhost:3000`          | Used for absolute redirects from API routes. |
+
+## Sharing read-only access
+
+Set `VIEWER_PASSWORD` to a second password and hand it to whoever needs visibility into the dashboard — typically a spouse, co-founder, or accountant. They sign in at `/login` with the viewer password (same form as admin) and see every page exactly the way you do, but every "Add", "Edit", "Delete", "Refresh FX", and "Seed" affordance is hidden, and the underlying server actions reject the call. Leave `VIEWER_PASSWORD` unset to disable sharing entirely. There is no user table — this is a single shared credential per role, on purpose.
 
 ## First-run checklist
 

@@ -57,6 +57,7 @@ import {
   setDecisionStatus,
   updateDecision,
 } from "@/lib/actions/decisions";
+import { useRole } from "@/components/app/role-context";
 
 type Decision = {
   id: number;
@@ -131,7 +132,9 @@ function DecisionForm({
 }
 
 function AddDecisionDialog() {
+  const role = useRole();
   const [open, setOpen] = useState(false);
+  if (role === "viewer") return null;
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -242,9 +245,11 @@ function MarkDecidedDialog({
 }
 
 function DecisionRow({ decision }: { decision: Decision }) {
+  const role = useRole();
   const [editOpen, setEditOpen] = useState(false);
   const [decideOpen, setDecideOpen] = useState(false);
   const [, startTransition] = useTransition();
+  const readOnly = role === "viewer";
 
   function quickStatus(status: "open" | "deferred") {
     const fd = new FormData();
@@ -282,6 +287,7 @@ function DecisionRow({ decision }: { decision: Decision }) {
             </CardDescription>
           ) : null}
         </div>
+        {readOnly ? null : (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" className="size-8 shrink-0">
@@ -343,6 +349,7 @@ function DecisionRow({ decision }: { decision: Decision }) {
             </AlertDialog>
           </DropdownMenuContent>
         </DropdownMenu>
+        )}
       </CardHeader>
       {decision.outcome ? (
         <CardContent className="pt-0 border-t border-border">
@@ -368,7 +375,9 @@ function DecisionRow({ decision }: { decision: Decision }) {
 }
 
 function SeedButton() {
+  const role = useRole();
   const [pending, startTransition] = useTransition();
+  if (role === "viewer") return null;
   return (
     <Button
       variant="outline"

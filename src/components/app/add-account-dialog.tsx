@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { AccountFields } from "@/components/app/account-form-fields";
 import { createAccount } from "@/lib/actions/accounts";
+import { useRole } from "@/components/app/role-context";
 
 export function AddAccountDialog({
   trigger,
@@ -22,8 +23,10 @@ export function AddAccountDialog({
   trigger?: React.ReactNode;
   size?: "sm" | "default" | "lg";
 }) {
+  const role = useRole();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+  if (role === "viewer") return null;
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>

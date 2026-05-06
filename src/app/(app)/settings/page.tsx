@@ -131,6 +131,46 @@ export default async function SettingsPage() {
 
           <Card>
             <CardHeader>
+              <CardTitle className="text-base">Sharing read-only access</CardTitle>
+              <CardDescription>
+                Let a partner or co-founder view your numbers without giving them
+                edit rights.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="text-sm text-muted-foreground space-y-2">
+              {process.env.VIEWER_PASSWORD ? (
+                <>
+                  <p>
+                    <span className="inline-block size-2 rounded-full bg-emerald-500 mr-2 align-middle" />
+                    Viewer access is <span className="text-foreground font-medium">enabled</span>.
+                  </p>
+                  <p>
+                    Share the password from <code className="font-mono">VIEWER_PASSWORD</code>{" "}
+                    with whoever you want to grant read-only access. They sign in at{" "}
+                    <code className="font-mono">/login</code> like you do. Viewers see
+                    every page but cannot create, edit, or delete anything.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p>
+                    <span className="inline-block size-2 rounded-full bg-muted-foreground/40 mr-2 align-middle" />
+                    Viewer access is <span className="text-foreground font-medium">disabled</span>.
+                  </p>
+                  <p>
+                    Set <code className="font-mono">VIEWER_PASSWORD</code> in your
+                    environment to enable read-only sharing. Restart the app after
+                    setting it.
+                  </p>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          <Separator />
+
+          <Card>
+            <CardHeader>
               <CardTitle className="text-base">Sample data</CardTitle>
               <CardDescription>
                 Quickly populate a realistic founder dataset (multi-currency

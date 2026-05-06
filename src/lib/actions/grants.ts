@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
+import { assertAdmin } from "@/lib/auth/session";
 
 const GRANT_TYPES = ["iso", "nso", "rsu", "founder_shares", "safe", "other"] as const;
 type GrantType = (typeof GRANT_TYPES)[number];
@@ -68,6 +69,7 @@ function commonFields(formData: FormData) {
 }
 
 export async function createGrant(formData: FormData) {
+  await assertAdmin();
   const fields = commonFields(formData);
   if (!fields.company) throw new Error("Company is required.");
   if (fields.vestedShares > fields.totalShares) {
@@ -78,6 +80,7 @@ export async function createGrant(formData: FormData) {
 }
 
 export async function updateGrant(formData: FormData) {
+  await assertAdmin();
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
   const fields = commonFields(formData);
@@ -93,6 +96,7 @@ export async function updateGrant(formData: FormData) {
 }
 
 export async function deleteGrant(formData: FormData) {
+  await assertAdmin();
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
   await db.delete(schema.equityGrants).where(eq(schema.equityGrants.id, id));

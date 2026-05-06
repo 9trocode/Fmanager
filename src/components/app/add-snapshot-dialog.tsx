@@ -15,6 +15,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { addSnapshot } from "@/lib/actions/accounts";
+import { useRole } from "@/components/app/role-context";
 
 export function AddSnapshotDialog({
   accountId,
@@ -23,8 +24,10 @@ export function AddSnapshotDialog({
   accountId: number;
   currency: string;
 }) {
+  const role = useRole();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+  if (role === "viewer") return null;
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>

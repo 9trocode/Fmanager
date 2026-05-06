@@ -14,6 +14,7 @@ import {
 import { GrantFields } from "@/components/app/grant-form-fields";
 import { updateGrant } from "@/lib/actions/grants";
 import type { GrantType } from "@/lib/grant-types";
+import { useRole } from "@/components/app/role-context";
 
 export function EditGrantDialog({
   grant,
@@ -37,8 +38,10 @@ export function EditGrantDialog({
     vestingNotes: string | null;
   };
 }) {
+  const role = useRole();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+  if (role === "viewer") return null;
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>

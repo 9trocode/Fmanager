@@ -18,9 +18,12 @@ import {
   updateAnthropicKey,
   updateBaseCurrency,
 } from "@/lib/actions/settings";
+import { useRole } from "@/components/app/role-context";
 
 export function BaseCurrencyForm({ current }: { current: string }) {
+  const role = useRole();
   const [pending, startTransition] = useTransition();
+  if (role === "viewer") return null;
   return (
     <form
       action={(fd) =>
@@ -58,7 +61,9 @@ export function BaseCurrencyForm({ current }: { current: string }) {
 }
 
 export function AnthropicKeyForm({ keySet }: { keySet: boolean }) {
+  const role = useRole();
   const [pending, startTransition] = useTransition();
+  if (role === "viewer") return null;
   return (
     <form
       action={(fd) =>
@@ -94,7 +99,9 @@ export function AnthropicKeyForm({ keySet }: { keySet: boolean }) {
 }
 
 export function AdvisorModelForm({ current }: { current: string }) {
+  const role = useRole();
   const [pending, startTransition] = useTransition();
+  if (role === "viewer") return null;
   return (
     <form
       action={(fd) =>

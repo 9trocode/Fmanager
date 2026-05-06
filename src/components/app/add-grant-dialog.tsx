@@ -14,10 +14,13 @@ import {
 } from "@/components/ui/dialog";
 import { GrantFields } from "@/components/app/grant-form-fields";
 import { createGrant } from "@/lib/actions/grants";
+import { useRole } from "@/components/app/role-context";
 
 export function AddGrantDialog() {
+  const role = useRole();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+  if (role === "viewer") return null;
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>

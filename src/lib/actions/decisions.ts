@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
+import { assertAdmin } from "@/lib/auth/session";
 
 const STARTER_DECISIONS = [
   {
@@ -32,6 +33,7 @@ function revalidate() {
 }
 
 export async function createDecision(formData: FormData) {
+  await assertAdmin();
   const question = String(formData.get("question") ?? "").trim();
   const context = String(formData.get("context") ?? "").trim() || null;
   if (!question) throw new Error("Question is required.");
@@ -40,6 +42,7 @@ export async function createDecision(formData: FormData) {
 }
 
 export async function updateDecision(formData: FormData) {
+  await assertAdmin();
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
   const question = String(formData.get("question") ?? "").trim();
@@ -53,6 +56,7 @@ export async function updateDecision(formData: FormData) {
 }
 
 export async function setDecisionStatus(formData: FormData) {
+  await assertAdmin();
   const id = Number(formData.get("id"));
   const status = String(formData.get("status") ?? "open") as
     | "open"
@@ -73,6 +77,7 @@ export async function setDecisionStatus(formData: FormData) {
 }
 
 export async function deleteDecision(formData: FormData) {
+  await assertAdmin();
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
   await db.delete(schema.decisions).where(eq(schema.decisions.id, id));
@@ -80,6 +85,7 @@ export async function deleteDecision(formData: FormData) {
 }
 
 export async function seedStarterDecisions() {
+  await assertAdmin();
   const existing = await db.select().from(schema.decisions).limit(1);
   if (existing.length > 0) return { seeded: false };
   await db.insert(schema.decisions).values(STARTER_DECISIONS);

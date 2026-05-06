@@ -14,6 +14,7 @@ import {
 import { AccountFields } from "@/components/app/account-form-fields";
 import { updateAccount } from "@/lib/actions/accounts";
 import type { AccountType } from "@/lib/db/schema";
+import { useRole } from "@/components/app/role-context";
 
 export function EditAccountDialog({
   account,
@@ -27,8 +28,10 @@ export function EditAccountDialog({
     notes: string | null;
   };
 }) {
+  const role = useRole();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+  if (role === "viewer") return null;
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>

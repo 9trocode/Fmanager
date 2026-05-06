@@ -16,10 +16,11 @@ async function login(formData: FormData) {
   const password = String(formData.get("password") ?? "");
   const next = String(formData.get("next") ?? "/dashboard");
 
-  if (!verifyPassword(password)) {
+  const role = verifyPassword(password);
+  if (!role) {
     redirect(`/login?error=1&next=${encodeURIComponent(next)}`);
   }
-  await createSession();
+  await createSession(role);
   redirect(next || "/dashboard");
 }
 
@@ -49,11 +50,11 @@ export default async function LoginPage({
 
         <Card>
           <CardHeader className="pb-4">
-            <CardTitle className="text-base">Admin sign-in</CardTitle>
+            <CardTitle className="text-base">Sign in</CardTitle>
             <CardDescription>
               {authDisabled()
                 ? "No admin password set — enter anything to continue."
-                : "Enter the password from your ADMIN_PASSWORD env var."}
+                : "Enter your admin or viewer password."}
             </CardDescription>
           </CardHeader>
           <CardContent>

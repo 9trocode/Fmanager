@@ -72,6 +72,7 @@ import {
 } from "@/lib/flows";
 import { SUPPORTED_CURRENCIES, formatMoney } from "@/lib/format";
 import type { FlowCadence, FlowKind } from "@/lib/db/schema";
+import { useRole } from "@/components/app/role-context";
 
 export type FlowRow = {
   id: number;
@@ -188,8 +189,10 @@ function FlowFields({
 }
 
 function AddFlowDialog({ defaultKind }: { defaultKind: FlowKind }) {
+  const role = useRole();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+  if (role === "viewer") return null;
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -238,7 +241,9 @@ function EditFlowDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
+  const role = useRole();
   const [pending, startTransition] = useTransition();
+  if (role === "viewer") return null;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
@@ -268,9 +273,11 @@ function EditFlowDialog({
 }
 
 function FlowRow({ flow }: { flow: FlowRow }) {
+  const role = useRole();
   const [editOpen, setEditOpen] = useState(false);
   const [, startTransition] = useTransition();
   const monthly = monthlyEquivalent(flow.amount, flow.cadence);
+  const readOnly = role === "viewer";
 
   function handleArchive() {
     const fd = new FormData();
@@ -346,61 +353,63 @@ function FlowRow({ flow }: { flow: FlowRow }) {
             ≈ {formatMoney(monthly, flow.currency)} / mo
           </div>
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="size-8">
-              <MoreHorizontal className="size-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onSelect={() => setEditOpen(true)}>
-              <Pencil className="size-4" />
-              Edit
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={handleArchive}>
-              {flow.archived ? (
-                <>
-                  <ArchiveRestore className="size-4" />
-                  Unarchive
-                </>
-              ) : (
-                <>
-                  <Archive className="size-4" />
-                  Archive
-                </>
-              )}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <DropdownMenuItem
-                  onSelect={(e) => e.preventDefault()}
-                  className="text-destructive focus:text-destructive"
-                >
-                  <Trash2 className="size-4" />
-                  Delete
-                </DropdownMenuItem>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Delete this flow?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Permanent. Archive instead if you might need it again.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={handleDelete}
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+        {readOnly ? null : (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="size-8">
+                <MoreHorizontal className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => setEditOpen(true)}>
+                <Pencil className="size-4" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={handleArchive}>
+                {flow.archived ? (
+                  <>
+                    <ArchiveRestore className="size-4" />
+                    Unarchive
+                  </>
+                ) : (
+                  <>
+                    <Archive className="size-4" />
+                    Archive
+                  </>
+                )}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <DropdownMenuItem
+                    onSelect={(e) => e.preventDefault()}
+                    className="text-destructive focus:text-destructive"
                   >
+                    <Trash2 className="size-4" />
                     Delete
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          </DropdownMenuContent>
-        </DropdownMenu>
+                  </DropdownMenuItem>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete this flow?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Permanent. Archive instead if you might need it again.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={handleDelete}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      Delete
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
 
       <EditFlowDialog flow={flow} open={editOpen} onOpenChange={setEditOpen} />
