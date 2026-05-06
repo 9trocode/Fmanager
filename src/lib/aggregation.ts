@@ -5,6 +5,7 @@ import {
   listFlows,
   listGrants,
   listTransactions,
+  listTransactionsBetween,
 } from "@/lib/db/queries";
 import { convert } from "@/lib/fx";
 import { isLiability } from "@/lib/account-types";
@@ -18,11 +19,19 @@ import type { AccountType } from "@/lib/db/schema";
 
 export type CategoryKey = AccountType | "grant";
 
+export type CurrencyBucket = {
+  /** Sum of values in their native currency (no FX applied). */
+  native: number;
+  /** Sum converted into the base currency. Useful for proportions / comparisons. */
+  inBase: number;
+};
+
 export type NetWorthSummary = {
   baseCurrency: string;
   totals: Record<Scenario, number>;
   byCategory: Record<Scenario, Record<CategoryKey, number>>;
-  byCurrency: Record<Scenario, Record<string, number>>;
+  /** Per-currency totals. Native-amount + base-equivalent for honest display. */
+  byCurrency: Record<Scenario, Record<string, CurrencyBucket>>;
   hasData: boolean;
 };
 
@@ -52,11 +61,24 @@ export async function computeNetWorth(baseCurrency: string): Promise<NetWorthSum
     expected: emptyCategory(),
     liquid: emptyCategory(),
   };
-  const byCurrency: Record<Scenario, Record<string, number>> = {
+  const byCurrency: Record<Scenario, Record<string, CurrencyBucket>> = {
     floor: {},
     expected: {},
     liquid: {},
   };
+
+  function addCurrency(
+    s: Scenario,
+    currency: string,
+    native: number,
+    inBase: number,
+  ) {
+    if (!byCurrency[s][currency]) {
+      byCurrency[s][currency] = { native: 0, inBase: 0 };
+    }
+    byCurrency[s][currency].native += native;
+    byCurrency[s][currency].inBase += inBase;
+  }
 
   let hasData = false;
 
@@ -67,7 +89,7 @@ export async function computeNetWorth(baseCurrency: string): Promise<NetWorthSum
     const inBase = await convert(signed, a.currency, baseCurrency);
     for (const s of SCENARIOS) {
       byCategory[s][a.type] += inBase;
-      byCurrency[s][a.currency] = (byCurrency[s][a.currency] ?? 0) + inBase;
+      addCurrency(s, a.currency, signed, inBase);
       totals[s] += inBase;
     }
   }
@@ -79,7 +101,7 @@ export async function computeNetWorth(baseCurrency: string): Promise<NetWorthSum
       if (value === 0) continue;
       const inBase = await convert(value, g.currency, baseCurrency);
       byCategory[s].grant += inBase;
-      byCurrency[s][g.currency] = (byCurrency[s][g.currency] ?? 0) + inBase;
+      addCurrency(s, g.currency, value, inBase);
       totals[s] += inBase;
     }
   }
@@ -110,6 +132,50 @@ export const CATEGORY_DISPLAY_ORDER: CategoryKey[] = [
   "other",
   "loan",
 ];
+
+export type MonthActuals = {
+  baseCurrency: string;
+  income: number;
+  expenses: number;
+  net: number;
+  txCount: number;
+  monthLabel: string;
+};
+
+export async function computeThisMonthActuals(
+  baseCurrency: string,
+): Promise<MonthActuals> {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const start = new Date(y, m, 1).toISOString().slice(0, 10);
+  const end = new Date(y, m + 1, 0).toISOString().slice(0, 10);
+
+  const txs = await listTransactionsBetween(start, end);
+
+  let income = 0;
+  let expenses = 0;
+  let count = 0;
+  for (const t of txs) {
+    if (t.kind === "transfer") continue;
+    const inBase = await convert(t.amount, t.currency, baseCurrency);
+    if (t.kind === "income") income += inBase;
+    else expenses += inBase;
+    count++;
+  }
+  const monthLabel = now.toLocaleString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+  return {
+    baseCurrency,
+    income,
+    expenses,
+    net: income - expenses,
+    txCount: count,
+    monthLabel,
+  };
+}
 
 export type CashFlowSummary = {
   baseCurrency: string;

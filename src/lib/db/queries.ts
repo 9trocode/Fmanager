@@ -361,6 +361,36 @@ export async function listRecentTransactions(days = 30) {
     .orderBy(desc(schema.transactions.occurredAt), desc(schema.transactions.id));
 }
 
+/**
+ * Latest N transactions across all accounts.
+ */
+export async function listLatestTransactions(limit = 10) {
+  return db
+    .select()
+    .from(schema.transactions)
+    .orderBy(desc(schema.transactions.occurredAt), desc(schema.transactions.id))
+    .limit(limit);
+}
+
+/**
+ * Transactions occurring on or between two ISO dates (inclusive).
+ */
+export async function listTransactionsBetween(
+  startIso: string,
+  endIso: string,
+) {
+  return db
+    .select()
+    .from(schema.transactions)
+    .where(
+      and(
+        gte(schema.transactions.occurredAt, startIso),
+        lte(schema.transactions.occurredAt, endIso),
+      ),
+    )
+    .orderBy(desc(schema.transactions.occurredAt), desc(schema.transactions.id));
+}
+
 export async function listBudgets() {
   return db
     .select()

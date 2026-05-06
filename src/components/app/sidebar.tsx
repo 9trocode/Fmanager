@@ -17,13 +17,14 @@ import {
 import { cn } from "@/lib/utils";
 
 const NAV = [
-  { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
-  { href: "/accounts", label: "Accounts", icon: Wallet },
-  { href: "/equity", label: "Equity", icon: Briefcase },
-  { href: "/cash-flow", label: "Cash flow", icon: Repeat },
-  { href: "/budgets", label: "Budgets", icon: Target },
-  { href: "/savings", label: "Savings", icon: PiggyBank },
+  { href: "/dashboard", label: "Home", icon: LayoutDashboard },
   { href: "/transactions", label: "Transactions", icon: Receipt },
+  { href: "/budgets", label: "Budgets", icon: Target },
+  { href: "/cash-flow", label: "Cash flow", icon: Repeat },
+  { href: "/savings", label: "Savings", icon: PiggyBank },
+  { href: "/accounts", label: "Accounts", icon: Wallet },
+  { href: "/net-worth", label: "Net worth", icon: TrendingUp },
+  { href: "/equity", label: "Equity", icon: Briefcase },
   { href: "/projections", label: "Projections", icon: TrendingUp },
   { href: "/advisor", label: "Advisor", icon: Sparkles },
   { href: "/settings", label: "Settings", icon: Settings },
