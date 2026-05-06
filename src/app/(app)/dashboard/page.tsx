@@ -24,6 +24,7 @@ import {
   type CategoryKey,
 } from "@/lib/aggregation";
 import { RunwayCard } from "@/components/app/runway-card";
+import { BudgetsSummaryCard } from "@/components/app/budgets-summary-card";
 import {
   SCENARIOS,
   SCENARIO_LABEL,
@@ -134,11 +135,14 @@ export default async function DashboardPage() {
                 </div>
                 <RunwayCard runway={runway} />
               </div>
-              <CategoryBreakdown
-                scenario={s}
-                summary={summary}
-                baseCurrency={baseCurrency}
-              />
+              <div className="grid lg:grid-cols-2 gap-6">
+                <CategoryBreakdown
+                  scenario={s}
+                  summary={summary}
+                  baseCurrency={baseCurrency}
+                />
+                <BudgetsSummaryCard summary={budgets} />
+              </div>
               <CurrencyBreakdown
                 scenario={s}
                 summary={summary}

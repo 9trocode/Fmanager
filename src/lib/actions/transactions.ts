@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { transactionKinds } from "@/lib/db/schema";
+import { assertAdmin } from "@/lib/auth/session";
 
 function revalidate(accountId?: number) {
   revalidatePath("/", "layout");
@@ -98,12 +99,14 @@ function commonFields(formData: FormData) {
 }
 
 export async function createTransaction(formData: FormData) {
+  await assertAdmin();
   const fields = commonFields(formData);
   await db.insert(schema.transactions).values(fields);
   revalidate(fields.accountId);
 }
 
 export async function updateTransaction(formData: FormData) {
+  await assertAdmin();
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
   const fields = commonFields(formData);
@@ -115,6 +118,7 @@ export async function updateTransaction(formData: FormData) {
 }
 
 export async function deleteTransaction(formData: FormData) {
+  await assertAdmin();
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
   // Read the row first so we can target revalidation precisely.

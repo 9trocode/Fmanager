@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
-import { MoreHorizontal, Pencil, Target, Trash2 } from "lucide-react";
+import { ChevronRight, MoreHorizontal, Pencil, Target, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -83,8 +84,11 @@ function BudgetRow({ row }: { row: BudgetStatus }) {
   const widthPct = Math.min(100, Math.max(0, row.percentUsed));
 
   return (
-    <div className="flex items-start justify-between gap-4 px-4 py-3 rounded-md border border-border hover:bg-secondary/40 transition-colors">
-      <div className="min-w-0 flex-1 space-y-2">
+    <div className="flex items-start justify-between gap-4 px-4 py-3 rounded-md border border-border hover:bg-secondary/40 transition-colors group">
+      <Link
+        href={`/budgets/${row.id}`}
+        className="min-w-0 flex-1 space-y-2 block"
+      >
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
             <span className="font-medium truncate">{row.category}</span>
@@ -95,6 +99,7 @@ function BudgetRow({ row }: { row: BudgetStatus }) {
             >
               {row.percentUsed.toFixed(0)}%
             </span>
+            <ChevronRight className="size-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>
           <div className="text-right shrink-0">
             <div className="font-mono tabular-nums text-sm">
@@ -125,7 +130,7 @@ function BudgetRow({ row }: { row: BudgetStatus }) {
             {row.notes}
           </div>
         ) : null}
-      </div>
+      </Link>
       {readOnly ? null : (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
