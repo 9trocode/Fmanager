@@ -1,16 +1,34 @@
-import { Sparkles } from "lucide-react";
+import Link from "next/link";
+import { Sparkles, ArrowRight } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { listDecisions, getSetting } from "@/lib/db/queries";
 import { AdvisorChat } from "./advisor-chat";
 
-export default function AdvisorPage() {
+export default async function AdvisorPage() {
+  const [decisions, key] = await Promise.all([
+    listDecisions({ onlyOpen: true }),
+    getSetting("anthropic_api_key"),
+  ]);
+
   return (
     <>
       <PageHeader
         title="Advisor"
         description="A finance co-pilot anchored on your three real decisions and your full balance sheet."
-        actions={<Badge variant="secondary">BYO Anthropic key</Badge>}
+        actions={
+          <Badge variant={key ? "secondary" : "outline"}>
+            {key ? "BYO key configured" : "Add API key in Settings"}
+          </Badge>
+        }
       />
 
       <div className="grid lg:grid-cols-3 gap-6">
@@ -21,7 +39,7 @@ export default function AdvisorPage() {
               Chat
             </CardTitle>
             <CardDescription>
-              The advisor sees your accounts, equity, and active decisions — not your raw
+              The advisor sees your accounts, equity, and active decisions — not raw
               balances unless you ask.
             </CardDescription>
           </CardHeader>
@@ -30,17 +48,40 @@ export default function AdvisorPage() {
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-1">
-          <CardHeader>
-            <CardTitle className="text-base">Your decisions</CardTitle>
-            <CardDescription>
-              The advisor anchors on these. Add yours in Settings.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            No decisions yet.
-          </CardContent>
-        </Card>
+        <div className="lg:col-span-1 space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Active decisions</CardTitle>
+              <CardDescription>
+                The advisor anchors on these.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {decisions.length === 0 ? (
+                <div className="text-sm text-muted-foreground space-y-3">
+                  <p>No active decisions.</p>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/settings?tab=decisions">
+                      Add decisions <ArrowRight className="size-4" />
+                    </Link>
+                  </Button>
+                </div>
+              ) : (
+                decisions.map((d, i) => (
+                  <div
+                    key={d.id}
+                    className="text-sm leading-snug pl-3 border-l-2 border-primary/40"
+                  >
+                    <div className="text-[11px] text-muted-foreground font-mono mb-1">
+                      decision {i + 1}
+                    </div>
+                    {d.question}
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </>
   );

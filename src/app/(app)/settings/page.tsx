@@ -7,25 +7,40 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/app/page-header";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
+import {
+  AdvisorModelForm,
+  AnthropicKeyForm,
+  BaseCurrencyForm,
+} from "@/components/app/settings-forms";
+import { DecisionsManager } from "@/components/app/decisions-manager";
+import { getSettings, listDecisions } from "@/lib/db/queries";
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
+  const [settings, decisions] = await Promise.all([
+    getSettings(["base_currency", "anthropic_api_key", "advisor_model"]),
+    listDecisions(),
+  ]);
+
   return (
     <>
       <PageHeader
         title="Settings"
-        description="Base currency, AI key, decisions, and admin."
+        description="Base currency, advisor key, decisions, and admin."
       />
 
       <Tabs defaultValue="general" className="space-y-6">
         <TabsList>
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="advisor">Advisor</TabsTrigger>
-          <TabsTrigger value="decisions">Decisions</TabsTrigger>
+          <TabsTrigger value="decisions">
+            Decisions
+            <span className="ml-1.5 text-[10px] font-mono bg-secondary px-1.5 rounded">
+              {decisions.filter((d) => d.status === "open").length}
+            </span>
+          </TabsTrigger>
           <TabsTrigger value="admin">Admin</TabsTrigger>
         </TabsList>
 
@@ -37,12 +52,8 @@ export default function SettingsPage() {
                 The currency net worth and projections are reported in.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="space-y-1.5 max-w-xs">
-                <Label htmlFor="base">Currency</Label>
-                <Input id="base" placeholder="USD" defaultValue="USD" />
-              </div>
-              <Button>Save</Button>
+            <CardContent>
+              <BaseCurrencyForm current={settings.base_currency ?? "USD"} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -55,29 +66,25 @@ export default function SettingsPage() {
                 Stored locally in your SQLite DB. Never sent anywhere except Anthropic.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="space-y-1.5 max-w-md">
-                <Label htmlFor="key">API key</Label>
-                <Input id="key" type="password" placeholder="sk-ant-..." />
-              </div>
-              <Button>Save</Button>
+            <CardContent>
+              <AnthropicKeyForm keySet={!!settings.anthropic_api_key} />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Advisor model</CardTitle>
+              <CardDescription>
+                Which Claude model the advisor uses. Sonnet by default.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <AdvisorModelForm current={settings.advisor_model ?? "claude-sonnet-4-6"} />
             </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent value="decisions" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Active decisions</CardTitle>
-              <CardDescription>
-                The 3 financial decisions you&apos;re trying to make right now. The advisor
-                anchors on these.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="text-sm text-muted-foreground">
-              Decisions UI coming soon.
-            </CardContent>
-          </Card>
+          <DecisionsManager decisions={decisions} />
         </TabsContent>
 
         <TabsContent value="admin" className="space-y-4">
