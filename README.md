@@ -49,10 +49,6 @@ Data persists in a named volume (`founder-finance-data`). To back up:
 docker compose cp app:/data ./backup-$(date +%Y%m%d)
 ```
 
-<<<<<<< HEAD
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
->>>>>>> 303414d (Initial commit from Create Next App)
-=======
 To restore: stop the container, replace the volume contents, restart.
 
 ## Configuration
@@ -114,4 +110,3 @@ See [ONE-PAGER.md](./ONE-PAGER.md) for the full product brief.
 ## License
 
 MIT.
->>>>>>> d463772 (M6: Docker, README, health route, error boundaries)
