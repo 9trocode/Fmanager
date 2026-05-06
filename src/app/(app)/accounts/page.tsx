@@ -10,12 +10,12 @@ import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
 import { AddAccountDialog } from "@/components/app/add-account-dialog";
-import { listAccountsWithLatest } from "@/lib/db/queries";
+import { listAccountsWithEffective } from "@/lib/db/queries";
 import { ACCOUNT_TYPE_LABEL, isLiability } from "@/lib/account-types";
 import { formatMoney } from "@/lib/format";
 
 export default async function AccountsPage() {
-  const accounts = await listAccountsWithLatest({ includeArchived: true });
+  const accounts = await listAccountsWithEffective({ includeArchived: true });
   const active = accounts.filter((a) => !a.archived);
   const archived = accounts.filter((a) => a.archived);
 
@@ -68,10 +68,10 @@ export default async function AccountsPage() {
                           (isLiability(a.type) ? "text-destructive" : "")
                         }
                       >
-                        {a.latestValue == null
+                        {a.effectiveValue == null
                           ? "—"
                           : formatMoney(
-                              isLiability(a.type) ? -a.latestValue : a.latestValue,
+                              isLiability(a.type) ? -a.effectiveValue : a.effectiveValue,
                               a.currency,
                             )}
                       </div>

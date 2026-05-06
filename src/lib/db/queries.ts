@@ -1,7 +1,7 @@
 import "server-only";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
-import type { AccountType } from "@/lib/db/schema";
+import type { AccountType, TransactionKind } from "@/lib/db/schema";
 
 export type SettingKey =
   | "base_currency"
@@ -109,12 +109,82 @@ export async function listSnapshots(accountId: number) {
     .orderBy(desc(schema.valueSnapshots.asOf), desc(schema.valueSnapshots.id));
 }
 
-export async function listAccountsWithLatest(opts: { includeArchived?: boolean } = {}) {
+/**
+ * Effective balance for an account = latest snapshot value
+ * + sum of signed transaction amounts that occurred AFTER the snapshot's `asOf` date.
+ *
+ * Sign rules:
+ *  - expense:  -amount on accountId
+ *  - income:   +amount on accountId
+ *  - transfer: -amount on accountId, +amount on destAccountId
+ *
+ * If no snapshot exists, the effective value is null (treated as no data).
+ * If snapshot exists but no transactions, effective == latest.
+ */
+export async function getEffectiveBalance(accountId: number): Promise<{
+  effectiveValue: number | null;
+  latestValue: number | null;
+  latestAsOf: string | null;
+}> {
+  const latest = await getLatestSnapshot(accountId);
+  if (!latest) {
+    return { effectiveValue: null, latestValue: null, latestAsOf: null };
+  }
+
+  // Outgoing transactions on this account after the snapshot.
+  const outgoing = await db
+    .select()
+    .from(schema.transactions)
+    .where(
+      and(
+        eq(schema.transactions.accountId, accountId),
+        gte(schema.transactions.occurredAt, latest.asOf),
+      ),
+    );
+  // Incoming transfers (this account as destination) after snapshot.
+  const incoming = await db
+    .select()
+    .from(schema.transactions)
+    .where(
+      and(
+        eq(schema.transactions.destAccountId, accountId),
+        eq(schema.transactions.kind, "transfer"),
+        gte(schema.transactions.occurredAt, latest.asOf),
+      ),
+    );
+
+  let delta = 0;
+  for (const t of outgoing) {
+    // Skip transactions on the snapshot date itself; snapshot wins.
+    if (t.occurredAt === latest.asOf) continue;
+    if (t.kind === "expense" || t.kind === "transfer") delta -= t.amount;
+    else if (t.kind === "income") delta += t.amount;
+  }
+  for (const t of incoming) {
+    if (t.occurredAt === latest.asOf) continue;
+    delta += t.amount;
+  }
+
+  return {
+    effectiveValue: latest.value + delta,
+    latestValue: latest.value,
+    latestAsOf: latest.asOf,
+  };
+}
+
+export async function listAccountsWithEffective(
+  opts: { includeArchived?: boolean } = {},
+) {
   const accounts = await listAccounts(opts);
   const result = await Promise.all(
     accounts.map(async (a) => {
-      const latest = await getLatestSnapshot(a.id);
-      return { ...a, latestValue: latest?.value ?? null, latestAsOf: latest?.asOf ?? null };
+      const eff = await getEffectiveBalance(a.id);
+      return {
+        ...a,
+        effectiveValue: eff.effectiveValue,
+        latestValue: eff.latestValue,
+        latestAsOf: eff.latestAsOf,
+      };
     }),
   );
   return result;
@@ -169,3 +239,106 @@ export async function accountsByTypes(types: AccountType[]) {
       ),
     );
 }
+
+export type TransactionFilter = {
+  accountId?: number;
+  category?: string;
+  kind?: TransactionKind;
+  dateFrom?: string; // YYYY-MM-DD
+  dateTo?: string; // YYYY-MM-DD
+  limit?: number;
+};
+
+export async function listTransactions(filter: TransactionFilter = {}) {
+  const conditions = [];
+  if (filter.accountId != null && Number.isFinite(filter.accountId)) {
+    // Match either source or destination so transfers show on both sides.
+    conditions.push(
+      or(
+        eq(schema.transactions.accountId, filter.accountId),
+        eq(schema.transactions.destAccountId, filter.accountId),
+      ),
+    );
+  }
+  if (filter.category) {
+    conditions.push(eq(schema.transactions.category, filter.category));
+  }
+  if (filter.kind) {
+    conditions.push(eq(schema.transactions.kind, filter.kind));
+  }
+  if (filter.dateFrom) {
+    conditions.push(gte(schema.transactions.occurredAt, filter.dateFrom));
+  }
+  if (filter.dateTo) {
+    conditions.push(lte(schema.transactions.occurredAt, filter.dateTo));
+  }
+
+  const where = conditions.length ? and(...conditions) : undefined;
+  const baseQuery = db
+    .select()
+    .from(schema.transactions)
+    .where(where)
+    .orderBy(desc(schema.transactions.occurredAt), desc(schema.transactions.id));
+
+  if (filter.limit && filter.limit > 0) {
+    return baseQuery.limit(filter.limit);
+  }
+  return baseQuery;
+}
+
+export async function getTransaction(id: number) {
+  const rows = await db
+    .select()
+    .from(schema.transactions)
+    .where(eq(schema.transactions.id, id))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function listTransactionCategories(): Promise<string[]> {
+  const rows = await db
+    .selectDistinct({ category: schema.transactions.category })
+    .from(schema.transactions)
+    .orderBy(asc(schema.transactions.category));
+  return rows
+    .map((r) => r.category)
+    .filter((c): c is string => Boolean(c && c.trim().length));
+}
+
+/**
+ * Transactions touching this account, either as source or destination,
+ * ordered most-recent first. For UI display in the account detail page.
+ */
+export async function listAccountTransactions(
+  accountId: number,
+  limit?: number,
+) {
+  const where = or(
+    eq(schema.transactions.accountId, accountId),
+    eq(schema.transactions.destAccountId, accountId),
+  );
+  const baseQuery = db
+    .select()
+    .from(schema.transactions)
+    .where(where)
+    .orderBy(desc(schema.transactions.occurredAt), desc(schema.transactions.id));
+  if (limit && limit > 0) return baseQuery.limit(limit);
+  return baseQuery;
+}
+
+/**
+ * Transactions in the last `days` days. Used by the advisor system prompt.
+ */
+export async function listRecentTransactions(days = 30) {
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+  const sinceIso = since.toISOString().slice(0, 10);
+  return db
+    .select()
+    .from(schema.transactions)
+    .where(gte(schema.transactions.occurredAt, sinceIso))
+    .orderBy(desc(schema.transactions.occurredAt), desc(schema.transactions.id));
+}
+
+// Re-export sql so other modules can build raw fragments if needed.
+export { sql };

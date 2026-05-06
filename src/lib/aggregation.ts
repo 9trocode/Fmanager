@@ -1,5 +1,5 @@
 import "server-only";
-import { listAccountsWithLatest, listFlows, listGrants } from "@/lib/db/queries";
+import { listAccountsWithEffective, listFlows, listGrants } from "@/lib/db/queries";
 import { convert } from "@/lib/fx";
 import { isLiability } from "@/lib/account-types";
 import { monthlyEquivalent } from "@/lib/flows";
@@ -36,7 +36,7 @@ function emptyCategory(): Record<CategoryKey, number> {
 
 export async function computeNetWorth(baseCurrency: string): Promise<NetWorthSummary> {
   const [accounts, grants] = await Promise.all([
-    listAccountsWithLatest({ includeArchived: false }),
+    listAccountsWithEffective({ includeArchived: false }),
     listGrants(),
   ]);
 
@@ -55,9 +55,9 @@ export async function computeNetWorth(baseCurrency: string): Promise<NetWorthSum
   let hasData = false;
 
   for (const a of accounts) {
-    if (a.latestValue == null) continue;
+    if (a.effectiveValue == null) continue;
     hasData = true;
-    const signed = isLiability(a.type) ? -a.latestValue : a.latestValue;
+    const signed = isLiability(a.type) ? -a.effectiveValue : a.effectiveValue;
     const inBase = await convert(signed, a.currency, baseCurrency);
     for (const s of SCENARIOS) {
       byCategory[s][a.type] += inBase;

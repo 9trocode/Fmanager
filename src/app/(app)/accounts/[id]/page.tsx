@@ -32,7 +32,15 @@ import {
 import { PageHeader } from "@/components/app/page-header";
 import { EditAccountDialog } from "@/components/app/edit-account-dialog";
 import { AddSnapshotDialog } from "@/components/app/add-snapshot-dialog";
-import { getAccount, listSnapshots } from "@/lib/db/queries";
+import { AddTransactionDialog } from "@/components/app/add-transaction-dialog";
+import { TransactionItem } from "@/components/app/transactions-list";
+import {
+  getAccount,
+  getEffectiveBalance,
+  listAccountTransactions,
+  listAccounts,
+  listSnapshots,
+} from "@/lib/db/queries";
 import {
   archiveAccount,
   unarchiveAccount,
@@ -54,9 +62,23 @@ export default async function AccountDetailPage({
   const account = await getAccount(id);
   if (!account) notFound();
 
-  const snapshots = await listSnapshots(id);
+  const [snapshots, txs, allAccounts, effective] = await Promise.all([
+    listSnapshots(id),
+    listAccountTransactions(id, 50),
+    listAccounts({ includeArchived: true }),
+    getEffectiveBalance(id),
+  ]);
   const latest = snapshots[0];
   const liability = isLiability(account.type);
+
+  const accountOptions = allAccounts.map((a) => ({
+    id: a.id,
+    name: a.name,
+    currency: a.currency,
+  }));
+
+  const displayValue =
+    effective.effectiveValue ?? latest?.value ?? null;
 
   return (
     <>
@@ -142,16 +164,24 @@ export default async function AccountDetailPage({
                 (liability ? "text-destructive" : "")
               }
             >
-              {latest
+              {displayValue != null
                 ? formatMoney(
-                    liability ? -latest.value : latest.value,
+                    liability ? -displayValue : displayValue,
                     account.currency,
                   )
                 : "—"}
             </CardTitle>
             {latest ? (
               <CardDescription className="font-mono">
+                effective · snapshot {formatMoney(
+                  liability ? -latest.value : latest.value,
+                  account.currency,
+                )}{" "}
                 as of {latest.asOf}
+                {effective.effectiveValue != null &&
+                effective.effectiveValue !== latest.value
+                  ? " + transactions since"
+                  : ""}
               </CardDescription>
             ) : null}
           </CardHeader>
@@ -234,6 +264,42 @@ export default async function AccountDetailPage({
             </Table>
           )}
         </CardContent>
+      </Card>
+
+      <Card className="mt-6">
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle className="text-base">Transactions</CardTitle>
+            <CardDescription>
+              {txs.length === 0
+                ? "No transactions logged yet."
+                : `${txs.length} most recent`}
+            </CardDescription>
+          </div>
+          <AddTransactionDialog
+            accounts={accountOptions}
+            defaultAccountId={account.id}
+          />
+        </CardHeader>
+        {txs.length === 0 ? (
+          <CardContent>
+            <p className="text-sm text-muted-foreground">
+              Log expenses, income, or transfers to update the effective
+              balance between snapshots.
+            </p>
+          </CardContent>
+        ) : (
+          <CardContent className="space-y-2">
+            {txs.map((t) => (
+              <TransactionItem
+                key={t.id}
+                transaction={t}
+                accounts={accountOptions}
+                contextAccountId={account.id}
+              />
+            ))}
+          </CardContent>
+        )}
       </Card>
     </>
   );

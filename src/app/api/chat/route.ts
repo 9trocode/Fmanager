@@ -9,7 +9,8 @@ import {
   computeMonthlyCashFlow,
   computeCashRunway,
 } from "@/lib/aggregation";
-import { getBaseCurrency } from "@/lib/db/queries";
+import { getBaseCurrency, listRecentTransactions } from "@/lib/db/queries";
+import { convert } from "@/lib/fx";
 import { formatMoney } from "@/lib/format";
 import { monthlyEquivalent } from "@/lib/flows";
 
@@ -41,7 +42,7 @@ function fmt(value: number, currency: string): string {
 
 async function buildSystemPrompt(): Promise<string> {
   const baseCurrency = await getBaseCurrency();
-  const [decisions, accounts, grants, flows, summary, cashFlow, runway] =
+  const [decisions, accounts, grants, flows, summary, cashFlow, runway, recentTxs] =
     await Promise.all([
       db
         .select()
@@ -59,7 +60,41 @@ async function buildSystemPrompt(): Promise<string> {
       computeNetWorth(baseCurrency),
       computeMonthlyCashFlow(baseCurrency),
       computeCashRunway(baseCurrency),
+      listRecentTransactions(30),
     ]);
+
+  // Aggregate transactions in base currency.
+  let txIncomeBase = 0;
+  let txExpenseBase = 0;
+  const byCategory: Record<string, { income: number; expense: number }> = {};
+  for (const t of recentTxs) {
+    if (t.kind === "transfer") continue;
+    const inBase = await convert(t.amount, t.currency, baseCurrency);
+    const cat = t.category ?? "Uncategorized";
+    if (!byCategory[cat]) byCategory[cat] = { income: 0, expense: 0 };
+    if (t.kind === "income") {
+      txIncomeBase += inBase;
+      byCategory[cat].income += inBase;
+    } else if (t.kind === "expense") {
+      txExpenseBase += inBase;
+      byCategory[cat].expense += inBase;
+    }
+  }
+  const txNet = txIncomeBase - txExpenseBase;
+
+  // Top 3 transactions by absolute amount in base currency, excluding transfers.
+  const txWithBase = await Promise.all(
+    recentTxs
+      .filter((t) => t.kind !== "transfer")
+      .map(async (t) => ({
+        t,
+        baseAmount: await convert(t.amount, t.currency, baseCurrency),
+      })),
+  );
+  const accountNameById = new Map(accounts.map((a) => [a.id, a.name]));
+  const topTxs = txWithBase
+    .sort((a, b) => Math.abs(b.baseAmount) - Math.abs(a.baseAmount))
+    .slice(0, 3);
 
   const lines: string[] = [
     "You are a finance co-pilot for a founder. Sharp, direct, honest.",
@@ -139,6 +174,35 @@ async function buildSystemPrompt(): Promise<string> {
             .join(", ")
         : "(none)"
     }`,
+    "",
+    "## Transactions (last 30 days)",
+    recentTxs.length === 0
+      ? "(none logged)"
+      : [
+          `- Total income:   ${fmt(txIncomeBase, baseCurrency)}`,
+          `- Total expenses: ${fmt(txExpenseBase, baseCurrency)}`,
+          `- Net:            ${fmt(txNet, baseCurrency)}${txNet < 0 ? " (burning)" : ""}`,
+          "- Per-category breakdown:",
+          ...Object.entries(byCategory).map(([cat, v]) => {
+            const parts: string[] = [];
+            if (v.income > 0) parts.push(`+${fmt(v.income, baseCurrency)} in`);
+            if (v.expense > 0) parts.push(`−${fmt(v.expense, baseCurrency)} out`);
+            return `   · ${cat}: ${parts.join(", ")}`;
+          }),
+          topTxs.length
+            ? `- Largest single transactions: ${topTxs
+                .map(({ t, baseAmount }) => {
+                  const sign = t.kind === "income" ? "+" : "−";
+                  const accName =
+                    accountNameById.get(t.accountId) ?? `acc#${t.accountId}`;
+                  const cat = t.category ? ` [${t.category}]` : "";
+                  return `${sign}${fmt(Math.abs(baseAmount), baseCurrency)} on ${t.occurredAt} (${accName})${cat}`;
+                })
+                .join("; ")}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
   ];
 
   return lines.join("\n");

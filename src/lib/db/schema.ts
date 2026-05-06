@@ -123,3 +123,28 @@ export const settings = sqliteTable("settings", {
   value: text("value"),
   updatedAt: updatedAt(),
 });
+
+export const transactionKinds = ["expense", "income", "transfer"] as const;
+export type TransactionKind = (typeof transactionKinds)[number];
+
+export const transactions = sqliteTable("transactions", {
+  id: id(),
+  accountId: integer("account_id")
+    .notNull()
+    .references(() => accounts.id, { onDelete: "cascade" }),
+  // For transfers: optional destination account
+  destAccountId: integer("dest_account_id").references(() => accounts.id, {
+    onDelete: "set null",
+  }),
+  kind: text("kind", { enum: transactionKinds }).notNull(),
+  amount: real("amount").notNull(), // always positive; sign comes from kind
+  currency: text("currency").notNull(),
+  category: text("category"), // free-text; reuse the same suggestions as flows (lib/flows.ts)
+  occurredAt: text("occurred_at").notNull(), // ISO date YYYY-MM-DD
+  notes: text("notes"),
+  flowId: integer("flow_id").references(() => recurringFlows.id, {
+    onDelete: "set null",
+  }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});

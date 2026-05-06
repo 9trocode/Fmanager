@@ -8,6 +8,7 @@ import {
   Briefcase,
   TrendingUp,
   Repeat,
+  Receipt,
   Sparkles,
   Settings,
 } from "lucide-react";
@@ -18,6 +19,7 @@ const NAV = [
   { href: "/accounts", label: "Accounts", icon: Wallet },
   { href: "/equity", label: "Equity", icon: Briefcase },
   { href: "/cash-flow", label: "Cash flow", icon: Repeat },
+  { href: "/transactions", label: "Transactions", icon: Receipt },
   { href: "/projections", label: "Projections", icon: TrendingUp },
   { href: "/advisor", label: "Advisor", icon: Sparkles },
   { href: "/settings", label: "Settings", icon: Settings },
