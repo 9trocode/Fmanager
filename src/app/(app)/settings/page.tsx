@@ -17,6 +17,7 @@ import {
 } from "@/components/app/settings-forms";
 import { DecisionsManager } from "@/components/app/decisions-manager";
 import { FxRefreshButton } from "@/components/app/fx-refresh-button";
+import { AdminDataTools } from "@/components/app/admin-data-tools";
 import { getSetting, getSettings, listDecisions } from "@/lib/db/queries";
 
 export default async function SettingsPage() {
@@ -123,6 +124,22 @@ export default async function SettingsPage() {
                   Sign out
                 </Button>
               </form>
+            </CardContent>
+          </Card>
+
+          <Separator />
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Sample data</CardTitle>
+              <CardDescription>
+                Quickly populate a realistic founder dataset (multi-currency
+                accounts, three equity grants, three active decisions) — useful for
+                kicking the tires before entering your real numbers.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <AdminDataTools />
             </CardContent>
           </Card>
 
