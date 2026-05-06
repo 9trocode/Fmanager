@@ -8,6 +8,8 @@ import {
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
 import { AddTransactionDialog } from "@/components/app/add-transaction-dialog";
+import { QuickAddReceiptDialog } from "@/components/app/quick-add-receipt-dialog";
+import { QuickAddVoiceDialog } from "@/components/app/quick-add-voice-dialog";
 import { TransactionsFilters } from "@/components/app/transactions-filters";
 import { TransactionItem } from "@/components/app/transactions-list";
 import {
@@ -111,10 +113,21 @@ export default async function TransactionsPage({
         title="Transactions"
         description="Logged transactions adjust the effective balance of each account on top of its latest snapshot. Use these for day-to-day moves between snapshots."
         actions={
-          <AddTransactionDialog
-            accounts={accountOptions}
-            defaultAccountId={filter.accountId}
-          />
+          accountOptions.length > 0 ? (
+            <>
+              <QuickAddReceiptDialog accounts={accountOptions} />
+              <QuickAddVoiceDialog accounts={accountOptions} />
+              <AddTransactionDialog
+                accounts={accountOptions}
+                defaultAccountId={filter.accountId}
+              />
+            </>
+          ) : (
+            <AddTransactionDialog
+              accounts={accountOptions}
+              defaultAccountId={filter.accountId}
+            />
+          )
         }
       />
 
