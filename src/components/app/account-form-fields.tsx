@@ -2,6 +2,7 @@
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { MoneyInput } from "@/components/app/money-input";
 import {
   Select,
   SelectContent,
@@ -85,12 +86,11 @@ export function AccountFields({
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
             <Label htmlFor="opening_balance">Opening balance</Label>
-            <Input
+            <MoneyInput
               id="opening_balance"
               name="opening_balance"
-              type="number"
-              step="0.01"
-              defaultValue="0"
+              defaultValue={0}
+              allowNegative
               required
             />
           </div>

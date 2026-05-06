@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { MoneyInput } from "@/components/app/money-input";
 import {
   Select,
   SelectContent,
@@ -82,12 +83,9 @@ export function LogSpendDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="amount">Amount ({currency})</Label>
-              <Input
+              <MoneyInput
                 id="amount"
                 name="amount"
-                type="number"
-                step="0.01"
-                min="0"
                 required
                 autoFocus
               />

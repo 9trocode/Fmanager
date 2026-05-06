@@ -49,6 +49,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { MoneyInput } from "@/components/app/money-input";
 import {
   Select,
   SelectContent,
@@ -131,13 +132,10 @@ function FlowFields({
       <div className="grid grid-cols-3 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="amount">Amount</Label>
-          <Input
+          <MoneyInput
             id="amount"
             name="amount"
-            type="number"
-            step="0.01"
-            min="0"
-            defaultValue={defaults?.amount ?? ""}
+            defaultValue={defaults?.amount ?? null}
             required
           />
         </div>

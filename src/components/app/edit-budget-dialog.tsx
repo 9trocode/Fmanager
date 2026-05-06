@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { MoneyInput } from "@/components/app/money-input";
 import {
   Select,
   SelectContent,
@@ -78,12 +79,9 @@ export function EditBudgetDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="monthlyLimit">Monthly limit</Label>
-              <Input
+              <MoneyInput
                 id="monthlyLimit"
                 name="monthlyLimit"
-                type="number"
-                step="0.01"
-                min="0"
                 defaultValue={budget.monthlyLimit}
                 required
               />

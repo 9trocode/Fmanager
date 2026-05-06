@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { MoneyInput } from "@/components/app/money-input";
 import { addSnapshot } from "@/lib/actions/accounts";
 import { useRole } from "@/components/app/role-context";
 
@@ -58,11 +59,10 @@ export function AddSnapshotDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="value">Balance ({currency})</Label>
-              <Input
+              <MoneyInput
                 id="value"
                 name="value"
-                type="number"
-                step="0.01"
+                allowNegative
                 required
                 autoFocus
               />

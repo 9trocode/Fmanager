@@ -2,6 +2,7 @@
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { MoneyInput } from "@/components/app/money-input";
 import {
   Select,
   SelectContent,
@@ -79,25 +80,19 @@ export function SavingsGoalFields({
       <div className="grid grid-cols-3 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="target_amount">Target</Label>
-          <Input
+          <MoneyInput
             id="target_amount"
             name="target_amount"
-            type="number"
-            step="100"
-            min="0"
-            defaultValue={defaults?.targetAmount ?? ""}
-            placeholder="50000"
+            defaultValue={defaults?.targetAmount ?? null}
+            placeholder="50,000"
           />
           <p className="text-[10px] text-muted-foreground">Optional.</p>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="current_amount">Saved so far</Label>
-          <Input
+          <MoneyInput
             id="current_amount"
             name="current_amount"
-            type="number"
-            step="100"
-            min="0"
             defaultValue={defaults?.currentAmount ?? 0}
             required
           />
@@ -122,12 +117,9 @@ export function SavingsGoalFields({
       <div className="grid grid-cols-3 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="monthly_contribution">Monthly contribution</Label>
-          <Input
+          <MoneyInput
             id="monthly_contribution"
             name="monthly_contribution"
-            type="number"
-            step="50"
-            min="0"
             defaultValue={defaults?.monthlyContribution ?? 0}
             required
           />

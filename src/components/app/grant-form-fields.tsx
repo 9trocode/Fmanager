@@ -2,6 +2,7 @@
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { MoneyInput } from "@/components/app/money-input";
 import {
   Select,
   SelectContent,
@@ -90,34 +91,28 @@ export function GrantFields({ defaults }: { defaults?: GrantFieldsValue }) {
       <div className="grid grid-cols-3 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="strike_price">Strike</Label>
-          <Input
+          <MoneyInput
             id="strike_price"
             name="strike_price"
-            type="number"
-            step="0.0001"
-            defaultValue={defaults?.strikePrice ?? ""}
+            defaultValue={defaults?.strikePrice ?? null}
             placeholder="0.10"
           />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="fmv_per_share">FMV (409A)</Label>
-          <Input
+          <MoneyInput
             id="fmv_per_share"
             name="fmv_per_share"
-            type="number"
-            step="0.0001"
-            defaultValue={defaults?.fmvPerShare ?? ""}
+            defaultValue={defaults?.fmvPerShare ?? null}
             placeholder="2.50"
           />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="exit_price_per_share">Expected exit</Label>
-          <Input
+          <MoneyInput
             id="exit_price_per_share"
             name="exit_price_per_share"
-            type="number"
-            step="0.0001"
-            defaultValue={defaults?.exitPricePerShare ?? ""}
+            defaultValue={defaults?.exitPricePerShare ?? null}
             placeholder="20.00"
           />
         </div>
