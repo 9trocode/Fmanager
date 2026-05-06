@@ -1,4 +1,4 @@
-import { Wallet, ArrowUpRight, Plus } from "lucide-react";
+import { Wallet, Plus, Briefcase } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -11,18 +11,26 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
-import { SCENARIO_LABEL, SCENARIO_DESCRIPTION } from "@/lib/scenarios";
+import { AddAccountDialog } from "@/components/app/add-account-dialog";
+import { AddGrantDialog } from "@/components/app/add-grant-dialog";
+import { getBaseCurrency } from "@/lib/db/queries";
+import {
+  computeNetWorth,
+  CATEGORY_LABEL,
+  CATEGORY_DISPLAY_ORDER,
+  type CategoryKey,
+} from "@/lib/aggregation";
+import {
+  SCENARIOS,
+  SCENARIO_LABEL,
+  SCENARIO_DESCRIPTION,
+  type Scenario,
+} from "@/lib/scenarios";
 import { formatMoney } from "@/lib/format";
 
-export default function DashboardPage() {
-  const baseCurrency = "USD";
-
-  // Stub values until real data flows through.
-  const scenarios = {
-    floor: 0,
-    expected: 0,
-    liquid: 0,
-  };
+export default async function DashboardPage() {
+  const baseCurrency = await getBaseCurrency();
+  const summary = await computeNetWorth(baseCurrency);
 
   return (
     <>
@@ -31,74 +39,223 @@ export default function DashboardPage() {
         description="The honest balance sheet — three scenarios, one base currency."
         actions={
           <>
-            <Button variant="outline" size="sm">
-              <Plus className="size-4" />
-              Add account
-            </Button>
-            <Button size="sm">
-              <ArrowUpRight className="size-4" />
-              Snapshot
-            </Button>
+            <AddAccountDialog
+              trigger={
+                <Button variant="outline" size="sm">
+                  <Plus className="size-4" />
+                  Add account
+                </Button>
+              }
+            />
+            <AddGrantDialog />
           </>
         }
       />
 
-      <Tabs defaultValue="floor" className="space-y-6">
-        <div className="flex items-center justify-between">
-          <TabsList>
-            <TabsTrigger value="floor">{SCENARIO_LABEL.floor}</TabsTrigger>
-            <TabsTrigger value="expected">{SCENARIO_LABEL.expected}</TabsTrigger>
-            <TabsTrigger value="liquid">{SCENARIO_LABEL.liquid}</TabsTrigger>
-          </TabsList>
-          <Badge variant="secondary" className="font-mono text-[11px]">
-            base · {baseCurrency}
-          </Badge>
-        </div>
-
-        {(["floor", "expected", "liquid"] as const).map((s) => (
-          <TabsContent key={s} value={s} className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardDescription>{SCENARIO_DESCRIPTION[s]}</CardDescription>
-                <CardTitle className="text-4xl font-semibold tracking-tight tabular-nums mt-2">
-                  {formatMoney(scenarios[s], baseCurrency)}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-2 border-t border-border">
-                {[
-                  { label: "Cash", value: 0 },
-                  { label: "Brokerage", value: 0 },
-                  { label: "Crypto", value: 0 },
-                  { label: "Equity", value: 0 },
-                ].map(({ label, value }) => (
-                  <div key={label} className="space-y-1">
-                    <div className="text-xs text-muted-foreground uppercase tracking-wide">
-                      {label}
-                    </div>
-                    <div className="font-mono text-sm tabular-nums">
-                      {formatMoney(value, baseCurrency, { compact: true })}
-                    </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          </TabsContent>
-        ))}
-      </Tabs>
-
-      <div className="mt-8">
+      {!summary.hasData ? (
         <EmptyState
           icon={Wallet}
-          title="No accounts yet"
-          description="Add your first account to see your net worth across currencies and scenarios."
+          title="No data yet"
+          description="Add your first account or equity grant to see your net worth across scenarios and currencies."
           action={
-            <Button>
-              <Plus className="size-4" />
-              Add your first account
-            </Button>
+            <div className="flex gap-2">
+              <AddAccountDialog />
+              <AddGrantDialog />
+            </div>
           }
         />
-      </div>
+      ) : (
+        <Tabs defaultValue="floor" className="space-y-6">
+          <div className="flex items-center justify-between">
+            <TabsList>
+              {SCENARIOS.map((s) => (
+                <TabsTrigger key={s} value={s}>
+                  {SCENARIO_LABEL[s]}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+            <Badge variant="secondary" className="font-mono text-[11px]">
+              base · {baseCurrency}
+            </Badge>
+          </div>
+
+          {SCENARIOS.map((s) => (
+            <TabsContent key={s} value={s} className="space-y-6">
+              <ScenarioHero
+                scenario={s}
+                summary={summary}
+                baseCurrency={baseCurrency}
+              />
+              <CategoryBreakdown
+                scenario={s}
+                summary={summary}
+                baseCurrency={baseCurrency}
+              />
+              <CurrencyBreakdown
+                scenario={s}
+                summary={summary}
+                baseCurrency={baseCurrency}
+              />
+            </TabsContent>
+          ))}
+        </Tabs>
+      )}
     </>
+  );
+}
+
+function ScenarioHero({
+  scenario,
+  summary,
+  baseCurrency,
+}: {
+  scenario: Scenario;
+  summary: ReturnType<typeof computeNetWorth> extends Promise<infer T> ? T : never;
+  baseCurrency: string;
+}) {
+  const value = summary.totals[scenario];
+  const others = SCENARIOS.filter((s) => s !== scenario);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardDescription>{SCENARIO_DESCRIPTION[scenario]}</CardDescription>
+        <CardTitle className="text-5xl font-semibold tracking-tight tabular-nums mt-2">
+          {formatMoney(value, baseCurrency)}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="border-t border-border pt-4 flex items-center gap-6 text-xs">
+        {others.map((o) => {
+          const diff = summary.totals[o] - value;
+          return (
+            <div key={o}>
+              <span className="text-muted-foreground">vs {SCENARIO_LABEL[o]}: </span>
+              <span
+                className={
+                  "font-mono tabular-nums " +
+                  (diff > 0 ? "text-emerald-400" : diff < 0 ? "text-destructive" : "")
+                }
+              >
+                {formatMoney(diff, baseCurrency, { signed: true, compact: true })}
+              </span>
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
+  );
+}
+
+function CategoryBreakdown({
+  scenario,
+  summary,
+  baseCurrency,
+}: {
+  scenario: Scenario;
+  summary: ReturnType<typeof computeNetWorth> extends Promise<infer T> ? T : never;
+  baseCurrency: string;
+}) {
+  const cats = summary.byCategory[scenario];
+  const rows = CATEGORY_DISPLAY_ORDER.filter(
+    (k): k is CategoryKey => cats[k] !== 0,
+  );
+  const total = summary.totals[scenario];
+
+  if (rows.length === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">By category</CardTitle>
+        <CardDescription>What&apos;s in the pile, in {baseCurrency}.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2.5 pt-1">
+        {rows.map((k) => {
+          const v = cats[k];
+          const pct = total !== 0 ? Math.abs((v / total) * 100) : 0;
+          const isLiability = k === "loan";
+          return (
+            <div key={k} className="space-y-1">
+              <div className="flex items-center justify-between text-sm">
+                <span
+                  className={
+                    "flex items-center gap-2 " +
+                    (isLiability ? "text-destructive" : "")
+                  }
+                >
+                  {CATEGORY_LABEL[k]}
+                  <span className="text-[10px] text-muted-foreground font-mono">
+                    {pct.toFixed(0)}%
+                  </span>
+                </span>
+                <span
+                  className={
+                    "font-mono tabular-nums " +
+                    (v < 0 ? "text-destructive" : "")
+                  }
+                >
+                  {formatMoney(v, baseCurrency)}
+                </span>
+              </div>
+              <div className="h-1 rounded-full bg-secondary overflow-hidden">
+                <div
+                  className={isLiability ? "h-full bg-destructive" : "h-full bg-primary"}
+                  style={{ width: `${Math.min(100, pct)}%` }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
+  );
+}
+
+function CurrencyBreakdown({
+  scenario,
+  summary,
+  baseCurrency,
+}: {
+  scenario: Scenario;
+  summary: ReturnType<typeof computeNetWorth> extends Promise<infer T> ? T : never;
+  baseCurrency: string;
+}) {
+  const currencies = summary.byCurrency[scenario];
+  const rows = Object.entries(currencies)
+    .filter(([, v]) => v !== 0)
+    .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+  if (rows.length === 0) return null;
+  const total = rows.reduce((sum, [, v]) => sum + Math.abs(v), 0);
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Briefcase className="size-4 text-muted-foreground" />
+          By currency
+        </CardTitle>
+        <CardDescription>
+          Where your value lives. Each row is converted into {baseCurrency} for comparison.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-1">
+        {rows.map(([currency, value]) => {
+          const pct = total > 0 ? (Math.abs(value) / total) * 100 : 0;
+          return (
+            <div key={currency} className="space-y-1">
+              <div className="flex items-baseline justify-between">
+                <span className="font-mono text-sm">{currency}</span>
+                <span className="text-[10px] text-muted-foreground font-mono">
+                  {pct.toFixed(0)}%
+                </span>
+              </div>
+              <div className="font-mono tabular-nums text-sm">
+                {formatMoney(value, baseCurrency, { compact: true })}
+              </div>
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
   );
 }
