@@ -9,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import { SUPPORTED_CURRENCIES } from "@/lib/format";
 import { GRANT_TYPES, GRANT_TYPE_LABEL, type GrantType } from "@/lib/grant-types";
 
@@ -21,6 +22,11 @@ export type GrantFieldsValue = {
   currency?: string;
   fmvPerShare?: number | null;
   exitPricePerShare?: number | null;
+  vestingStartDate?: string | null;
+  vestingMonths?: number | null;
+  cliffMonths?: number | null;
+  expectedExitMonths?: number | null;
+  taxRatePct?: number | null;
   grantedAt?: string | null;
   vestingNotes?: string | null;
 };
@@ -69,7 +75,7 @@ export function GrantFields({ defaults }: { defaults?: GrantFieldsValue }) {
           />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="vested_shares">Vested shares</Label>
+          <Label htmlFor="vested_shares">Vested today</Label>
           <Input
             id="vested_shares"
             name="vested_shares"
@@ -143,6 +149,90 @@ export function GrantFields({ defaults }: { defaults?: GrantFieldsValue }) {
           />
         </div>
       </div>
+
+      <Separator className="my-2" />
+
+      <details className="group">
+        <summary className="cursor-pointer text-sm font-medium select-none flex items-center justify-between">
+          <span>
+            Vesting & exit assumptions{" "}
+            <span className="text-muted-foreground font-normal">(optional)</span>
+          </span>
+          <span className="text-[11px] text-muted-foreground group-open:rotate-90 transition-transform">
+            ›
+          </span>
+        </summary>
+
+        <div className="space-y-4 mt-4">
+          <div className="grid grid-cols-3 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="vesting_start_date">Vesting start</Label>
+              <Input
+                id="vesting_start_date"
+                name="vesting_start_date"
+                type="date"
+                defaultValue={defaults?.vestingStartDate ?? ""}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="vesting_months">Vest length (mo)</Label>
+              <Input
+                id="vesting_months"
+                name="vesting_months"
+                type="number"
+                step="1"
+                min="1"
+                defaultValue={defaults?.vestingMonths ?? 48}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="cliff_months">Cliff (mo)</Label>
+              <Input
+                id="cliff_months"
+                name="cliff_months"
+                type="number"
+                step="1"
+                min="0"
+                defaultValue={defaults?.cliffMonths ?? 12}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="expected_exit_months">Expected exit (months from today)</Label>
+              <Input
+                id="expected_exit_months"
+                name="expected_exit_months"
+                type="number"
+                step="1"
+                min="0"
+                defaultValue={defaults?.expectedExitMonths ?? ""}
+                placeholder="36"
+              />
+              <p className="text-[10px] text-muted-foreground">
+                If set, Expected scenario stays at $0 until this month.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="tax_rate_pct">Tax rate (%)</Label>
+              <Input
+                id="tax_rate_pct"
+                name="tax_rate_pct"
+                type="number"
+                step="0.5"
+                min="0"
+                max="100"
+                defaultValue={defaults?.taxRatePct ?? ""}
+                placeholder="20"
+              />
+              <p className="text-[10px] text-muted-foreground">
+                LTCG ~20%, ordinary ~37%, QSBS 0%.
+              </p>
+            </div>
+          </div>
+        </div>
+      </details>
 
       <div className="space-y-1.5">
         <Label htmlFor="vesting_notes">Vesting notes (optional)</Label>

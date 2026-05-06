@@ -40,6 +40,13 @@ function parseDate(value: FormDataEntryValue | null): string | null {
   return raw || null;
 }
 
+function parseOptionalInt(value: FormDataEntryValue | null): number | null {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const n = Math.floor(Number(raw));
+  return Number.isFinite(n) ? n : null;
+}
+
 function commonFields(formData: FormData) {
   return {
     company: String(formData.get("company") ?? "").trim(),
@@ -50,6 +57,11 @@ function commonFields(formData: FormData) {
     currency: String(formData.get("currency") ?? "USD").toUpperCase(),
     fmvPerShare: parseOptionalAmount(formData.get("fmv_per_share")),
     exitPricePerShare: parseOptionalAmount(formData.get("exit_price_per_share")),
+    vestingStartDate: parseDate(formData.get("vesting_start_date")),
+    vestingMonths: parseOptionalInt(formData.get("vesting_months")),
+    cliffMonths: parseOptionalInt(formData.get("cliff_months")),
+    expectedExitMonths: parseOptionalInt(formData.get("expected_exit_months")),
+    taxRatePct: parseOptionalAmount(formData.get("tax_rate_pct")),
     grantedAt: parseDate(formData.get("granted_at")),
     vestingNotes: String(formData.get("vesting_notes") ?? "").trim() || null,
   };

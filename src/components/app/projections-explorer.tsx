@@ -23,9 +23,9 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   projectNetWorth,
+  type ProjectionGrant,
   type ProjectionInputs,
 } from "@/lib/projections";
-import type { Scenario } from "@/lib/scenarios";
 import { formatMoney } from "@/lib/format";
 
 const chartConfig = {
@@ -36,12 +36,14 @@ const chartConfig = {
 
 export function ProjectionsExplorer({
   baseCurrency,
-  startTotals,
-  startGrants,
+  startNonGrantInBase,
+  grants,
+  fxToBase,
 }: {
   baseCurrency: string;
-  startTotals: Record<Scenario, number>;
-  startGrants: Record<Scenario, number>;
+  startNonGrantInBase: number;
+  grants: ProjectionGrant[];
+  fxToBase: Record<string, number>;
 }) {
   const [inputs, setInputs] = useState<ProjectionInputs>({
     monthlyContribution: 3000,
@@ -50,11 +52,12 @@ export function ProjectionsExplorer({
   });
 
   const points = useMemo(
-    () => projectNetWorth(startTotals, startGrants, inputs),
-    [startTotals, startGrants, inputs],
+    () => projectNetWorth(startNonGrantInBase, grants, fxToBase, inputs),
+    [startNonGrantInBase, grants, fxToBase, inputs],
   );
 
   const last = points[points.length - 1];
+  const first = points[0];
 
   return (
     <div className="grid lg:grid-cols-3 gap-6">
@@ -65,8 +68,8 @@ export function ProjectionsExplorer({
             Inputs
           </CardTitle>
           <CardDescription>
-            Returns apply to non-grant holdings; equity scenarios stay at their
-            per-scenario value.
+            Returns apply to non-grant holdings. Equity uses each grant&apos;s
+            vesting curve, exit timing, and tax rate.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -129,11 +132,12 @@ export function ProjectionsExplorer({
             In {(inputs.horizonMonths / 12).toFixed(1)} years
           </CardTitle>
           <CardDescription>
-            Three lines: Floor (equity = 0), Liquid (current FMV), Expected (target exit).
+            Floor (equity = 0). Liquid (vested × FMV, post-tax). Expected
+            (full grant × exit price at exit month, post-tax).
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {last ? (
+          {last && first ? (
             <div className="grid grid-cols-3 gap-4 mb-4">
               {(["floor", "liquid", "expected"] as const).map((s) => (
                 <div key={s} className="space-y-0.5">
@@ -150,7 +154,7 @@ export function ProjectionsExplorer({
                     {formatMoney(last[s], baseCurrency, { compact: true })}
                   </div>
                   <div className="text-[10px] text-muted-foreground">
-                    {formatMoney(last[s] - startTotals[s], baseCurrency, {
+                    {formatMoney(last[s] - first[s], baseCurrency, {
                       compact: true,
                       signed: true,
                     })}

@@ -160,6 +160,33 @@ export default async function GrantDetailPage({
                   : "—",
             },
             { label: "Granted on", value: grant.grantedAt ?? "—" },
+            {
+              label: "Vesting start",
+              value: grant.vestingStartDate ?? "—",
+            },
+            {
+              label: "Vest length",
+              value:
+                grant.vestingMonths != null
+                  ? `${grant.vestingMonths} mo`
+                  : "—",
+            },
+            {
+              label: "Cliff",
+              value: grant.cliffMonths != null ? `${grant.cliffMonths} mo` : "—",
+            },
+            {
+              label: "Expected exit",
+              value:
+                grant.expectedExitMonths != null
+                  ? `in ${grant.expectedExitMonths} mo`
+                  : "—",
+            },
+            {
+              label: "Tax rate",
+              value:
+                grant.taxRatePct != null ? `${grant.taxRatePct}%` : "—",
+            },
           ].map((row) => (
             <div key={row.label} className="space-y-0.5">
               <div className="text-[10px] uppercase tracking-wide text-muted-foreground">

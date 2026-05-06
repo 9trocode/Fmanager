@@ -14,13 +14,13 @@ import {
 async function login(formData: FormData) {
   "use server";
   const password = String(formData.get("password") ?? "");
-  const next = String(formData.get("next") ?? "/");
+  const next = String(formData.get("next") ?? "/dashboard");
 
   if (!verifyPassword(password)) {
     redirect(`/login?error=1&next=${encodeURIComponent(next)}`);
   }
   await createSession();
-  redirect(next || "/");
+  redirect(next || "/dashboard");
 }
 
 export default async function LoginPage({
@@ -28,11 +28,11 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<{ error?: string; next?: string }>;
 }) {
-  if (await isAuthenticated()) redirect("/");
+  if (await isAuthenticated()) redirect("/dashboard");
 
   const params = await searchParams;
   const hasError = params.error === "1";
-  const next = params.next ?? "/";
+  const next = params.next ?? "/dashboard";
 
   return (
     <main className="min-h-screen grid place-items-center px-4">

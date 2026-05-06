@@ -28,6 +28,11 @@ export function EditGrantDialog({
     currency: string;
     fmvPerShare: number | null;
     exitPricePerShare: number | null;
+    vestingStartDate: string | null;
+    vestingMonths: number | null;
+    cliffMonths: number | null;
+    expectedExitMonths: number | null;
+    taxRatePct: number | null;
     grantedAt: string | null;
     vestingNotes: string | null;
   };

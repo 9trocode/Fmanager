@@ -2,26 +2,23 @@ import { TrendingUp } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
 import { ProjectionsExplorer } from "@/components/app/projections-explorer";
-import { getBaseCurrency } from "@/lib/db/queries";
+import { getBaseCurrency, listGrants } from "@/lib/db/queries";
 import { computeNetWorth } from "@/lib/aggregation";
-import { listGrants } from "@/lib/db/queries";
-import { equityValueForScenario, SCENARIOS } from "@/lib/scenarios";
-import { convert } from "@/lib/fx";
-import type { Scenario } from "@/lib/scenarios";
+import { getRate } from "@/lib/fx";
 
 export default async function ProjectionsPage() {
   const baseCurrency = await getBaseCurrency();
   const summary = await computeNetWorth(baseCurrency);
-
   const grants = await listGrants();
-  const startGrants: Record<Scenario, number> = { floor: 0, expected: 0, liquid: 0 };
-  for (const g of grants) {
-    for (const s of SCENARIOS) {
-      const value = equityValueForScenario(g, s);
-      const inBase = await convert(value, g.currency, baseCurrency);
-      startGrants[s] += inBase;
-    }
+
+  const uniqueCurrencies = Array.from(new Set(grants.map((g) => g.currency)));
+  const fxToBase: Record<string, number> = {};
+  for (const c of uniqueCurrencies) {
+    fxToBase[c] = await getRate(c, baseCurrency);
   }
+
+  const startGrantsInBase = summary.byCategory.liquid.grant; // current base-converted liquid grant total
+  const startNonGrant = summary.totals.liquid - startGrantsInBase;
 
   return (
     <>
@@ -39,8 +36,9 @@ export default async function ProjectionsPage() {
       ) : (
         <ProjectionsExplorer
           baseCurrency={baseCurrency}
-          startTotals={summary.totals}
-          startGrants={startGrants}
+          startNonGrantInBase={startNonGrant}
+          grants={grants}
+          fxToBase={fxToBase}
         />
       )}
     </>

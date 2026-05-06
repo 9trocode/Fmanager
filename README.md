@@ -51,6 +51,27 @@ docker compose cp app:/data ./backup-$(date +%Y%m%d)
 
 To restore: stop the container, replace the volume contents, restart.
 
+### Multi-arch images
+
+The Dockerfile is multi-arch friendly. To build for both amd64 and arm64 (e.g.
+to push a single tag that works on Mac M-series, Raspberry Pi, and standard
+x86 cloud VMs), use the buildx helper:
+
+```bash
+# Build locally for your host architecture (load into docker)
+pnpm docker:buildx
+
+# Or push a real multi-arch image to a registry
+IMAGE=ghcr.io/<you>/founder-finance:latest scripts/build-image.sh --push
+
+# Or with explicit platforms
+scripts/build-image.sh --platforms linux/amd64,linux/arm64 --push ghcr.io/<you>/founder-finance:latest
+```
+
+The script creates a dedicated buildx builder (`founder-finance-builder`) and
+falls back to your host platform if you ask for multi-arch with `--load`
+(Docker can't load a manifest list — only registries can).
+
 ## Configuration
 
 All config is via env vars:
