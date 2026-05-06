@@ -16,13 +16,13 @@ const STARTER_DECISIONS = [
     question:
       "Should I early-exercise my vested options now to start the long-term cap-gains clock, or hold and avoid the AMT/cash hit?",
     context:
-      "Decision depends on strike, FMV spread, and how much liquid USD I can actually part with without dropping below floor runway.",
+      "Decision depends on strike, FMV spread, and how much liquid USD I can actually part with without thinning my personal cash coverage.",
   },
   {
     question:
-      "Assuming my company equity is worth $0, what is my honest monthly burn floor — and am I above or below the 18-month runway threshold?",
+      "Assuming my company equity is worth $0, can my personal liquid savings sustain at least 12 months of living expenses without selling other assets?",
     context:
-      "Floor scenario must sustain at least 18 months of personal living without raising. If not, every other decision (exercise, hedge, lifestyle) gets re-prioritized.",
+      "Personal sustainability check. Floor scenario must cover personal life independent of company outcomes. If not, every other decision (exercise, hedge, lifestyle, savings goals) needs to be re-prioritized to fix this first.",
   },
 ];
 

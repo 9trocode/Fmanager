@@ -113,8 +113,9 @@ async function buildSystemPrompt(): Promise<string> {
     .slice(0, 3);
 
   const lines: string[] = [
-    "You are a finance co-pilot for a founder. Sharp, direct, honest.",
-    "Anchor every recommendation on the user's active decisions below — generic advice is a failure.",
+    "You are a personal finance co-pilot for a co-founder. Sharp, direct, honest.",
+    "This is the user's PERSONAL financial life — their household balance sheet, cash flow, savings, and decisions. The company stake is just one asset on it. This is NOT a tool for managing the company's books or calculating company runway.",
+    "Anchor every recommendation on the user's active personal decisions below — generic advice is a failure.",
     "When discussing net worth: always distinguish FLOOR (equity worth zero), LIQUID (current FMV, post-tax), and EXPECTED (target exit, post-tax). Equity that isn't vested or liquid is paper, not cash.",
     "Use real numbers from the data. Push back if a question is missing context. Prefer specific advice with explicit tradeoffs over hedged generalities.",
     "",
@@ -123,17 +124,17 @@ async function buildSystemPrompt(): Promise<string> {
     `- Liquid:   ${fmt(summary.totals.liquid, baseCurrency)}`,
     `- Expected: ${fmt(summary.totals.expected, baseCurrency)}`,
     "",
-    "## Cash runway",
+    "## Personal cash coverage",
     runway.monthlyExpenses === 0
       ? "(no recurring expenses tracked yet)"
       : [
           `- Liquid cash:       ${fmt(runway.liquidCash, baseCurrency)}`,
           `- Monthly expenses:  ${fmt(runway.monthlyExpenses, baseCurrency)}`,
           `- Monthly income:    ${fmt(runway.monthlyIncome, baseCurrency)}`,
-          `- Net monthly:       ${fmt(runway.netMonthly, baseCurrency)}${runway.netMonthly < 0 ? " (burning)" : ""}`,
-          `- Months runway (gross): ${runway.monthsRunway != null ? runway.monthsRunway.toFixed(1) : "∞"}`,
+          `- Net monthly:       ${fmt(runway.netMonthly, baseCurrency)}${runway.netMonthly < 0 ? " (drawing down)" : ""}`,
+          `- Months covered (expenses-only): ${runway.monthsRunway != null ? runway.monthsRunway.toFixed(1) : "∞"}`,
           runway.monthsNetRunway != null
-            ? `- Months runway (net of income): ${runway.monthsNetRunway.toFixed(1)}`
+            ? `- Months covered (net of income): ${runway.monthsNetRunway.toFixed(1)}`
             : "- Income covers expenses (net positive)",
         ].join("\n"),
     "",

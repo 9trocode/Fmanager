@@ -257,9 +257,9 @@ const DECISIONS = [
   },
   {
     question:
-      "Assuming Founder Inc equity is worth $0, what is my honest monthly burn floor — and am I above or below the 18-month runway threshold?",
+      "Assuming my Founder Inc equity is worth $0, can my personal liquid savings sustain at least 12 months of living expenses without selling other assets?",
     context:
-      "Floor scenario must sustain at least 18 months of personal living without raising. If not, every other decision (exercise, hedge, lifestyle) gets re-prioritized.",
+      "Personal sustainability check. Floor scenario must cover personal life independent of company outcomes. If not, every other decision (exercise, hedge, lifestyle, savings goals) needs to be re-prioritized to fix this first.",
   },
 ];
 

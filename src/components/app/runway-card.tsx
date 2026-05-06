@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Flame } from "lucide-react";
+import { ArrowRight, ShieldCheck } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -14,10 +14,10 @@ import type { RunwaySummary } from "@/lib/aggregation";
 
 function classify(months: number | null) {
   if (months == null) return { label: "—", tone: "neutral" as const };
-  if (months < 6) return { label: "Critical", tone: "critical" as const };
-  if (months < 12) return { label: "Tight", tone: "warn" as const };
-  if (months < 18) return { label: "OK", tone: "ok" as const };
-  return { label: "Healthy", tone: "good" as const };
+  if (months < 6) return { label: "Tight", tone: "critical" as const };
+  if (months < 12) return { label: "OK", tone: "warn" as const };
+  if (months < 18) return { label: "Comfortable", tone: "ok" as const };
+  return { label: "Strong", tone: "good" as const };
 }
 
 const TONE_STYLES = {
@@ -35,11 +35,11 @@ export function RunwayCard({ runway }: { runway: RunwaySummary }) {
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardDescription className="flex items-center gap-2">
-              <Flame className="size-3.5" />
-              Cash runway
+              <ShieldCheck className="size-3.5" />
+              Months covered
             </CardDescription>
             <Badge variant="outline" className="text-[10px]">
-              no flows
+              no expenses
             </Badge>
           </div>
           <CardTitle className="text-3xl font-semibold tabular-nums mt-1 text-muted-foreground">
@@ -49,7 +49,7 @@ export function RunwayCard({ runway }: { runway: RunwaySummary }) {
         <CardContent className="border-t border-border pt-3">
           <Button asChild variant="outline" size="sm">
             <Link href="/cash-flow">
-              Add recurring flows <ArrowRight className="size-4" />
+              Add recurring expenses <ArrowRight className="size-4" />
             </Link>
           </Button>
         </CardContent>
@@ -71,8 +71,8 @@ export function RunwayCard({ runway }: { runway: RunwaySummary }) {
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardDescription className="flex items-center gap-2">
-            <Flame className="size-3.5" />
-            Cash runway
+            <ShieldCheck className="size-3.5" />
+            Months covered
           </CardDescription>
           <Badge
             variant={tone === "critical" ? "destructive" : "secondary"}
@@ -88,8 +88,9 @@ export function RunwayCard({ runway }: { runway: RunwaySummary }) {
         </CardTitle>
         <CardDescription className="font-mono text-[11px]">
           {formatMoney(runway.liquidCash, runway.baseCurrency, { compact: true })}{" "}
-          liquid · {formatMoney(runway.monthlyExpenses, runway.baseCurrency, { compact: true })}
-          /mo burn
+          liquid covers{" "}
+          {formatMoney(runway.monthlyExpenses, runway.baseCurrency, { compact: true })}
+          /mo of expenses
         </CardDescription>
       </CardHeader>
       <CardContent className="border-t border-border pt-3 space-y-2">
@@ -123,7 +124,7 @@ export function RunwayCard({ runway }: { runway: RunwaySummary }) {
         runway.monthsRunway != null &&
         runway.monthsNetRunway > runway.monthsRunway ? (
           <p className="text-[11px] text-muted-foreground leading-snug">
-            Net of income, runway extends to{" "}
+            With income factored in, coverage extends to{" "}
             <span className="font-mono tabular-nums">
               {runway.monthsNetRunway >= 60
                 ? `${(runway.monthsNetRunway / 12).toFixed(0)}+ y`

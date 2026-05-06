@@ -1,20 +1,23 @@
 # Founder Finance
 
-> Self-hosted, open-source net worth tool for founders. Multi-currency, three-scenario equity, AI advisor anchored on your real decisions.
+> Self-hosted, open-source **personal finance** tool for founders. Manage your whole financial life — accounts, transactions, budgets, savings goals, recurring flows — with multi-currency support and an AI advisor that understands your equity is just one asset on your personal balance sheet.
 
 ## Why this exists
 
-Founders carry weird balance sheets: NGN/USD/EUR cash, brokerage in two jurisdictions, crypto, and a giant slab of private company equity that may or may not ever be liquid. Existing tools either ignore one of those buckets, treat private equity dishonestly (one paper number, taken seriously), or hide the useful features behind a premium tier.
+This is **personal finance management for a co-founder**, not a tool for managing the company's books. Your stake in the company you founded is one line item among many — alongside cash in multiple currencies, brokerage accounts, crypto, real estate, retirement, debts, and the day-to-day spending that fills out a real human life.
 
-This is the un-premium version: **truly free, founder-grade, self-hosted, actually beautiful.**
+Existing personal finance tools either ignore private equity entirely, treat it dishonestly (one paper number, taken seriously), or hide useful features behind a premium tier. This is the un-premium version: **truly free, founder-aware, self-hosted, actually beautiful.**
 
 ## What it does
 
 - **Multi-currency net worth** — NGN, USD, EUR, GBP, CAD, CHF, JPY first-class. Live FX from a free provider.
 - **Three-scenario equity** — every grant computes Floor (zero), Liquid (current FMV), Expected (target exit). Decisions are made against the floor, not the ceiling.
-- **Projections** — pick a monthly contribution and an expected return; see all three scenarios chart out side-by-side.
-- **AI advisor** — bring your own Anthropic key. The advisor is seeded with your three real financial decisions and your full balance sheet context. Not generic.
-- **Single-admin auth** — one password set via env var. No multi-tenant, no OAuth, no SSO. It's your tool, on your box.
+- **Personal cash flow** — recurring income and expenses, plus per-transaction logging with AI receipt scan and voice input.
+- **Budgets** — per-category monthly limits with progress tracking and over-budget alerts.
+- **Savings goals** — named targets with monthly contributions, projection charts, and a net-worth-at-completion view.
+- **Projections** — pick a monthly contribution and expected return; see all three net-worth scenarios charted side-by-side.
+- **AI advisor** — bring your own Anthropic key. The advisor is seeded with your real financial decisions and full personal balance sheet context. It explicitly knows this is your personal life, not the company books.
+- **Single-admin auth** — one password set via env var, plus an optional read-only viewer password for sharing with a partner. No multi-tenant, no OAuth, no SSO. It's your tool, on your box.
 
 ## Quick start (local dev)
 
