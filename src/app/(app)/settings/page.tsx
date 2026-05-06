@@ -16,12 +16,14 @@ import {
   BaseCurrencyForm,
 } from "@/components/app/settings-forms";
 import { DecisionsManager } from "@/components/app/decisions-manager";
-import { getSettings, listDecisions } from "@/lib/db/queries";
+import { FxRefreshButton } from "@/components/app/fx-refresh-button";
+import { getSetting, getSettings, listDecisions } from "@/lib/db/queries";
 
 export default async function SettingsPage() {
-  const [settings, decisions] = await Promise.all([
+  const [settings, decisions, fxLastRefresh] = await Promise.all([
     getSettings(["base_currency", "anthropic_api_key", "advisor_model"]),
     listDecisions(),
+    getSetting("fx_last_refresh" as never),
   ]);
 
   return (
@@ -54,6 +56,27 @@ export default async function SettingsPage() {
             </CardHeader>
             <CardContent>
               <BaseCurrencyForm current={settings.base_currency ?? "USD"} />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">FX rates</CardTitle>
+              <CardDescription>
+                Free provider (open.er-api.com). Refresh manually; rates are cached for
+                12 hours otherwise.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex items-center gap-3">
+              <FxRefreshButton base={settings.base_currency ?? "USD"} />
+              {fxLastRefresh ? (
+                <span className="text-xs text-muted-foreground font-mono">
+                  last: {new Date(fxLastRefresh).toLocaleString()}
+                </span>
+              ) : (
+                <span className="text-xs text-muted-foreground">
+                  never refreshed — using fallback rates
+                </span>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
