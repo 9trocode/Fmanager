@@ -133,6 +133,26 @@ export const settings = sqliteTable("settings", {
 export const transactionKinds = ["expense", "income", "transfer"] as const;
 export type TransactionKind = (typeof transactionKinds)[number];
 
+export const savingsGoals = sqliteTable("savings_goals", {
+  id: id(),
+  name: text("name").notNull(),
+  category: text("category"),
+  targetAmount: real("target_amount"),
+  currentAmount: real("current_amount").notNull().default(0),
+  currency: text("currency").notNull(),
+  monthlyContribution: real("monthly_contribution").notNull().default(0),
+  expectedReturnPct: real("expected_return_pct").notNull().default(0),
+  horizonMonths: integer("horizon_months").notNull().default(12),
+  startedAt: text("started_at").notNull(),
+  accountId: integer("account_id").references(() => accounts.id, {
+    onDelete: "set null",
+  }),
+  notes: text("notes"),
+  archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
 export const budgets = sqliteTable(
   "budgets",
   {

@@ -12,6 +12,7 @@ import {
   Sparkles,
   Settings,
   Target,
+  PiggyBank,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -21,6 +22,7 @@ const NAV = [
   { href: "/equity", label: "Equity", icon: Briefcase },
   { href: "/cash-flow", label: "Cash flow", icon: Repeat },
   { href: "/budgets", label: "Budgets", icon: Target },
+  { href: "/savings", label: "Savings", icon: PiggyBank },
   { href: "/transactions", label: "Transactions", icon: Receipt },
   { href: "/projections", label: "Projections", icon: TrendingUp },
   { href: "/advisor", label: "Advisor", icon: Sparkles },

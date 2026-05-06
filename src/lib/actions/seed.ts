@@ -192,6 +192,56 @@ const BUDGETS: Array<{
   { category: "Housing", monthlyLimit: 1900, currency: "USD", notes: "Mortgage + housing fees." },
 ];
 
+const SAVINGS_GOALS: Array<{
+  name: string;
+  category: string | null;
+  targetAmount: number | null;
+  currentAmount: number;
+  currency: string;
+  monthlyContribution: number;
+  expectedReturnPct: number;
+  horizonMonths: number;
+  startedAt: string;
+  notes?: string;
+}> = [
+  {
+    name: "Emergency fund",
+    category: "Emergency fund",
+    targetAmount: 30_000,
+    currentAmount: 12_500,
+    currency: "USD",
+    monthlyContribution: 1_500,
+    expectedReturnPct: 4,
+    horizonMonths: 12,
+    startedAt: "2025-12-01",
+    notes: "6 months of personal floor burn. HYSA at ~4% APY.",
+  },
+  {
+    name: "Lagos house deposit",
+    category: "Housing",
+    targetAmount: 25_000_000,
+    currentAmount: 4_200_000,
+    currency: "NGN",
+    monthlyContribution: 800_000,
+    expectedReturnPct: 8,
+    horizonMonths: 24,
+    startedAt: "2026-01-01",
+    notes: "Naira-denominated; account for inflation. Move toward USD if NGN slides further.",
+  },
+  {
+    name: "Tax reserve 2026",
+    category: "Tax reserve",
+    targetAmount: 18_000,
+    currentAmount: 6_000,
+    currency: "USD",
+    monthlyContribution: 1_500,
+    expectedReturnPct: 4,
+    horizonMonths: 8,
+    startedAt: "2026-03-01",
+    notes: "Quarterly estimate buffer + April catch-up.",
+  },
+];
+
 const DECISIONS = [
   {
     question:
@@ -219,6 +269,7 @@ async function wipe() {
   await db.delete(schema.accounts);
   await db.delete(schema.equityGrants);
   await db.delete(schema.decisions);
+  await db.delete(schema.savingsGoals);
   await db.delete(schema.recurringFlows);
   await db.delete(schema.budgets);
   await db.delete(schema.fxRates);
@@ -395,6 +446,10 @@ export async function seedSampleData() {
     await db.insert(schema.budgets).values(BUDGETS);
   }
 
+  if (SAVINGS_GOALS.length > 0) {
+    await db.insert(schema.savingsGoals).values(SAVINGS_GOALS);
+  }
+
   revalidatePath("/", "layout");
   return {
     accounts: ACCOUNTS.length,
@@ -403,5 +458,6 @@ export async function seedSampleData() {
     flows: FLOWS.length,
     transactions: txRows.length,
     budgets: BUDGETS.length,
+    savings: SAVINGS_GOALS.length,
   };
 }

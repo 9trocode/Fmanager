@@ -53,6 +53,7 @@ async function buildSystemPrompt(): Promise<string> {
     runway,
     recentTxs,
     budgets,
+    savingsGoals,
   ] = await Promise.all([
     db
       .select()
@@ -72,6 +73,10 @@ async function buildSystemPrompt(): Promise<string> {
     computeCashRunway(baseCurrency),
     listRecentTransactions(30),
     computeBudgetStatus(baseCurrency),
+    db
+      .select()
+      .from(schema.savingsGoals)
+      .where(eq(schema.savingsGoals.archived, false)),
   ]);
 
   // Aggregate transactions in base currency.
@@ -183,6 +188,19 @@ async function buildSystemPrompt(): Promise<string> {
             : "",
         ]
           .filter(Boolean)
+          .join("\n"),
+    "",
+    "## Savings goals (active)",
+    savingsGoals.length === 0
+      ? "(no savings goals)"
+      : savingsGoals
+          .map((g) => {
+            const pctTxt =
+              g.targetAmount != null && g.targetAmount > 0
+                ? `${Math.min(100, (g.currentAmount / g.targetAmount) * 100).toFixed(0)}%`
+                : "—";
+            return `- ${g.name}${g.category ? ` [${g.category}]` : ""}: ${fmt(g.currentAmount, g.currency)}${g.targetAmount != null ? ` / ${fmt(g.targetAmount, g.currency)} (${pctTxt})` : ""}; +${fmt(g.monthlyContribution, g.currency)}/mo for ${g.horizonMonths}mo at ${g.expectedReturnPct}%/yr`;
+          })
           .join("\n"),
     "",
     "## Income vs expense by category (monthly, base currency)",

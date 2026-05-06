@@ -240,6 +240,27 @@ export async function accountsByTypes(types: AccountType[]) {
     );
 }
 
+export async function listSavingsGoals(opts: { includeArchived?: boolean } = {}) {
+  return db
+    .select()
+    .from(schema.savingsGoals)
+    .where(
+      opts.includeArchived
+        ? undefined
+        : eq(schema.savingsGoals.archived, false),
+    )
+    .orderBy(desc(schema.savingsGoals.createdAt));
+}
+
+export async function getSavingsGoal(id: number) {
+  const rows = await db
+    .select()
+    .from(schema.savingsGoals)
+    .where(eq(schema.savingsGoals.id, id))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
 export type TransactionFilter = {
   accountId?: number;
   category?: string;
