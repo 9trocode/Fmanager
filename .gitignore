@@ -39,3 +39,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local data
+/data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# drizzle migrations metadata (regenerable)
+/drizzle/meta/
