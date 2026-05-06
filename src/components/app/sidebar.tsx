@@ -77,18 +77,18 @@ export function Sidebar() {
   const role = useRole();
 
   return (
-    <aside className="w-60 shrink-0 border-r border-border bg-card/30 flex flex-col">
+    <aside className="sticky top-0 self-start h-screen w-72 shrink-0 border-r border-border bg-card/30 flex flex-col">
       {/* Brand */}
-      <div className="px-5 py-5">
-        <Link href="/dashboard" className="flex items-center gap-2.5 group">
-          <div className="size-8 rounded-lg bg-gradient-to-br from-primary to-primary/70 text-primary-foreground grid place-items-center text-base font-semibold shadow-sm group-hover:shadow-md transition-shadow">
+      <div className="px-5 py-6">
+        <Link href="/dashboard" className="flex items-center gap-3 group">
+          <div className="size-10 rounded-lg bg-gradient-to-br from-primary to-primary/70 text-primary-foreground grid place-items-center text-lg font-semibold shadow-sm group-hover:shadow-md transition-shadow">
             ƒ
           </div>
           <div className="leading-tight min-w-0">
-            <div className="text-sm font-semibold tracking-tight truncate">
+            <div className="text-[15px] font-semibold tracking-tight truncate">
               Founder Finance
             </div>
-            <div className="text-[10px] text-muted-foreground tracking-wide">
+            <div className="text-[11px] text-muted-foreground tracking-wide">
               your honest balance sheet
             </div>
           </div>
@@ -96,10 +96,10 @@ export function Sidebar() {
       </div>
 
       {/* Sections */}
-      <nav className="flex-1 overflow-y-auto px-3 pb-2 space-y-5">
+      <nav className="flex-1 overflow-y-auto px-3 pb-3 space-y-6">
         {SECTIONS.map((section) => (
-          <div key={section.label} className="space-y-0.5">
-            <div className="px-3 mb-1 text-[10px] uppercase tracking-[0.08em] font-medium text-muted-foreground/70">
+          <div key={section.label} className="space-y-1">
+            <div className="px-3 mb-1.5 text-[11px] uppercase tracking-[0.08em] font-medium text-muted-foreground/70">
               {section.label}
             </div>
             {section.items.map(({ href, label, icon: Icon }) => {
@@ -109,18 +109,18 @@ export function Sidebar() {
                   key={href}
                   href={href}
                   className={cn(
-                    "relative flex items-center gap-2.5 rounded-md px-3 py-1.5 text-[13px] transition-colors",
+                    "relative flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
                     active
                       ? "bg-primary/10 text-foreground font-medium"
                       : "text-muted-foreground hover:text-foreground hover:bg-secondary/50",
                   )}
                 >
                   {active ? (
-                    <span className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-0.5 rounded-full bg-primary" />
+                    <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-0.5 rounded-full bg-primary" />
                   ) : null}
                   <Icon
                     className={cn(
-                      "size-4 shrink-0",
+                      "size-[18px] shrink-0",
                       active ? "text-primary" : "",
                     )}
                   />
@@ -137,12 +137,12 @@ export function Sidebar() {
         <div className="flex items-center justify-between gap-2 px-2">
           <div className="flex items-center gap-2 min-w-0">
             {role === "viewer" ? (
-              <span className="flex items-center gap-1.5 text-[11px] font-mono text-amber-300/90">
-                <Eye className="size-3" />
+              <span className="flex items-center gap-1.5 text-xs font-mono text-amber-300/90">
+                <Eye className="size-3.5" />
                 viewer
               </span>
             ) : (
-              <span className="text-[11px] font-mono text-muted-foreground">
+              <span className="text-xs font-mono text-muted-foreground">
                 admin
               </span>
             )}
@@ -151,13 +151,13 @@ export function Sidebar() {
             <button
               type="submit"
               title="Sign out"
-              className="size-7 grid place-items-center rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
+              className="size-8 grid place-items-center rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
             >
-              <LogOut className="size-3.5" />
+              <LogOut className="size-4" />
             </button>
           </form>
         </div>
-        <div className="mt-2 px-2 text-[10px] font-mono text-muted-foreground/60">
+        <div className="mt-1.5 px-2 text-[10px] font-mono text-muted-foreground/60">
           v0.1.0
         </div>
       </div>
