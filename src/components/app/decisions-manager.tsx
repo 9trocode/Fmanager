@@ -268,8 +268,23 @@ function DecisionRow({ decision }: { decision: Decision }) {
     });
   }
 
+  const clickable = !readOnly;
+
   return (
-    <Card>
+    <Card
+      className={clickable ? "cursor-pointer hover:bg-secondary/30 transition-colors" : undefined}
+      role={clickable ? "button" : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onClick={() => {
+        if (clickable) setEditOpen(true);
+      }}
+      onKeyDown={(e) => {
+        if (clickable && (e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          setEditOpen(true);
+        }
+      }}
+    >
       <CardHeader className="flex flex-row items-start justify-between gap-3 pb-3">
         <div className="space-y-1.5 min-w-0">
           <div className="flex items-center gap-2">
@@ -290,7 +305,12 @@ function DecisionRow({ decision }: { decision: Decision }) {
         {readOnly ? null : (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="size-8 shrink-0">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8 shrink-0"
+              onClick={(e) => e.stopPropagation()}
+            >
               <MoreHorizontal className="size-4" />
             </Button>
           </DropdownMenuTrigger>

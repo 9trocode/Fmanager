@@ -34,6 +34,7 @@ import type { TransactionAccountOption } from "@/components/app/transaction-form
 import { deleteTransaction } from "@/lib/actions/transactions";
 import { formatMoney } from "@/lib/format";
 import type { TransactionKind } from "@/lib/db/schema";
+import { useRole } from "@/components/app/role-context";
 
 export type TransactionRow = {
   id: number;
@@ -85,6 +86,8 @@ export function TransactionItem({
   /** When rendered on an account detail page, sign transfers relative to this account. */
   contextAccountId?: number;
 }) {
+  const role = useRole();
+  const readOnly = role === "viewer";
   const [editOpen, setEditOpen] = useState(false);
   const [, startTransition] = useTransition();
 
@@ -122,8 +125,27 @@ export function TransactionItem({
       ? `${sourceAcc?.name ?? "?"} → ${destAcc.name}`
       : (sourceAcc?.name ?? "?");
 
+  const clickable = !readOnly;
+
   return (
-    <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-md border border-border hover:bg-secondary/40 transition-colors">
+    <div
+      className={
+        "flex items-center justify-between gap-3 px-4 py-3 rounded-md border border-border " +
+        (clickable ? "cursor-pointer hover:bg-secondary/40 " : "") +
+        "transition-colors"
+      }
+      role={clickable ? "button" : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onClick={() => {
+        if (clickable) setEditOpen(true);
+      }}
+      onKeyDown={(e) => {
+        if (clickable && (e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          setEditOpen(true);
+        }
+      }}
+    >
       <div className="flex items-center gap-3 min-w-0">
         <KindIcon kind={transaction.kind} />
         <div className="min-w-0">
@@ -145,12 +167,16 @@ export function TransactionItem({
           ) : null}
         </div>
       </div>
-      <div className="flex items-center gap-3 shrink-0">
+      <div
+        className="flex items-center gap-3 shrink-0"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div
           className={"font-mono tabular-nums text-sm " + amountClass}
         >
           {amountDisplay}
         </div>
+        {readOnly ? null : (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" className="size-8">
@@ -194,6 +220,7 @@ export function TransactionItem({
             </AlertDialog>
           </DropdownMenuContent>
         </DropdownMenu>
+        )}
       </div>
 
       <EditTransactionDialog

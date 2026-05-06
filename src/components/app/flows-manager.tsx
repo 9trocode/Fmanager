@@ -298,13 +298,27 @@ function FlowRow({ flow }: { flow: FlowRow }) {
 
   const isIncome = flow.kind === "income";
 
+  const clickable = !readOnly;
+
   return (
     <div
       className={
         "flex items-center justify-between gap-3 px-4 py-3 rounded-md border border-border " +
         (flow.archived ? "opacity-50 " : "") +
-        "hover:bg-secondary/40 transition-colors"
+        (clickable ? "cursor-pointer hover:bg-secondary/40 " : "") +
+        "transition-colors"
       }
+      role={clickable ? "button" : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onClick={() => {
+        if (clickable) setEditOpen(true);
+      }}
+      onKeyDown={(e) => {
+        if (clickable && (e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          setEditOpen(true);
+        }
+      }}
     >
       <div className="flex items-center gap-3 min-w-0">
         <div
@@ -338,7 +352,10 @@ function FlowRow({ flow }: { flow: FlowRow }) {
           ) : null}
         </div>
       </div>
-      <div className="flex items-center gap-3 shrink-0">
+      <div
+        className="flex items-center gap-3 shrink-0"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="text-right">
           <div
             className={
