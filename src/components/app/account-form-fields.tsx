@@ -2,6 +2,7 @@
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 import { MoneyInput } from "@/components/app/money-input";
 import {
   Select,
@@ -20,6 +21,14 @@ export type AccountFieldsValue = {
   currency?: string;
   institution?: string | null;
   notes?: string | null;
+  accountNumber?: string | null;
+  routingOrIban?: string | null;
+  swiftBic?: string | null;
+  holderName?: string | null;
+  branch?: string | null;
+  loginUrl?: string | null;
+  contactPhone?: string | null;
+  statementsUrl?: string | null;
 };
 
 export function AccountFields({
@@ -116,6 +125,117 @@ export function AccountFields({
           className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring resize-y"
         />
       </div>
+
+      <Separator className="my-2" />
+
+      <details className="group">
+        <summary className="cursor-pointer text-sm font-medium select-none flex items-center justify-between">
+          <span>
+            Bank details{" "}
+            <span className="text-muted-foreground font-normal">
+              (optional · stored locally)
+            </span>
+          </span>
+          <span className="text-[11px] text-muted-foreground group-open:rotate-90 transition-transform">
+            ›
+          </span>
+        </summary>
+        <div className="space-y-4 mt-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="account_number">Account number</Label>
+              <Input
+                id="account_number"
+                name="account_number"
+                defaultValue={defaults?.accountNumber ?? ""}
+                placeholder="••• 1234"
+                autoComplete="off"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="routing_or_iban">IBAN / routing / sort</Label>
+              <Input
+                id="routing_or_iban"
+                name="routing_or_iban"
+                defaultValue={defaults?.routingOrIban ?? ""}
+                placeholder="DE89… or 021000021"
+                autoComplete="off"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="swift_bic">SWIFT / BIC</Label>
+              <Input
+                id="swift_bic"
+                name="swift_bic"
+                defaultValue={defaults?.swiftBic ?? ""}
+                placeholder="DEUTDEFFXXX"
+                autoComplete="off"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="branch">Branch</Label>
+              <Input
+                id="branch"
+                name="branch"
+                defaultValue={defaults?.branch ?? ""}
+                placeholder="Main · Lagos VI"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="holder_name">Account holder</Label>
+              <Input
+                id="holder_name"
+                name="holder_name"
+                defaultValue={defaults?.holderName ?? ""}
+                placeholder="Your legal name on the account"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="contact_phone">Support phone</Label>
+              <Input
+                id="contact_phone"
+                name="contact_phone"
+                defaultValue={defaults?.contactPhone ?? ""}
+                placeholder="+1 415 555 0100"
+                autoComplete="off"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="login_url">Login URL</Label>
+              <Input
+                id="login_url"
+                name="login_url"
+                type="url"
+                defaultValue={defaults?.loginUrl ?? ""}
+                placeholder="https://mercury.com"
+                autoComplete="off"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="statements_url">Statements URL</Label>
+              <Input
+                id="statements_url"
+                name="statements_url"
+                type="url"
+                defaultValue={defaults?.statementsUrl ?? ""}
+                placeholder="https://…/statements"
+                autoComplete="off"
+              />
+            </div>
+          </div>
+          <p className="text-[10px] text-muted-foreground leading-relaxed">
+            These fields are stored as plain text in your local SQLite database.
+            Anyone with disk access can read them. Use full-disk encryption if
+            you put real account numbers here.
+          </p>
+        </div>
+      </details>
     </div>
   );
 }

@@ -36,6 +36,17 @@ export const accounts = sqliteTable("accounts", {
   currency: text("currency").notNull(),
   institution: text("institution"),
   notes: text("notes"),
+  // Optional account-detail fields. All free-text, all optional.
+  // Stored locally — anyone with disk access can read these. Use disk encryption
+  // if you put sensitive numbers here.
+  accountNumber: text("account_number"),
+  routingOrIban: text("routing_or_iban"),
+  swiftBic: text("swift_bic"),
+  holderName: text("holder_name"),
+  branch: text("branch"),
+  loginUrl: text("login_url"),
+  contactPhone: text("contact_phone"),
+  statementsUrl: text("statements_url"),
   archived: integer("archived", { mode: "boolean" }).notNull().default(false),
   createdAt: createdAt(),
   updatedAt: updatedAt(),

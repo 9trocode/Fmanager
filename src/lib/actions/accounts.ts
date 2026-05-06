@@ -27,6 +27,22 @@ function parseAmount(value: FormDataEntryValue | null): number {
   return n;
 }
 
+function parseDetailFields(formData: FormData) {
+  return {
+    accountNumber:
+      String(formData.get("account_number") ?? "").trim() || null,
+    routingOrIban:
+      String(formData.get("routing_or_iban") ?? "").trim() || null,
+    swiftBic: String(formData.get("swift_bic") ?? "").trim() || null,
+    holderName: String(formData.get("holder_name") ?? "").trim() || null,
+    branch: String(formData.get("branch") ?? "").trim() || null,
+    loginUrl: String(formData.get("login_url") ?? "").trim() || null,
+    contactPhone: String(formData.get("contact_phone") ?? "").trim() || null,
+    statementsUrl:
+      String(formData.get("statements_url") ?? "").trim() || null,
+  };
+}
+
 export async function createAccount(formData: FormData) {
   await assertAdmin();
   const name = String(formData.get("name") ?? "").trim();
@@ -39,10 +55,11 @@ export async function createAccount(formData: FormData) {
   const asOf =
     String(formData.get("as_of") ?? "").trim() ||
     new Date().toISOString().slice(0, 10);
+  const details = parseDetailFields(formData);
 
   const [created] = await db
     .insert(schema.accounts)
-    .values({ name, type, currency, institution, notes })
+    .values({ name, type, currency, institution, notes, ...details })
     .returning();
 
   if (created) {
@@ -68,6 +85,7 @@ export async function updateAccount(formData: FormData) {
   const currency = String(formData.get("currency") ?? "USD").toUpperCase();
   const institution = String(formData.get("institution") ?? "").trim() || null;
   const notes = String(formData.get("notes") ?? "").trim() || null;
+  const details = parseDetailFields(formData);
 
   await db
     .update(schema.accounts)
@@ -77,6 +95,7 @@ export async function updateAccount(formData: FormData) {
       currency,
       institution,
       notes,
+      ...details,
       updatedAt: new Date().toISOString(),
     })
     .where(eq(schema.accounts.id, id));

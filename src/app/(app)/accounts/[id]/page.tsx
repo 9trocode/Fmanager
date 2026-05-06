@@ -266,8 +266,10 @@ export default async function AccountDetailPage({
         </CardContent>
       </Card>
 
+      <AccountDetailsCard account={account} />
+
       <Card className="mt-6">
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <div>
             <CardTitle className="text-base">Transactions</CardTitle>
             <CardDescription>
@@ -302,5 +304,77 @@ export default async function AccountDetailPage({
         )}
       </Card>
     </>
+  );
+}
+
+type AccountWithDetails = {
+  accountNumber: string | null;
+  routingOrIban: string | null;
+  swiftBic: string | null;
+  holderName: string | null;
+  branch: string | null;
+  loginUrl: string | null;
+  contactPhone: string | null;
+  statementsUrl: string | null;
+  institution: string | null;
+};
+
+function AccountDetailsCard({ account }: { account: AccountWithDetails }) {
+  const rows: Array<{ label: string; value: string | null; href?: string }> = [
+    { label: "Account holder", value: account.holderName },
+    { label: "Institution", value: account.institution },
+    { label: "Account number", value: account.accountNumber },
+    { label: "IBAN / routing", value: account.routingOrIban },
+    { label: "SWIFT / BIC", value: account.swiftBic },
+    { label: "Branch", value: account.branch },
+    {
+      label: "Support phone",
+      value: account.contactPhone,
+      href: account.contactPhone ? `tel:${account.contactPhone}` : undefined,
+    },
+    {
+      label: "Login",
+      value: account.loginUrl,
+      href: account.loginUrl ?? undefined,
+    },
+    {
+      label: "Statements",
+      value: account.statementsUrl,
+      href: account.statementsUrl ?? undefined,
+    },
+  ];
+  const filled = rows.filter((r) => r.value);
+  if (filled.length === 0) return null;
+
+  return (
+    <Card className="mt-6">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Bank details</CardTitle>
+        <CardDescription>
+          Stored locally in your SQLite database. Edit on this account to add or change.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+        {filled.map((r) => (
+          <div key={r.label} className="space-y-0.5 min-w-0">
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              {r.label}
+            </div>
+            {r.href ? (
+              <a
+                href={r.href}
+                target={r.href.startsWith("http") ? "_blank" : undefined}
+                rel={r.href.startsWith("http") ? "noopener noreferrer" : undefined}
+                className="font-mono tabular-nums text-foreground hover:underline truncate block"
+              >
+                {r.value}
+              </a>
+            ) : (
+              <div className="font-mono tabular-nums truncate">{r.value}</div>
+            )}
+          </div>
+        ))}
+      </CardContent>
+    </Card>
   );
 }

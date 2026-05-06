@@ -26,6 +26,14 @@ export function EditAccountDialog({
     currency: string;
     institution: string | null;
     notes: string | null;
+    accountNumber: string | null;
+    routingOrIban: string | null;
+    swiftBic: string | null;
+    holderName: string | null;
+    branch: string | null;
+    loginUrl: string | null;
+    contactPhone: string | null;
+    statementsUrl: string | null;
   };
 }) {
   const role = useRole();
