@@ -136,6 +136,27 @@ export async function getGrant(id: number) {
   return rows[0] ?? null;
 }
 
+export async function listFlows(opts: { includeArchived?: boolean } = {}) {
+  return db
+    .select()
+    .from(schema.recurringFlows)
+    .where(
+      opts.includeArchived
+        ? undefined
+        : eq(schema.recurringFlows.archived, false),
+    )
+    .orderBy(desc(schema.recurringFlows.createdAt));
+}
+
+export async function getFlow(id: number) {
+  const rows = await db
+    .select()
+    .from(schema.recurringFlows)
+    .where(eq(schema.recurringFlows.id, id))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
 export async function accountsByTypes(types: AccountType[]) {
   if (types.length === 0) return [];
   return db

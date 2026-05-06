@@ -1,0 +1,84 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { eq } from "drizzle-orm";
+import { db, schema } from "@/lib/db";
+import { flowCadences, flowKinds } from "@/lib/db/schema";
+
+function revalidate() {
+  revalidatePath("/", "layout");
+  revalidatePath("/cash-flow");
+  revalidatePath("/dashboard");
+  revalidatePath("/projections");
+}
+
+function parseAmount(value: FormDataEntryValue | null): number {
+  const n = Number(String(value ?? "").replace(/,/g, ""));
+  if (!Number.isFinite(n) || n < 0) throw new Error("Invalid amount.");
+  return n;
+}
+
+function parseKind(value: FormDataEntryValue | null) {
+  const v = String(value ?? "");
+  if (!flowKinds.includes(v as (typeof flowKinds)[number])) {
+    throw new Error(`Invalid kind: ${v}`);
+  }
+  return v as (typeof flowKinds)[number];
+}
+
+function parseCadence(value: FormDataEntryValue | null) {
+  const v = String(value ?? "monthly");
+  if (!flowCadences.includes(v as (typeof flowCadences)[number])) {
+    throw new Error(`Invalid cadence: ${v}`);
+  }
+  return v as (typeof flowCadences)[number];
+}
+
+function commonFields(formData: FormData) {
+  return {
+    name: String(formData.get("name") ?? "").trim(),
+    kind: parseKind(formData.get("kind")),
+    category: String(formData.get("category") ?? "").trim() || null,
+    amount: parseAmount(formData.get("amount")),
+    currency: String(formData.get("currency") ?? "USD").toUpperCase(),
+    cadence: parseCadence(formData.get("cadence")),
+    notes: String(formData.get("notes") ?? "").trim() || null,
+  };
+}
+
+export async function createFlow(formData: FormData) {
+  const fields = commonFields(formData);
+  if (!fields.name) throw new Error("Name is required.");
+  await db.insert(schema.recurringFlows).values(fields);
+  revalidate();
+}
+
+export async function updateFlow(formData: FormData) {
+  const id = Number(formData.get("id"));
+  if (!Number.isFinite(id)) throw new Error("Invalid id.");
+  const fields = commonFields(formData);
+  if (!fields.name) throw new Error("Name is required.");
+  await db
+    .update(schema.recurringFlows)
+    .set({ ...fields, updatedAt: new Date().toISOString() })
+    .where(eq(schema.recurringFlows.id, id));
+  revalidate();
+}
+
+export async function deleteFlow(formData: FormData) {
+  const id = Number(formData.get("id"));
+  if (!Number.isFinite(id)) throw new Error("Invalid id.");
+  await db.delete(schema.recurringFlows).where(eq(schema.recurringFlows.id, id));
+  revalidate();
+}
+
+export async function toggleFlowArchived(formData: FormData) {
+  const id = Number(formData.get("id"));
+  const archived = String(formData.get("archived") ?? "false") === "true";
+  if (!Number.isFinite(id)) throw new Error("Invalid id.");
+  await db
+    .update(schema.recurringFlows)
+    .set({ archived: !archived, updatedAt: new Date().toISOString() })
+    .where(eq(schema.recurringFlows.id, id));
+  revalidate();
+}

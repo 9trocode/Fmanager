@@ -7,6 +7,7 @@ import {
   Wallet,
   Briefcase,
   TrendingUp,
+  Repeat,
   Sparkles,
   Settings,
 } from "lucide-react";
@@ -16,6 +17,7 @@ const NAV = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { href: "/accounts", label: "Accounts", icon: Wallet },
   { href: "/equity", label: "Equity", icon: Briefcase },
+  { href: "/cash-flow", label: "Cash flow", icon: Repeat },
   { href: "/projections", label: "Projections", icon: TrendingUp },
   { href: "/advisor", label: "Advisor", icon: Sparkles },
   { href: "/settings", label: "Settings", icon: Settings },

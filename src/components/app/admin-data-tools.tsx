@@ -25,7 +25,7 @@ export function AdminDataTools() {
       try {
         const r = await seedSampleData();
         toast.success(
-          `Seeded ${r.accounts} accounts, ${r.grants} grants, ${r.decisions} decisions.`,
+          `Seeded ${r.accounts} accounts, ${r.grants} grants, ${r.flows} flows, ${r.decisions} decisions.`,
         );
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Seed failed.");

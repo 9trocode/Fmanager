@@ -3,13 +3,16 @@ import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
 import { ProjectionsExplorer } from "@/components/app/projections-explorer";
 import { getBaseCurrency, listGrants } from "@/lib/db/queries";
-import { computeNetWorth } from "@/lib/aggregation";
+import { computeNetWorth, computeMonthlyCashFlow } from "@/lib/aggregation";
 import { getRate } from "@/lib/fx";
 
 export default async function ProjectionsPage() {
   const baseCurrency = await getBaseCurrency();
-  const summary = await computeNetWorth(baseCurrency);
-  const grants = await listGrants();
+  const [summary, grants, cashFlow] = await Promise.all([
+    computeNetWorth(baseCurrency),
+    listGrants(),
+    computeMonthlyCashFlow(baseCurrency),
+  ]);
 
   const uniqueCurrencies = Array.from(new Set(grants.map((g) => g.currency)));
   const fxToBase: Record<string, number> = {};
@@ -17,7 +20,7 @@ export default async function ProjectionsPage() {
     fxToBase[c] = await getRate(c, baseCurrency);
   }
 
-  const startGrantsInBase = summary.byCategory.liquid.grant; // current base-converted liquid grant total
+  const startGrantsInBase = summary.byCategory.liquid.grant;
   const startNonGrant = summary.totals.liquid - startGrantsInBase;
 
   return (
@@ -39,6 +42,7 @@ export default async function ProjectionsPage() {
           startNonGrantInBase={startNonGrant}
           grants={grants}
           fxToBase={fxToBase}
+          defaultMonthlyContribution={Math.round(cashFlow.net)}
         />
       )}
     </>

@@ -1,7 +1,8 @@
 import "server-only";
-import { listAccountsWithLatest, listGrants } from "@/lib/db/queries";
+import { listAccountsWithLatest, listFlows, listGrants } from "@/lib/db/queries";
 import { convert } from "@/lib/fx";
 import { isLiability } from "@/lib/account-types";
+import { monthlyEquivalent } from "@/lib/flows";
 import {
   SCENARIOS,
   equityValueForScenario,
@@ -103,3 +104,77 @@ export const CATEGORY_DISPLAY_ORDER: CategoryKey[] = [
   "other",
   "loan",
 ];
+
+export type CashFlowSummary = {
+  baseCurrency: string;
+  income: number;
+  expenses: number;
+  net: number;
+  byCategory: { income: Record<string, number>; expense: Record<string, number> };
+};
+
+export async function computeMonthlyCashFlow(
+  baseCurrency: string,
+): Promise<CashFlowSummary> {
+  const flows = await listFlows();
+  const result: CashFlowSummary = {
+    baseCurrency,
+    income: 0,
+    expenses: 0,
+    net: 0,
+    byCategory: { income: {}, expense: {} },
+  };
+  for (const f of flows) {
+    const monthly = monthlyEquivalent(f.amount, f.cadence);
+    const inBase = await convert(monthly, f.currency, baseCurrency);
+    const cat = f.category ?? "Other";
+    if (f.kind === "income") {
+      result.income += inBase;
+      result.byCategory.income[cat] = (result.byCategory.income[cat] ?? 0) + inBase;
+    } else {
+      result.expenses += inBase;
+      result.byCategory.expense[cat] = (result.byCategory.expense[cat] ?? 0) + inBase;
+    }
+  }
+  result.net = result.income - result.expenses;
+  return result;
+}
+
+export type RunwaySummary = {
+  baseCurrency: string;
+  liquidCash: number;
+  monthlyExpenses: number;
+  monthlyIncome: number;
+  netMonthly: number;
+  /** Months of runway against expenses, ignoring income. null if no expenses. */
+  monthsRunway: number | null;
+  /** Months of runway against net burn (expenses - income). null if income covers expenses. */
+  monthsNetRunway: number | null;
+};
+
+export async function computeCashRunway(
+  baseCurrency: string,
+): Promise<RunwaySummary> {
+  const summary = await computeNetWorth(baseCurrency);
+  const flow = await computeMonthlyCashFlow(baseCurrency);
+
+  // Cash-like = cash + brokerage + crypto. Excludes real estate, retirement
+  // (penalties to liquidate), grants (illiquid), and loans (already negative).
+  const cats = summary.byCategory.floor;
+  const liquidCash = Math.max(0, cats.cash + cats.brokerage + cats.crypto);
+
+  const monthsRunway =
+    flow.expenses > 0 ? liquidCash / flow.expenses : null;
+  const netBurn = Math.max(0, flow.expenses - flow.income);
+  const monthsNetRunway = netBurn > 0 ? liquidCash / netBurn : null;
+
+  return {
+    baseCurrency,
+    liquidCash,
+    monthlyExpenses: flow.expenses,
+    monthlyIncome: flow.income,
+    netMonthly: flow.net,
+    monthsRunway,
+    monthsNetRunway,
+  };
+}

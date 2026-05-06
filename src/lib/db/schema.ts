@@ -98,6 +98,26 @@ export const decisions = sqliteTable("decisions", {
   updatedAt: updatedAt(),
 });
 
+export const flowCadences = ["weekly", "monthly", "yearly"] as const;
+export type FlowCadence = (typeof flowCadences)[number];
+
+export const flowKinds = ["income", "expense"] as const;
+export type FlowKind = (typeof flowKinds)[number];
+
+export const recurringFlows = sqliteTable("recurring_flows", {
+  id: id(),
+  name: text("name").notNull(),
+  kind: text("kind", { enum: flowKinds }).notNull(),
+  category: text("category"),
+  amount: real("amount").notNull(),
+  currency: text("currency").notNull(),
+  cadence: text("cadence", { enum: flowCadences }).notNull().default("monthly"),
+  archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+  notes: text("notes"),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
 export const settings = sqliteTable("settings", {
   key: text("key").primaryKey(),
   value: text("value"),

@@ -4,6 +4,14 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { isAuthenticated } from "@/lib/auth/session";
+import {
+  computeNetWorth,
+  computeMonthlyCashFlow,
+  computeCashRunway,
+} from "@/lib/aggregation";
+import { getBaseCurrency } from "@/lib/db/queries";
+import { formatMoney } from "@/lib/format";
+import { monthlyEquivalent } from "@/lib/flows";
 
 export const runtime = "nodejs";
 
@@ -27,24 +35,56 @@ async function getModelId(): Promise<string> {
   return row[0]?.value || "claude-sonnet-4-6";
 }
 
+function fmt(value: number, currency: string): string {
+  return formatMoney(value, currency, { compact: true });
+}
+
 async function buildSystemPrompt(): Promise<string> {
-  const decisions = await db
-    .select()
-    .from(schema.decisions)
-    .where(eq(schema.decisions.status, "open"));
-
-  const accounts = await db
-    .select()
-    .from(schema.accounts)
-    .where(eq(schema.accounts.archived, false));
-
-  const grants = await db.select().from(schema.equityGrants);
+  const baseCurrency = await getBaseCurrency();
+  const [decisions, accounts, grants, flows, summary, cashFlow, runway] =
+    await Promise.all([
+      db
+        .select()
+        .from(schema.decisions)
+        .where(eq(schema.decisions.status, "open")),
+      db
+        .select()
+        .from(schema.accounts)
+        .where(eq(schema.accounts.archived, false)),
+      db.select().from(schema.equityGrants),
+      db
+        .select()
+        .from(schema.recurringFlows)
+        .where(eq(schema.recurringFlows.archived, false)),
+      computeNetWorth(baseCurrency),
+      computeMonthlyCashFlow(baseCurrency),
+      computeCashRunway(baseCurrency),
+    ]);
 
   const lines: string[] = [
-    "You are a finance co-pilot for a founder. You are sharp, direct, and honest.",
-    "You anchor every recommendation on the user's three real decisions below — generic advice is a failure.",
-    "When discussing net worth: always distinguish FLOOR (equity worth zero), EXPECTED (target exit), and LIQUID (current 409A/FMV). Equity that is not vested or not liquid is paper, not cash.",
-    "Be concrete. Use numbers from the user's data when relevant. Push back if a question is missing context.",
+    "You are a finance co-pilot for a founder. Sharp, direct, honest.",
+    "Anchor every recommendation on the user's active decisions below — generic advice is a failure.",
+    "When discussing net worth: always distinguish FLOOR (equity worth zero), LIQUID (current FMV, post-tax), and EXPECTED (target exit, post-tax). Equity that isn't vested or liquid is paper, not cash.",
+    "Use real numbers from the data. Push back if a question is missing context. Prefer specific advice with explicit tradeoffs over hedged generalities.",
+    "",
+    `## Net worth (in ${baseCurrency})`,
+    `- Floor:    ${fmt(summary.totals.floor, baseCurrency)}`,
+    `- Liquid:   ${fmt(summary.totals.liquid, baseCurrency)}`,
+    `- Expected: ${fmt(summary.totals.expected, baseCurrency)}`,
+    "",
+    "## Cash runway",
+    runway.monthlyExpenses === 0
+      ? "(no recurring expenses tracked yet)"
+      : [
+          `- Liquid cash:       ${fmt(runway.liquidCash, baseCurrency)}`,
+          `- Monthly expenses:  ${fmt(runway.monthlyExpenses, baseCurrency)}`,
+          `- Monthly income:    ${fmt(runway.monthlyIncome, baseCurrency)}`,
+          `- Net monthly:       ${fmt(runway.netMonthly, baseCurrency)}${runway.netMonthly < 0 ? " (burning)" : ""}`,
+          `- Months runway (gross): ${runway.monthsRunway != null ? runway.monthsRunway.toFixed(1) : "∞"}`,
+          runway.monthsNetRunway != null
+            ? `- Months runway (net of income): ${runway.monthsNetRunway.toFixed(1)}`
+            : "- Income covers expenses (net positive)",
+        ].join("\n"),
     "",
     "## Active decisions",
     decisions.length
@@ -56,7 +96,7 @@ async function buildSystemPrompt(): Promise<string> {
           .join("\n")
       : "(none yet — the user hasn't seeded decisions in Settings)",
     "",
-    "## Accounts summary",
+    "## Accounts",
     accounts.length
       ? accounts
           .map((a) => `- ${a.name} (${a.type}, ${a.currency})`)
@@ -68,10 +108,37 @@ async function buildSystemPrompt(): Promise<string> {
       ? grants
           .map(
             (g) =>
-              `- ${g.company}: ${g.vestedShares}/${g.totalShares} vested @ strike ${g.strikePrice ?? "n/a"} ${g.currency}; FMV ${g.fmvPerShare ?? "n/a"}; exit ${g.exitPricePerShare ?? "n/a"}`,
+              `- ${g.company}: ${g.vestedShares}/${g.totalShares} vested @ strike ${g.strikePrice ?? "n/a"} ${g.currency}; FMV ${g.fmvPerShare ?? "n/a"}; exit ${g.exitPricePerShare ?? "n/a"}${g.expectedExitMonths != null ? `; exit in ${g.expectedExitMonths}mo` : ""}${g.taxRatePct != null ? `; tax ${g.taxRatePct}%` : ""}`,
           )
           .join("\n")
       : "(no equity grants tracked)",
+    "",
+    "## Recurring flows",
+    flows.length
+      ? flows
+          .map((f) => {
+            const m = monthlyEquivalent(f.amount, f.cadence);
+            const sign = f.kind === "income" ? "+" : "−";
+            return `- ${sign} ${f.name}${f.category ? ` [${f.category}]` : ""}: ${f.amount} ${f.currency} ${f.cadence} (≈ ${sign}${fmt(m, f.currency)} / mo)`;
+          })
+          .join("\n")
+      : "(no recurring flows tracked)",
+    "",
+    "## Income vs expense by category (monthly, base currency)",
+    `- Income breakdown: ${
+      Object.keys(cashFlow.byCategory.income).length
+        ? Object.entries(cashFlow.byCategory.income)
+            .map(([k, v]) => `${k} ${fmt(v, baseCurrency)}`)
+            .join(", ")
+        : "(none)"
+    }`,
+    `- Expense breakdown: ${
+      Object.keys(cashFlow.byCategory.expense).length
+        ? Object.entries(cashFlow.byCategory.expense)
+            .map(([k, v]) => `${k} ${fmt(v, baseCurrency)}`)
+            .join(", ")
+        : "(none)"
+    }`,
   ];
 
   return lines.join("\n");

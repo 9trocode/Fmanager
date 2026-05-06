@@ -39,14 +39,16 @@ export function ProjectionsExplorer({
   startNonGrantInBase,
   grants,
   fxToBase,
+  defaultMonthlyContribution,
 }: {
   baseCurrency: string;
   startNonGrantInBase: number;
   grants: ProjectionGrant[];
   fxToBase: Record<string, number>;
+  defaultMonthlyContribution?: number;
 }) {
   const [inputs, setInputs] = useState<ProjectionInputs>({
-    monthlyContribution: 3000,
+    monthlyContribution: defaultMonthlyContribution ?? 3000,
     annualReturnPct: 7,
     horizonMonths: 60,
   });
@@ -89,6 +91,12 @@ export function ProjectionsExplorer({
                 }))
               }
             />
+            {defaultMonthlyContribution != null ? (
+              <p className="text-[11px] text-muted-foreground">
+                Pre-filled from your net cash flow (income − expenses).
+                Negative means you&apos;re burning down liquid each month.
+              </p>
+            ) : null}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="rate">Expected blended annual return (%)</Label>

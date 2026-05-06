@@ -16,10 +16,12 @@ import { AddGrantDialog } from "@/components/app/add-grant-dialog";
 import { getBaseCurrency } from "@/lib/db/queries";
 import {
   computeNetWorth,
+  computeCashRunway,
   CATEGORY_LABEL,
   CATEGORY_DISPLAY_ORDER,
   type CategoryKey,
 } from "@/lib/aggregation";
+import { RunwayCard } from "@/components/app/runway-card";
 import {
   SCENARIOS,
   SCENARIO_LABEL,
@@ -30,7 +32,10 @@ import { formatMoney } from "@/lib/format";
 
 export default async function DashboardPage() {
   const baseCurrency = await getBaseCurrency();
-  const summary = await computeNetWorth(baseCurrency);
+  const [summary, runway] = await Promise.all([
+    computeNetWorth(baseCurrency),
+    computeCashRunway(baseCurrency),
+  ]);
 
   return (
     <>
@@ -81,11 +86,16 @@ export default async function DashboardPage() {
 
           {SCENARIOS.map((s) => (
             <TabsContent key={s} value={s} className="space-y-6">
-              <ScenarioHero
-                scenario={s}
-                summary={summary}
-                baseCurrency={baseCurrency}
-              />
+              <div className="grid lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-2">
+                  <ScenarioHero
+                    scenario={s}
+                    summary={summary}
+                    baseCurrency={baseCurrency}
+                  />
+                </div>
+                <RunwayCard runway={runway} />
+              </div>
               <CategoryBreakdown
                 scenario={s}
                 summary={summary}

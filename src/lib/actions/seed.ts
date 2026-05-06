@@ -150,6 +150,28 @@ const GRANTS = [
   },
 ];
 
+const FLOWS: Array<{
+  name: string;
+  kind: "income" | "expense";
+  category: string;
+  amount: number;
+  currency: string;
+  cadence: "weekly" | "monthly" | "yearly";
+  notes?: string;
+}> = [
+  // Expenses
+  { name: "Founder salary draw", kind: "income", category: "Salary", amount: 6500, currency: "USD", cadence: "monthly", notes: "Conservative draw; can reduce." },
+  { name: "Side consulting", kind: "income", category: "Consulting", amount: 2500, currency: "USD", cadence: "monthly", notes: "1 day/week. Variable." },
+  { name: "USD mortgage payment", kind: "expense", category: "Housing", amount: 1850, currency: "USD", cadence: "monthly" },
+  { name: "Lagos rent (assistant + nanny)", kind: "expense", category: "Family", amount: 850_000, currency: "NGN", cadence: "monthly" },
+  { name: "Health insurance", kind: "expense", category: "Insurance", amount: 480, currency: "USD", cadence: "monthly" },
+  { name: "Family living (food, transport)", kind: "expense", category: "Personal", amount: 2200, currency: "USD", cadence: "monthly" },
+  { name: "School fees", kind: "expense", category: "Family", amount: 12_000, currency: "USD", cadence: "yearly", notes: "Paid in 2 tranches." },
+  { name: "AWS personal projects", kind: "expense", category: "Cloud / SaaS", amount: 95, currency: "USD", cadence: "monthly" },
+  { name: "Subscriptions bundle", kind: "expense", category: "Subscription", amount: 78, currency: "USD", cadence: "monthly", notes: "Anthropic, Linear, Notion, Spotify, NYT." },
+  { name: "Travel float", kind: "expense", category: "Personal", amount: 600, currency: "USD", cadence: "monthly", notes: "Annualized — actual is lumpy." },
+];
+
 const DECISIONS = [
   {
     question:
@@ -176,6 +198,7 @@ async function wipe() {
   await db.delete(schema.accounts);
   await db.delete(schema.equityGrants);
   await db.delete(schema.decisions);
+  await db.delete(schema.recurringFlows);
   await db.delete(schema.fxRates);
   // Settings: keep API key + advisor model untouched (user-entered),
   // but reset base_currency to USD.
@@ -222,10 +245,13 @@ export async function seedSampleData() {
 
   await db.insert(schema.decisions).values(DECISIONS);
 
+  await db.insert(schema.recurringFlows).values(FLOWS);
+
   revalidatePath("/", "layout");
   return {
     accounts: ACCOUNTS.length,
     grants: GRANTS.length,
     decisions: DECISIONS.length,
+    flows: FLOWS.length,
   };
 }
