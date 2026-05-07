@@ -21,6 +21,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { MoneyInput } from "@/components/app/money-input";
 import {
   projectNetWorth,
   type ProjectionGrant,
@@ -92,12 +93,17 @@ export function ProjectionsExplorer({
             <Label htmlFor="monthly">
               Monthly contribution ({baseCurrency})
             </Label>
-            <Input
+            <MoneyInput
               id="monthly"
-              type="number"
-              step="50"
-              value={Number.isFinite(inputs.monthlyContribution) ? inputs.monthlyContribution : ""}
-              onChange={(e) => setNumber("monthlyContribution", e.target.value)}
+              allowNegative
+              value={
+                Number.isFinite(inputs.monthlyContribution)
+                  ? inputs.monthlyContribution
+                  : null
+              }
+              onValueChange={(n) =>
+                setInputs((s) => ({ ...s, monthlyContribution: n ?? 0 }))
+              }
             />
             {defaultMonthlyContribution != null ? (
               <p className="text-[11px] text-muted-foreground">

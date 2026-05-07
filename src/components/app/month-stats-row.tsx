@@ -16,13 +16,18 @@ import type {
 /**
  * Three-card row at the top of the dashboard.
  *
- * All three big numbers describe the SAME time period: this month so far,
- * from your logged transactions. They reconcile arithmetically:
- *   income (logged) − expenses (logged) = net.
+ * Two display modes:
+ *   1. Recurring income IS configured → the planned monthly income is the
+ *      headline number. "Net this month" becomes planned income − MTD
+ *      spend (the user's real question is "with my expected $X coming in,
+ *      am I in the black?"). MTD actual income is shown as a supplementary
+ *      line for transparency.
+ *   2. No recurring income configured → fall back to MTD-actuals on every
+ *      card (the previous behavior). All three cards still reconcile
+ *      arithmetically.
  *
- * Recurring monthly income (from your flows) and the projected end-of-month
- * net are shown as smaller supplementary lines so users who don't log salary
- * still see what they typically earn.
+ * Spent + budget progress are always MTD-actual (only spending answers
+ * "are you on or off track?" — projecting expenses doesn't make sense).
  */
 export function MonthStatsRow({
   month,
@@ -37,18 +42,25 @@ export function MonthStatsRow({
   const overallBudgetPct =
     budgets.totalLimit > 0 ? (budgets.totalSpent / budgets.totalLimit) * 100 : 0;
 
-  // Same source, same period, all three big numbers.
   const spent = month.expenses;
-  const income = month.income;
-  const net = income - spent; // === month.net
-
-  // Supplementary: what you typically earn per month (recurring flows).
+  const mtdIncome = month.income;
   const recurringIncome = flows.income;
-  const showRecurring = recurringIncome > 0;
-  // Forecast end-of-month assuming you receive full recurring income.
-  const projectedEom = recurringIncome - spent;
+  const hasRecurringIncome = recurringIncome > 0;
 
-  const netPositive = net >= 0;
+  // Pick the income number to feature.
+  // - If recurring income is configured, we treat THAT as the source of
+  //   truth (matches user mental model: "I have $X coming in monthly").
+  // - Otherwise, surface whatever's been logged this month.
+  const displayedIncome = hasRecurringIncome ? recurringIncome : mtdIncome;
+  const displayedNet = displayedIncome - spent;
+  const netPositive = displayedNet >= 0;
+
+  // Income progress: how much of the expected income has actually been
+  // logged so far. Only shown when recurring income exists.
+  const incomeProgressPct =
+    hasRecurringIncome && recurringIncome > 0
+      ? Math.min(100, (mtdIncome / recurringIncome) * 100)
+      : 0;
 
   return (
     <div className="grid md:grid-cols-3 gap-4">
@@ -97,21 +109,36 @@ export function MonthStatsRow({
         <CardHeader>
           <CardDescription className="flex items-center gap-2">
             <ArrowUpRight className="size-3.5 text-emerald-300" />
-            Income this month
+            {hasRecurringIncome ? "Income this month" : "Income (MTD)"}
           </CardDescription>
           <CardTitle className="text-3xl font-mono tracking-tight mt-1 text-emerald-300">
-            {formatMoney(income, baseCurrency)}
+            {formatMoney(displayedIncome, baseCurrency)}
           </CardTitle>
           <CardDescription className="text-[11px]">
-            {income > 0
-              ? "From transactions you've logged this month."
-              : "Log income transactions to see your month-to-date inflow."}
+            {hasRecurringIncome
+              ? "Planned monthly income from your recurring cash flows."
+              : mtdIncome > 0
+                ? "From transactions you've logged this month."
+                : "Log income transactions or add a recurring inflow on cash flow."}
           </CardDescription>
         </CardHeader>
-        {showRecurring ? (
-          <CardContent className="border-t border-border pt-3 text-[11px] font-mono text-muted-foreground">
-            ~{formatMoney(recurringIncome, baseCurrency)} expected from
-            recurring flows / month.
+        {hasRecurringIncome ? (
+          <CardContent className="border-t border-border pt-3 space-y-2">
+            <div className="flex items-center justify-between text-[11px] font-mono text-muted-foreground">
+              <span>
+                Received so far:{" "}
+                <span className="text-foreground">
+                  {formatMoney(mtdIncome, baseCurrency, { compact: true })}
+                </span>
+              </span>
+              <span>{incomeProgressPct.toFixed(0)}%</span>
+            </div>
+            <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
+              <div
+                className="h-full bg-emerald-500/70"
+                style={{ width: `${incomeProgressPct}%` }}
+              />
+            </div>
           </CardContent>
         ) : null}
       </Card>
@@ -128,19 +155,28 @@ export function MonthStatsRow({
               (netPositive ? "text-emerald-300" : "text-destructive")
             }
           >
-            {formatMoney(net, baseCurrency, { signed: true })}
+            {formatMoney(displayedNet, baseCurrency, { signed: true })}
           </CardTitle>
           <CardDescription className="text-[11px]">
-            Income minus spending, this month so far.
+            {hasRecurringIncome
+              ? "Planned monthly income minus everything spent so far this month."
+              : "Income minus spending, this month so far."}
           </CardDescription>
         </CardHeader>
-        {showRecurring ? (
+        {hasRecurringIncome ? (
           <CardContent className="border-t border-border pt-3 text-[11px] font-mono text-muted-foreground">
-            Forecast end-of-month:{" "}
-            <span className={projectedEom >= 0 ? "text-emerald-300" : "text-destructive"}>
-              {formatMoney(projectedEom, baseCurrency, { signed: true, compact: true })}
+            MTD actual:{" "}
+            <span
+              className={
+                mtdIncome - spent >= 0 ? "text-emerald-300" : "text-destructive"
+              }
+            >
+              {formatMoney(mtdIncome - spent, baseCurrency, {
+                signed: true,
+                compact: true,
+              })}
             </span>{" "}
-            with full recurring income.
+            (logged income − logged spend so far).
           </CardContent>
         ) : null}
       </Card>
