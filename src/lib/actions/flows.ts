@@ -35,6 +35,13 @@ function parseCadence(value: FormDataEntryValue | null) {
   return v as (typeof flowCadences)[number];
 }
 
+function parseAccountId(value: FormDataEntryValue | null): number | null {
+  const raw = String(value ?? "").trim();
+  if (!raw || raw === "none") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 function commonFields(formData: FormData) {
   return {
     name: String(formData.get("name") ?? "").trim(),
@@ -43,6 +50,7 @@ function commonFields(formData: FormData) {
     amount: parseAmount(formData.get("amount")),
     currency: String(formData.get("currency") ?? "USD").toUpperCase(),
     cadence: parseCadence(formData.get("cadence")),
+    accountId: parseAccountId(formData.get("account_id")),
     notes: String(formData.get("notes") ?? "").trim() || null,
   };
 }

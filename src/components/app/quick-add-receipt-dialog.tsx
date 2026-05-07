@@ -106,7 +106,7 @@ export function QuickAddReceiptDialog({
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Scan a receipt</DialogTitle>
           <DialogDescription>

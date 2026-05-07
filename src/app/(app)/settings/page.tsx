@@ -11,21 +11,45 @@ import { PageHeader } from "@/components/app/page-header";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import {
+  AdvisorKeyForm,
   AdvisorModelForm,
-  AnthropicKeyForm,
+  AdvisorProviderForm,
   BaseCurrencyForm,
 } from "@/components/app/settings-forms";
+import {
+  ADVISOR_PROVIDERS,
+  DEFAULT_MODEL,
+  PROVIDER_KEY_SETTING,
+  type AdvisorProvider,
+} from "@/lib/ai/provider";
 import { DecisionsManager } from "@/components/app/decisions-manager";
 import { FxRefreshButton } from "@/components/app/fx-refresh-button";
 import { AdminDataTools } from "@/components/app/admin-data-tools";
+import { DataTools } from "@/components/app/data-tools";
 import { getSetting, getSettings, listDecisions } from "@/lib/db/queries";
 
 export default async function SettingsPage() {
   const [settings, decisions, fxLastRefresh] = await Promise.all([
-    getSettings(["base_currency", "anthropic_api_key", "advisor_model"]),
+    getSettings([
+      "base_currency",
+      "advisor_provider",
+      "advisor_model",
+      "anthropic_api_key",
+      "openai_api_key",
+      "google_api_key",
+    ]),
     listDecisions(),
-    getSetting("fx_last_refresh" as never),
+    getSetting("fx_last_refresh"),
   ]);
+
+  const provider = ((settings.advisor_provider as string) ??
+    "anthropic") as AdvisorProvider;
+  const keysSet: Record<AdvisorProvider, boolean> = {
+    anthropic: Boolean(settings[PROVIDER_KEY_SETTING.anthropic]),
+    openai: Boolean(settings[PROVIDER_KEY_SETTING.openai]),
+    google: Boolean(settings[PROVIDER_KEY_SETTING.google]),
+  };
+  const activeKeySet = keysSet[provider];
 
   return (
     <>
@@ -85,26 +109,62 @@ export default async function SettingsPage() {
         <TabsContent value="advisor" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Anthropic API key</CardTitle>
+              <CardTitle className="text-base">AI provider</CardTitle>
               <CardDescription>
-                Stored locally in your SQLite DB. Never sent anywhere except Anthropic.
+                Pick which model family powers the advisor, receipt scan, and
+                voice parsing. Each provider needs its own API key (BYO).
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <AnthropicKeyForm keySet={!!settings.anthropic_api_key} />
+              <AdvisorProviderForm current={provider} keysSet={keysSet} />
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">
+                {provider === "anthropic"
+                  ? "Anthropic"
+                  : provider === "openai"
+                    ? "OpenAI"
+                    : "Google"}{" "}
+                API key
+              </CardTitle>
+              <CardDescription>
+                Stored locally in your SQLite DB. Never sent anywhere except
+                directly to the provider.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <AdvisorKeyForm provider={provider} keySet={activeKeySet} />
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Advisor model</CardTitle>
               <CardDescription>
-                Which Claude model the advisor uses. Sonnet by default.
+                Which model the advisor uses, within the selected provider.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <AdvisorModelForm current={settings.advisor_model ?? "claude-sonnet-4-6"} />
+              <AdvisorModelForm
+                current={settings.advisor_model ?? DEFAULT_MODEL[provider]}
+                provider={provider}
+              />
             </CardContent>
           </Card>
+
+          {ADVISOR_PROVIDERS.filter((p) => p !== provider && keysSet[p]).length >
+          0 ? (
+            <p className="text-xs text-muted-foreground">
+              Other providers with stored keys:{" "}
+              {ADVISOR_PROVIDERS.filter(
+                (p) => p !== provider && keysSet[p],
+              ).join(", ")}
+              . You can switch back any time.
+            </p>
+          ) : null}
         </TabsContent>
 
         <TabsContent value="decisions" className="space-y-4">
@@ -166,6 +226,10 @@ export default async function SettingsPage() {
               )}
             </CardContent>
           </Card>
+
+          <Separator />
+
+          <DataTools />
 
           <Separator />
 

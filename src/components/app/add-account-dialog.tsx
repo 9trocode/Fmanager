@@ -37,7 +37,7 @@ export function AddAccountDialog({
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>New account</DialogTitle>
           <DialogDescription>

@@ -17,11 +17,20 @@ export default async function ProjectionsPage() {
   const uniqueCurrencies = Array.from(new Set(grants.map((g) => g.currency)));
   const fxToBase: Record<string, number> = {};
   for (const c of uniqueCurrencies) {
-    fxToBase[c] = await getRate(c, baseCurrency);
+    const rate = await getRate(c, baseCurrency);
+    fxToBase[c] = Number.isFinite(rate) ? rate : 1;
   }
 
-  const startGrantsInBase = summary.byCategory.liquid.grant;
-  const startNonGrant = summary.totals.liquid - startGrantsInBase;
+  const startGrantsInBase = Number.isFinite(summary.byCategory.liquid.grant)
+    ? summary.byCategory.liquid.grant
+    : 0;
+  const liquidTotal = Number.isFinite(summary.totals.liquid)
+    ? summary.totals.liquid
+    : 0;
+  const startNonGrant = liquidTotal - startGrantsInBase;
+  const safeDefaultContribution = Number.isFinite(cashFlow.net)
+    ? Math.round(cashFlow.net)
+    : 0;
 
   return (
     <>
@@ -42,7 +51,7 @@ export default async function ProjectionsPage() {
           startNonGrantInBase={startNonGrant}
           grants={grants}
           fxToBase={fxToBase}
-          defaultMonthlyContribution={Math.round(cashFlow.net)}
+          defaultMonthlyContribution={safeDefaultContribution}
         />
       )}
     </>

@@ -48,7 +48,7 @@ export function EditAccountDialog({
           Edit
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Edit account</DialogTitle>
         </DialogHeader>

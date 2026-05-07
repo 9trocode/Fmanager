@@ -129,6 +129,13 @@ export const recurringFlows = sqliteTable("recurring_flows", {
   amount: real("amount").notNull(),
   currency: text("currency").notNull(),
   cadence: text("cadence", { enum: flowCadences }).notNull().default("monthly"),
+  /**
+   * Account the cash flows from (kind=expense) or to (kind=income).
+   * Optional for back-compat with existing rows. New entries should require it.
+   */
+  accountId: integer("account_id").references(() => accounts.id, {
+    onDelete: "set null",
+  }),
   archived: integer("archived", { mode: "boolean" }).notNull().default(false),
   notes: text("notes"),
   createdAt: createdAt(),
@@ -144,8 +151,28 @@ export const settings = sqliteTable("settings", {
 export const transactionKinds = ["expense", "income", "transfer"] as const;
 export type TransactionKind = (typeof transactionKinds)[number];
 
+export const goalKinds = [
+  "savings",
+  "net_worth",
+  "fire",
+  "debt_payoff",
+] as const;
+export type GoalKind = (typeof goalKinds)[number];
+
+/**
+ * Unified goals table (originally `savings_goals`; kept that table name for
+ * back-compat). Each row represents one of four kinds:
+ *
+ *  - savings:     Save toward target via monthly contribution. Manual current.
+ *  - net_worth:   Reach a target total net worth. Current = computed (floor).
+ *  - fire:        Financial independence. Target = computed (annual_expenses ×
+ *                 fireMultiplier). Current = computed (floor net worth).
+ *  - debt_payoff: Drive a linked loan account's balance to zero. Current =
+ *                 effective balance of that account.
+ */
 export const savingsGoals = sqliteTable("savings_goals", {
   id: id(),
+  kind: text("kind", { enum: goalKinds }).notNull().default("savings"),
   name: text("name").notNull(),
   category: text("category"),
   targetAmount: real("target_amount"),
@@ -154,6 +181,10 @@ export const savingsGoals = sqliteTable("savings_goals", {
   monthlyContribution: real("monthly_contribution").notNull().default(0),
   expectedReturnPct: real("expected_return_pct").notNull().default(0),
   horizonMonths: integer("horizon_months").notNull().default(12),
+  /** Optional explicit target date (ISO YYYY-MM-DD). If null, horizonMonths is used. */
+  targetDate: text("target_date"),
+  /** Multiplier for FIRE kind (default 25 = 4% rule). */
+  fireMultiplier: real("fire_multiplier"),
   startedAt: text("started_at").notNull(),
   accountId: integer("account_id").references(() => accounts.id, {
     onDelete: "set null",

@@ -19,7 +19,12 @@ import { useRole } from "@/components/app/role-context";
 export function AddSavingsGoalDialog({
   accountOptions,
 }: {
-  accountOptions: Array<{ id: number; name: string; currency: string }>;
+  accountOptions: Array<{
+    id: number;
+    name: string;
+    currency: string;
+    type?: string;
+  }>;
 }) {
   const role = useRole();
   const [open, setOpen] = useState(false);
@@ -33,7 +38,7 @@ export function AddSavingsGoalDialog({
           New goal
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>New savings goal</DialogTitle>
           <DialogDescription>

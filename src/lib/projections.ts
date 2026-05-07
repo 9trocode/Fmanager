@@ -20,6 +20,11 @@ export type ProjectionPoint = {
   expected: number;
 };
 
+/** Coerce any non-finite number (NaN, Infinity, -Infinity) to a safe fallback. */
+function finite(n: number, fallback = 0): number {
+  return Number.isFinite(n) ? n : fallback;
+}
+
 /**
  * Project net worth forward.
  *
@@ -27,6 +32,10 @@ export type ProjectionPoint = {
  * contributions land in that same bucket. Grants are re-evaluated at each
  * month using vesting curves, exit-timing assumptions, and tax rates from
  * each grant's own data.
+ *
+ * Every input and intermediate value is clamped to a finite number so that a
+ * single bad upstream value (e.g. a flow with NaN amount, an empty input
+ * box) never poisons the whole chart with NaNs.
  */
 export function projectNetWorth(
   startNonGrantInBase: number,
@@ -34,18 +43,21 @@ export function projectNetWorth(
   fxToBase: Record<string, number>,
   inputs: ProjectionInputs,
 ): ProjectionPoint[] {
-  const r = inputs.annualReturnPct / 100 / 12;
-  const c = inputs.monthlyContribution;
-  const N = Math.max(0, Math.floor(inputs.horizonMonths));
+  const start = finite(startNonGrantInBase);
+  const annualReturnPct = finite(inputs.annualReturnPct);
+  const r = annualReturnPct / 100 / 12;
+  const c = finite(inputs.monthlyContribution);
+  const horizonRaw = finite(inputs.horizonMonths);
+  const N = Math.max(0, Math.floor(horizonRaw));
 
   const points: ProjectionPoint[] = [];
 
   for (let m = 0; m <= N; m++) {
-    const principal =
+    const principal = finite(
       r === 0
-        ? startNonGrantInBase + c * m
-        : startNonGrantInBase * Math.pow(1 + r, m) +
-          c * ((Math.pow(1 + r, m) - 1) / r);
+        ? start + c * m
+        : start * Math.pow(1 + r, m) + c * ((Math.pow(1 + r, m) - 1) / r),
+    );
 
     const grantsByScenario: Record<Scenario, number> = {
       floor: 0,
@@ -53,21 +65,24 @@ export function projectNetWorth(
       liquid: 0,
     };
     for (const g of grants) {
-      const fx = fxToBase[g.currency] ?? 1;
-      grantsByScenario.floor +=
-        equityValueForScenario(g, "floor", { monthOffset: m }) * fx;
-      grantsByScenario.liquid +=
-        equityValueForScenario(g, "liquid", { monthOffset: m }) * fx;
-      grantsByScenario.expected +=
-        equityValueForScenario(g, "expected", { monthOffset: m }) * fx;
+      const fx = finite(fxToBase[g.currency], 1);
+      grantsByScenario.floor += finite(
+        equityValueForScenario(g, "floor", { monthOffset: m }) * fx,
+      );
+      grantsByScenario.liquid += finite(
+        equityValueForScenario(g, "liquid", { monthOffset: m }) * fx,
+      );
+      grantsByScenario.expected += finite(
+        equityValueForScenario(g, "expected", { monthOffset: m }) * fx,
+      );
     }
 
     points.push({
       month: m,
       principal,
-      floor: principal + grantsByScenario.floor,
-      liquid: principal + grantsByScenario.liquid,
-      expected: principal + grantsByScenario.expected,
+      floor: finite(principal + grantsByScenario.floor),
+      liquid: finite(principal + grantsByScenario.liquid),
+      expected: finite(principal + grantsByScenario.expected),
     });
   }
   return points;

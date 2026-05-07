@@ -47,11 +47,24 @@ export function ProjectionsExplorer({
   fxToBase: Record<string, number>;
   defaultMonthlyContribution?: number;
 }) {
+  const safeDefaultContribution = Number.isFinite(defaultMonthlyContribution)
+    ? (defaultMonthlyContribution as number)
+    : 3000;
   const [inputs, setInputs] = useState<ProjectionInputs>({
-    monthlyContribution: defaultMonthlyContribution ?? 3000,
+    monthlyContribution: safeDefaultContribution,
     annualReturnPct: 7,
     horizonMonths: 60,
   });
+
+  const setNumber = (
+    key: keyof ProjectionInputs,
+    raw: string,
+    fallback = 0,
+  ) => {
+    const parsed = Number(raw);
+    const value = Number.isFinite(parsed) ? parsed : fallback;
+    setInputs((s) => ({ ...s, [key]: value }));
+  };
 
   const points = useMemo(
     () => projectNetWorth(startNonGrantInBase, grants, fxToBase, inputs),
@@ -83,13 +96,8 @@ export function ProjectionsExplorer({
               id="monthly"
               type="number"
               step="50"
-              value={inputs.monthlyContribution}
-              onChange={(e) =>
-                setInputs((s) => ({
-                  ...s,
-                  monthlyContribution: Number(e.target.value) || 0,
-                }))
-              }
+              value={Number.isFinite(inputs.monthlyContribution) ? inputs.monthlyContribution : ""}
+              onChange={(e) => setNumber("monthlyContribution", e.target.value)}
             />
             {defaultMonthlyContribution != null ? (
               <p className="text-[11px] text-muted-foreground">
@@ -104,13 +112,8 @@ export function ProjectionsExplorer({
               id="rate"
               type="number"
               step="0.5"
-              value={inputs.annualReturnPct}
-              onChange={(e) =>
-                setInputs((s) => ({
-                  ...s,
-                  annualReturnPct: Number(e.target.value) || 0,
-                }))
-              }
+              value={Number.isFinite(inputs.annualReturnPct) ? inputs.annualReturnPct : ""}
+              onChange={(e) => setNumber("annualReturnPct", e.target.value)}
             />
           </div>
           <div className="space-y-1.5">
@@ -119,16 +122,14 @@ export function ProjectionsExplorer({
               id="months"
               type="number"
               step="6"
-              value={inputs.horizonMonths}
-              onChange={(e) =>
-                setInputs((s) => ({
-                  ...s,
-                  horizonMonths: Number(e.target.value) || 0,
-                }))
-              }
+              value={Number.isFinite(inputs.horizonMonths) ? inputs.horizonMonths : ""}
+              onChange={(e) => setNumber("horizonMonths", e.target.value, 1)}
+              min={1}
             />
             <p className="text-[11px] text-muted-foreground">
-              {(inputs.horizonMonths / 12).toFixed(1)} years
+              {Number.isFinite(inputs.horizonMonths)
+                ? `${(inputs.horizonMonths / 12).toFixed(1)} years`
+                : "—"}
             </p>
           </div>
         </CardContent>
@@ -137,7 +138,9 @@ export function ProjectionsExplorer({
       <Card className="lg:col-span-2">
         <CardHeader>
           <CardTitle className="text-base">
-            In {(inputs.horizonMonths / 12).toFixed(1)} years
+            {Number.isFinite(inputs.horizonMonths) && inputs.horizonMonths > 0
+              ? `In ${(inputs.horizonMonths / 12).toFixed(1)} years`
+              : "Set a horizon"}
           </CardTitle>
           <CardDescription>
             Floor (equity = 0). Liquid (vested × FMV, post-tax). Expected

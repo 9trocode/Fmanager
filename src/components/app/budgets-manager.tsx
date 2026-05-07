@@ -35,6 +35,7 @@ import {
   EditBudgetDialog,
   type BudgetEditRow,
 } from "@/components/app/edit-budget-dialog";
+import { BudgetsCashFlowPanel } from "@/components/app/budgets-cashflow-panel";
 import { deleteBudget } from "@/lib/actions/budgets";
 import { formatMoney } from "@/lib/format";
 import { useRole } from "@/components/app/role-context";
@@ -45,6 +46,10 @@ export type BudgetsManagerProps = {
   rows: BudgetStatus[];
   totalLimit: number;
   totalSpent: number;
+  monthlyIncome: number;
+  recurringByCategory: Record<string, number>;
+  liquidCash: number;
+  monthsRunway: number | null;
 };
 
 function barClass(percentUsed: number): string {
@@ -189,12 +194,29 @@ export function BudgetsManager({
   rows,
   totalLimit,
   totalSpent,
+  monthlyIncome,
+  recurringByCategory,
+  liquidCash,
+  monthsRunway,
 }: BudgetsManagerProps) {
   const overallPct =
     totalLimit > 0 ? (totalSpent / totalLimit) * 100 : 0;
 
+  const budgetedCategories = rows.map((r) => r.category);
+
   return (
     <div className="space-y-6">
+      <BudgetsCashFlowPanel
+        baseCurrency={baseCurrency}
+        monthlyIncome={monthlyIncome}
+        totalBudgeted={totalLimit}
+        recurringByCategory={recurringByCategory}
+        budgetedCategories={budgetedCategories}
+        liquidCash={liquidCash}
+        monthsRunway={monthsRunway}
+      />
+
+      {rows.length > 0 ? (
       <div className="grid md:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="pb-2">
@@ -243,6 +265,7 @@ export function BudgetsManager({
           </CardContent>
         </Card>
       </div>
+      ) : null}
 
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">

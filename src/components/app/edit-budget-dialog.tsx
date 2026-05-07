@@ -46,7 +46,7 @@ export function EditBudgetDialog({
   if (role === "viewer") return null;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Edit budget</DialogTitle>
         </DialogHeader>

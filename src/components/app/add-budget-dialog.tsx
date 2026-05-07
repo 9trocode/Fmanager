@@ -48,7 +48,7 @@ export function AddBudgetDialog({
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>New budget</DialogTitle>
           <DialogDescription>

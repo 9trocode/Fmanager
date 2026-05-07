@@ -6,7 +6,15 @@ import type { AccountType, TransactionKind } from "@/lib/db/schema";
 export type SettingKey =
   | "base_currency"
   | "anthropic_api_key"
-  | "advisor_model";
+  | "openai_api_key"
+  | "google_api_key"
+  | "advisor_provider"
+  | "advisor_model"
+  | "onboarding_complete"
+  | "fx_last_refresh"
+  | "admin_email"
+  | "admin_name"
+  | "admin_password_hash";
 
 const DEFAULTS: Partial<Record<SettingKey, string>> = {
   base_currency: "USD",
@@ -225,6 +233,29 @@ export async function getFlow(id: number) {
     .where(eq(schema.recurringFlows.id, id))
     .limit(1);
   return rows[0] ?? null;
+}
+
+/**
+ * Recurring flows that land in or are paid out of a specific account.
+ * Active flows only by default — archived flows are excluded so the account
+ * page doesn't suggest committed cash that isn't really committed anymore.
+ */
+export async function listAccountFlows(
+  accountId: number,
+  opts: { includeArchived?: boolean } = {},
+) {
+  return db
+    .select()
+    .from(schema.recurringFlows)
+    .where(
+      opts.includeArchived
+        ? eq(schema.recurringFlows.accountId, accountId)
+        : and(
+            eq(schema.recurringFlows.accountId, accountId),
+            eq(schema.recurringFlows.archived, false),
+          ),
+    )
+    .orderBy(desc(schema.recurringFlows.createdAt));
 }
 
 export async function accountsByTypes(types: AccountType[]) {

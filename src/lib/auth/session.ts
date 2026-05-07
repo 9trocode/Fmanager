@@ -1,6 +1,19 @@
 import "server-only";
-import { createHmac, timingSafeEqual } from "node:crypto";
+import {
+  createHmac,
+  randomBytes,
+  scrypt as scryptCallback,
+  timingSafeEqual,
+} from "node:crypto";
+import { promisify } from "node:util";
 import { cookies } from "next/headers";
+import { getSetting, setSetting } from "@/lib/db/queries";
+
+const scrypt = promisify(scryptCallback) as (
+  password: string | Buffer,
+  salt: Buffer,
+  keylen: number,
+) => Promise<Buffer>;
 
 const COOKIE_NAME = "ff_session";
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30; // 30 days
@@ -58,8 +71,35 @@ function unpack(token: string): Unpacked | null {
   return null;
 }
 
-export function authDisabled(): boolean {
-  return !process.env.ADMIN_PASSWORD;
+// ─── password hashing ────────────────────────────────────────────────────────
+
+const HASH_KEYLEN = 64;
+const HASH_SALT_BYTES = 16;
+
+export async function hashPassword(password: string): Promise<string> {
+  const salt = randomBytes(HASH_SALT_BYTES);
+  const derived = await scrypt(password, salt, HASH_KEYLEN);
+  return `scrypt$${salt.toString("hex")}$${derived.toString("hex")}`;
+}
+
+export async function verifyPasswordHash(
+  password: string,
+  hash: string,
+): Promise<boolean> {
+  const parts = hash.split("$");
+  if (parts.length !== 3 || parts[0] !== "scrypt") return false;
+  const [, saltHex, derivedHex] = parts;
+  let salt: Buffer;
+  let expected: Buffer;
+  try {
+    salt = Buffer.from(saltHex, "hex");
+    expected = Buffer.from(derivedHex, "hex");
+  } catch {
+    return false;
+  }
+  const derived = await scrypt(password, salt, expected.length);
+  if (derived.length !== expected.length) return false;
+  return timingSafeEqual(derived, expected);
 }
 
 function constantTimeStringEq(a: string, b: string): boolean {
@@ -69,20 +109,105 @@ function constantTimeStringEq(a: string, b: string): boolean {
   return timingSafeEqual(ab, bb);
 }
 
+// ─── admin configuration state ───────────────────────────────────────────────
+
 /**
- * Returns the role that the input password matches, or null.
- * - admin password → "admin"
- * - viewer password (if set) → "viewer"
- * - In dev (no ADMIN_PASSWORD) anything matches as admin.
+ * True when an admin can be authenticated. Either:
+ *  - DB has a stored admin_password_hash, OR
+ *  - env ADMIN_PASSWORD is set (legacy / break-glass).
  */
-export function verifyPassword(input: string): Role | null {
-  const admin = process.env.ADMIN_PASSWORD ?? "";
-  if (!admin) return "admin"; // dev mode: auth disabled, treat all as admin
-  if (constantTimeStringEq(input, admin)) return "admin";
+export async function isAdminConfigured(): Promise<boolean> {
+  if (process.env.ADMIN_PASSWORD) return true;
+  const hash = await getSetting("admin_password_hash");
+  return Boolean(hash);
+}
+
+export type AdminProfile = {
+  email: string | null;
+  name: string | null;
+};
+
+export async function getAdminProfile(): Promise<AdminProfile> {
+  const [email, name] = await Promise.all([
+    getSetting("admin_email"),
+    getSetting("admin_name"),
+  ]);
+  return { email, name };
+}
+
+export type SetupAdminInput = {
+  email: string;
+  name?: string | null;
+  password: string;
+};
+
+export async function setupAdminAccount(input: SetupAdminInput): Promise<void> {
+  const email = input.email.trim().toLowerCase();
+  if (!email || !email.includes("@")) {
+    throw new Error("Enter a valid email.");
+  }
+  if (!input.password || input.password.length < 8) {
+    throw new Error("Password must be at least 8 characters.");
+  }
+  const hash = await hashPassword(input.password);
+  await setSetting("admin_email", email);
+  await setSetting("admin_name", input.name?.trim() || null);
+  await setSetting("admin_password_hash", hash);
+}
+
+// ─── credential verification ─────────────────────────────────────────────────
+
+export type LoginInput = { email?: string | null; password: string };
+
+/**
+ * Returns the role that the input matches, or null.
+ *
+ * Auth source order:
+ *   1. DB-stored admin (email + password). If admin_password_hash exists,
+ *      this is the canonical credential.
+ *   2. env ADMIN_PASSWORD as a fallback (matches by password only). Useful
+ *      for first-run / break-glass when DB has no admin yet.
+ *   3. env VIEWER_PASSWORD for the read-only viewer role.
+ *
+ * In dev mode (no env passwords AND no DB admin) anything matches as admin.
+ */
+export async function verifyCredentials(
+  input: LoginInput,
+): Promise<Role | null> {
+  const password = input.password;
+  const inputEmail = input.email?.trim().toLowerCase() ?? "";
+
+  const dbHash = await getSetting("admin_password_hash");
+  const dbEmail = (await getSetting("admin_email")) ?? "";
+
+  if (dbHash) {
+    if (
+      inputEmail &&
+      dbEmail &&
+      constantTimeStringEq(inputEmail, dbEmail) &&
+      (await verifyPasswordHash(password, dbHash))
+    ) {
+      return "admin";
+    }
+    // Fall through to viewer check; do NOT fall back to env ADMIN_PASSWORD
+    // when DB has admin set — DB is canonical at that point.
+  } else {
+    const envAdmin = process.env.ADMIN_PASSWORD ?? "";
+    if (envAdmin) {
+      if (constantTimeStringEq(password, envAdmin)) return "admin";
+    } else {
+      // No DB admin and no env admin → dev mode, anything is admin.
+      return "admin";
+    }
+  }
+
   const viewer = process.env.VIEWER_PASSWORD ?? "";
-  if (viewer && constantTimeStringEq(input, viewer)) return "viewer";
+  if (viewer && constantTimeStringEq(password, viewer)) return "viewer";
+
   return null;
 }
+
+// ─── session lifecycle ───────────────────────────────────────────────────────
 
 export async function createSession(role: Role) {
   const expiresAt = Date.now() + SESSION_TTL_MS;
@@ -101,8 +226,9 @@ export async function destroySession() {
   jar.delete(COOKIE_NAME);
 }
 
+/** True only when a configured admin exists AND a valid session cookie is present. */
 export async function isAuthenticated(): Promise<boolean> {
-  if (authDisabled()) return true;
+  if (!(await isAdminConfigured())) return true; // dev mode passthrough
   const jar = await cookies();
   const token = jar.get(COOKIE_NAME)?.value;
   if (!token) return false;
@@ -111,10 +237,10 @@ export async function isAuthenticated(): Promise<boolean> {
 
 /**
  * Returns the active role, or null if unauthenticated.
- * In dev (auth disabled) this returns "admin" so the dev experience is unchanged.
+ * In dev (no admin configured) returns "admin" so the dev experience is unchanged.
  */
 export async function getRole(): Promise<Role | null> {
-  if (authDisabled()) return "admin";
+  if (!(await isAdminConfigured())) return "admin";
   const jar = await cookies();
   const token = jar.get(COOKIE_NAME)?.value;
   if (!token) return null;
@@ -130,14 +256,25 @@ export async function isViewer(): Promise<boolean> {
   return (await getRole()) === "viewer";
 }
 
-/**
- * Throws if the caller is not admin. Use at the top of mutation server actions.
- */
+/** Throws if the caller is not admin. Use at the top of mutation server actions. */
 export async function assertAdmin(): Promise<void> {
   const role = await getRole();
   if (role !== "admin") {
     throw new Error("Read-only access — admin required.");
   }
+}
+
+/** Legacy alias kept so older callers that imported `authDisabled` still build. */
+export function authDisabled(): boolean {
+  return !process.env.ADMIN_PASSWORD;
+}
+
+/**
+ * Backwards-compat password-only verify. Used only by code paths that
+ * haven't been migrated to `verifyCredentials`. Prefer the new API.
+ */
+export async function verifyPassword(input: string): Promise<Role | null> {
+  return verifyCredentials({ password: input });
 }
 
 export function isValidSessionToken(token: string | undefined): boolean {

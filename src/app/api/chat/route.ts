@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { generateText } from "ai";
-import { createAnthropic } from "@ai-sdk/anthropic";
 import { eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { isAuthenticated } from "@/lib/auth/session";
+import { buildAdvisorClient } from "@/lib/ai/provider";
 import {
   computeNetWorth,
   computeMonthlyCashFlow,
@@ -18,24 +18,6 @@ import { monthlyEquivalent } from "@/lib/flows";
 export const runtime = "nodejs";
 
 type Msg = { role: "user" | "assistant" | "system"; content: string };
-
-async function getApiKey(): Promise<string | null> {
-  const row = await db
-    .select()
-    .from(schema.settings)
-    .where(eq(schema.settings.key, "anthropic_api_key"))
-    .limit(1);
-  return row[0]?.value || process.env.ANTHROPIC_API_KEY || null;
-}
-
-async function getModelId(): Promise<string> {
-  const row = await db
-    .select()
-    .from(schema.settings)
-    .where(eq(schema.settings.key, "advisor_model"))
-    .limit(1);
-  return row[0]?.value || "claude-sonnet-4-6";
-}
 
 function fmt(value: number, currency: string): string {
   return formatMoney(value, currency, { compact: true });
@@ -171,7 +153,11 @@ async function buildSystemPrompt(): Promise<string> {
           .map((f) => {
             const m = monthlyEquivalent(f.amount, f.cadence);
             const sign = f.kind === "income" ? "+" : "−";
-            return `- ${sign} ${f.name}${f.category ? ` [${f.category}]` : ""}: ${f.amount} ${f.currency} ${f.cadence} (≈ ${sign}${fmt(m, f.currency)} / mo)`;
+            const acct = accounts.find((a) => a.id === f.accountId);
+            const acctNote = acct
+              ? ` ${f.kind === "income" ? "→" : "←"} ${acct.name}${acct.type === "loan" ? " (loan)" : ""}`
+              : " · no account linked";
+            return `- ${sign} ${f.name}${f.category ? ` [${f.category}]` : ""}: ${f.amount} ${f.currency} ${f.cadence} (≈ ${sign}${fmt(m, f.currency)} / mo)${acctNote}`;
           })
           .join("\n")
       : "(no recurring flows tracked)",
@@ -258,30 +244,29 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const apiKey = await getApiKey();
-  if (!apiKey) {
-    return new NextResponse(
-      "No Anthropic API key configured. Add one in Settings → Advisor or set ANTHROPIC_API_KEY.",
-      { status: 400 },
-    );
-  }
-
   const body = (await req.json().catch(() => null)) as { messages?: Msg[] } | null;
   const messages = body?.messages ?? [];
   if (!messages.length) {
     return new NextResponse("messages required", { status: 400 });
   }
 
-  const anthropic = createAnthropic({ apiKey });
-  const modelId = await getModelId();
+  let client;
+  try {
+    client = await buildAdvisorClient();
+  } catch (err) {
+    return new NextResponse(
+      err instanceof Error ? err.message : "Advisor not configured.",
+      { status: 400 },
+    );
+  }
 
   try {
     const { text } = await generateText({
-      model: anthropic(modelId),
+      model: client.model,
       system: await buildSystemPrompt(),
       messages: messages.filter((m) => m.role !== "system"),
     });
-    return NextResponse.json({ content: text });
+    return NextResponse.json({ content: text, provider: client.provider });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Advisor request failed.";
     return new NextResponse(message, { status: 502 });

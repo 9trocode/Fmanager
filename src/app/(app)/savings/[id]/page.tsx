@@ -73,6 +73,7 @@ export default async function SavingsGoalDetailPage({
     id: a.id,
     name: a.name,
     currency: a.currency,
+    type: a.type,
   }));
 
   // Net worth projection at the goal's horizon, using the goal's monthly

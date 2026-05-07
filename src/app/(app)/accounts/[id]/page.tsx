@@ -1,6 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Archive, ArchiveRestore, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  Archive,
+  ArchiveRestore,
+  ArrowDownRight,
+  ArrowUpRight,
+  Repeat,
+  Trash2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -37,6 +45,7 @@ import { TransactionItem } from "@/components/app/transactions-list";
 import {
   getAccount,
   getEffectiveBalance,
+  listAccountFlows,
   listAccountTransactions,
   listAccounts,
   listSnapshots,
@@ -48,6 +57,7 @@ import {
   deleteSnapshot,
 } from "@/lib/actions/accounts";
 import { ACCOUNT_TYPE_LABEL, isLiability } from "@/lib/account-types";
+import { FLOW_CADENCE_LABEL, monthlyEquivalent } from "@/lib/flows";
 import { formatMoney } from "@/lib/format";
 
 export default async function AccountDetailPage({
@@ -62,12 +72,32 @@ export default async function AccountDetailPage({
   const account = await getAccount(id);
   if (!account) notFound();
 
-  const [snapshots, txs, allAccounts, effective] = await Promise.all([
+  const [snapshots, txs, allAccounts, effective, flows] = await Promise.all([
     listSnapshots(id),
     listAccountTransactions(id, 50),
     listAccounts({ includeArchived: true }),
     getEffectiveBalance(id),
+    listAccountFlows(id),
   ]);
+
+  // Aggregate the recurring flows linked to this account into per-month
+  // numbers so the header can show "this account brings in $X / mo".
+  // Flows whose currency differs from the account currency are still listed
+  // but the monthly net only sums same-currency flows to avoid silent FX
+  // surprises on a single-account view.
+  let monthlyIncomeSameCcy = 0;
+  let monthlyExpenseSameCcy = 0;
+  let hasMixedCurrency = false;
+  for (const f of flows) {
+    const m = monthlyEquivalent(f.amount, f.cadence);
+    if (f.currency !== account.currency) {
+      hasMixedCurrency = true;
+      continue;
+    }
+    if (f.kind === "income") monthlyIncomeSameCcy += m;
+    else monthlyExpenseSameCcy += m;
+  }
+  const monthlyNet = monthlyIncomeSameCcy - monthlyExpenseSameCcy;
   const latest = snapshots[0];
   const liability = isLiability(account.type);
 
@@ -184,6 +214,41 @@ export default async function AccountDetailPage({
                   : ""}
               </CardDescription>
             ) : null}
+            {flows.length > 0 ? (
+              <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                {monthlyIncomeSameCcy > 0 ? (
+                  <span className="font-mono tabular-nums text-emerald-300">
+                    + {formatMoney(monthlyIncomeSameCcy, account.currency)} /
+                    mo income
+                  </span>
+                ) : null}
+                {monthlyExpenseSameCcy > 0 ? (
+                  <span className="font-mono tabular-nums text-destructive">
+                    − {formatMoney(monthlyExpenseSameCcy, account.currency)} /
+                    mo expenses
+                  </span>
+                ) : null}
+                {(monthlyIncomeSameCcy > 0 || monthlyExpenseSameCcy > 0) ? (
+                  <span
+                    className={
+                      "font-mono tabular-nums " +
+                      (monthlyNet >= 0 ? "text-foreground" : "text-destructive")
+                    }
+                  >
+                    net{" "}
+                    {formatMoney(monthlyNet, account.currency, {
+                      signed: true,
+                    })}{" "}
+                    / mo
+                  </span>
+                ) : null}
+                {hasMixedCurrency ? (
+                  <span className="text-muted-foreground">
+                    · some flows in other currencies — see list below
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
           </CardHeader>
           {account.notes ? (
             <CardContent className="border-t border-border pt-4 text-sm text-muted-foreground whitespace-pre-wrap">
@@ -205,6 +270,107 @@ export default async function AccountDetailPage({
           </CardContent>
         </Card>
       </div>
+
+      <Card className="mt-6">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <div>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Repeat className="size-4 text-muted-foreground" />
+              Recurring flows
+            </CardTitle>
+            <CardDescription>
+              {flows.length === 0
+                ? "No recurring flows are linked to this account yet."
+                : `${flows.length} ${flows.length === 1 ? "flow" : "flows"} pointed at this account`}
+            </CardDescription>
+          </div>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/cash-flow">
+              <Repeat className="size-4" />
+              Manage cash flow
+            </Link>
+          </Button>
+        </CardHeader>
+        {flows.length === 0 ? (
+          <CardContent>
+            <p className="text-sm text-muted-foreground">
+              Add a recurring inflow (e.g. salary) or outflow (e.g. rent) on
+              the{" "}
+              <Link
+                href="/cash-flow"
+                className="underline underline-offset-3 hover:text-foreground"
+              >
+                cash flow page
+              </Link>{" "}
+              and pick this account — it&apos;ll show up here with the monthly
+              equivalent rolled into the balance summary above.
+            </p>
+          </CardContent>
+        ) : (
+          <CardContent className="space-y-2">
+            {flows.map((f) => {
+              const isIncome = f.kind === "income";
+              const monthly = monthlyEquivalent(f.amount, f.cadence);
+              return (
+                <div
+                  key={f.id}
+                  className="flex items-center justify-between gap-3 px-3 py-2 rounded-md border border-border hover:bg-secondary/40 transition-colors"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div
+                      className={
+                        "size-8 rounded-md grid place-items-center shrink-0 " +
+                        (isIncome
+                          ? "bg-emerald-500/15 text-emerald-300"
+                          : "bg-destructive/15 text-destructive")
+                      }
+                    >
+                      {isIncome ? (
+                        <ArrowUpRight className="size-4" />
+                      ) : (
+                        <ArrowDownRight className="size-4" />
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium truncate">{f.name}</span>
+                        {f.category ? (
+                          <Badge variant="secondary" className="text-[10px]">
+                            {f.category}
+                          </Badge>
+                        ) : null}
+                        <span className="text-[10px] font-mono text-muted-foreground">
+                          {FLOW_CADENCE_LABEL[f.cadence].toLowerCase()}
+                        </span>
+                      </div>
+                      {f.notes ? (
+                        <div className="text-xs text-muted-foreground truncate">
+                          {f.notes}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div
+                      className={
+                        "font-mono tabular-nums text-sm " +
+                        (isIncome ? "text-emerald-300" : "")
+                      }
+                    >
+                      {isIncome ? "+" : "−"}
+                      {formatMoney(f.amount, f.currency)}
+                    </div>
+                    <div className="text-[10px] font-mono text-muted-foreground">
+                      ≈ {isIncome ? "+" : "−"}
+                      {formatMoney(monthly, f.currency)} / mo
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </CardContent>
+        )}
+      </Card>
 
       <Card className="mt-6">
         <CardHeader>

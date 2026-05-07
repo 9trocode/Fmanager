@@ -39,11 +39,23 @@ function parseOptionalInt(value: FormDataEntryValue | null): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+const VALID_KINDS = new Set(["savings", "net_worth", "fire", "debt_payoff"]);
+
+function parseKind(
+  value: FormDataEntryValue | null,
+): "savings" | "net_worth" | "fire" | "debt_payoff" {
+  const v = String(value ?? "savings");
+  return VALID_KINDS.has(v)
+    ? (v as "savings" | "net_worth" | "fire" | "debt_payoff")
+    : "savings";
+}
+
 function commonFields(formData: FormData) {
   const startedAt =
     String(formData.get("started_at") ?? "").trim() ||
     new Date().toISOString().slice(0, 10);
   return {
+    kind: parseKind(formData.get("kind")),
     name: String(formData.get("name") ?? "").trim(),
     category: String(formData.get("category") ?? "").trim() || null,
     targetAmount: parseOptionalAmount(formData.get("target_amount")),
@@ -52,6 +64,8 @@ function commonFields(formData: FormData) {
     monthlyContribution: parseAmount(formData.get("monthly_contribution")),
     expectedReturnPct: parseAmount(formData.get("expected_return_pct")),
     horizonMonths: parseInt32(formData.get("horizon_months"), 12),
+    targetDate: String(formData.get("target_date") ?? "").trim() || null,
+    fireMultiplier: parseOptionalAmount(formData.get("fire_multiplier")),
     startedAt,
     accountId: parseOptionalInt(formData.get("account_id")),
     notes: String(formData.get("notes") ?? "").trim() || null,

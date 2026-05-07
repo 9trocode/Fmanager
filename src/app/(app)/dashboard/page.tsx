@@ -1,5 +1,12 @@
+import { redirect } from "next/navigation";
 import { Wallet } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
+import { HeroBackground } from "@/components/app/hero-background";
+
+// Reads onboarding state + auth cookie + DB live every request.
+// Must NOT be statically prerendered, or the build-time snapshot
+// (no onboarding_complete) gets cached and always redirects.
+export const dynamic = "force-dynamic";
 import { EmptyState } from "@/components/app/empty-state";
 import { AddAccountDialog } from "@/components/app/add-account-dialog";
 import { AddGrantDialog } from "@/components/app/add-grant-dialog";
@@ -11,6 +18,7 @@ import { SavingsSummaryCard } from "@/components/app/savings-summary-card";
 import { NetWorthMiniCard } from "@/components/app/networth-mini-card";
 import {
   getBaseCurrency,
+  getSetting,
   listAccounts,
   listLatestTransactions,
   listSavingsGoals,
@@ -19,16 +27,25 @@ import {
   computeNetWorth,
   computeCashRunway,
   computeBudgetStatus,
+  computeMonthlyCashFlow,
   computeThisMonthActuals,
 } from "@/lib/aggregation";
 
 export default async function DashboardPage() {
+  // Send first-time users into onboarding instead of an empty dashboard.
+  const onboardingComplete =
+    (await getSetting("onboarding_complete")) === "true";
+  if (!onboardingComplete) {
+    redirect("/welcome");
+  }
+
   const baseCurrency = await getBaseCurrency();
   const [
     summary,
     runway,
     budgets,
     month,
+    flows,
     accounts,
     recentTxs,
     savings,
@@ -37,6 +54,7 @@ export default async function DashboardPage() {
     computeCashRunway(baseCurrency),
     computeBudgetStatus(baseCurrency),
     computeThisMonthActuals(baseCurrency),
+    computeMonthlyCashFlow(baseCurrency),
     listAccounts({ includeArchived: true }),
     listLatestTransactions(8),
     listSavingsGoals(),
@@ -46,7 +64,9 @@ export default async function DashboardPage() {
 
   return (
     <>
+      <HeroBackground />
       <PageHeader
+        size="lg"
         title="Home"
         description={`Where your money is going in ${month.monthLabel}. Add transactions, watch budgets, work toward goals.`}
       />
@@ -65,7 +85,7 @@ export default async function DashboardPage() {
         />
       ) : (
         <div className="space-y-6">
-          <MonthStatsRow month={month} budgets={budgets} />
+          <MonthStatsRow month={month} budgets={budgets} flows={flows} />
 
           <div className="grid lg:grid-cols-2 gap-6">
             <RunwayCard runway={runway} />

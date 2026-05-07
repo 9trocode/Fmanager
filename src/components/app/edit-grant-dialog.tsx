@@ -50,7 +50,7 @@ export function EditGrantDialog({
           Edit
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>Edit grant</DialogTitle>
         </DialogHeader>

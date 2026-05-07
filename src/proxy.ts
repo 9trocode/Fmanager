@@ -2,7 +2,16 @@ import { NextResponse, type NextRequest } from "next/server";
 
 const SESSION_COOKIE = "ff_session";
 
-const PUBLIC_PATHS = ["/", "/login", "/api/auth/login", "/api/health"];
+// Always-public paths. The /welcome flow handles its own auth + setup logic
+// internally so unauthenticated first-time users can land there to create
+// their admin account.
+const PUBLIC_PATHS = [
+  "/",
+  "/login",
+  "/welcome",
+  "/api/auth/login",
+  "/api/health",
+];
 
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -15,11 +24,15 @@ export function proxy(req: NextRequest) {
     return NextResponse.next();
   }
 
-  if (!process.env.ADMIN_PASSWORD) {
+  if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
     return NextResponse.next();
   }
 
-  if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
+  // Legacy: when env ADMIN_PASSWORD is unset AND no DB admin has been
+  // configured, server-side checks treat the user as admin (dev mode).
+  // We can't read the DB from a Routing Middleware context; the layout-level
+  // auth check (`isAuthenticated`) handles this case correctly.
+  if (!process.env.ADMIN_PASSWORD) {
     return NextResponse.next();
   }
 

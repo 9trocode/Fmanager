@@ -12,6 +12,7 @@ import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
 import { AddAccountDialog } from "@/components/app/add-account-dialog";
 import { AddGrantDialog } from "@/components/app/add-grant-dialog";
+import { HeroBackground } from "@/components/app/hero-background";
 import { getBaseCurrency, listAccounts } from "@/lib/db/queries";
 import {
   computeNetWorth,
@@ -42,7 +43,9 @@ export default async function NetWorthPage() {
 
   return (
     <>
+      <HeroBackground />
       <PageHeader
+        size="lg"
         title="Net worth"
         description="Your full balance sheet across currencies, with company equity shown three ways: without it, at its current value, or at target exit."
         actions={

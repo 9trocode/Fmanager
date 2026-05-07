@@ -17,6 +17,7 @@ import { useRole } from "@/components/app/role-context";
 
 type Goal = {
   id: number;
+  kind: "savings" | "net_worth" | "fire" | "debt_payoff";
   name: string;
   category: string | null;
   targetAmount: number | null;
@@ -25,6 +26,8 @@ type Goal = {
   monthlyContribution: number;
   expectedReturnPct: number;
   horizonMonths: number;
+  targetDate: string | null;
+  fireMultiplier: number | null;
   startedAt: string;
   accountId: number | null;
   notes: string | null;
@@ -35,7 +38,12 @@ export function EditSavingsGoalDialog({
   accountOptions,
 }: {
   goal: Goal;
-  accountOptions: Array<{ id: number; name: string; currency: string }>;
+  accountOptions: Array<{
+    id: number;
+    name: string;
+    currency: string;
+    type?: string;
+  }>;
 }) {
   const role = useRole();
   const [open, setOpen] = useState(false);
@@ -49,7 +57,7 @@ export function EditSavingsGoalDialog({
           Edit
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>Edit goal</DialogTitle>
         </DialogHeader>

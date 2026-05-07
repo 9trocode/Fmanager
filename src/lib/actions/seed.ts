@@ -158,19 +158,22 @@ const FLOWS: Array<{
   amount: number;
   currency: string;
   cadence: "weekly" | "monthly" | "yearly";
+  /** Account this flow lands in (income) or comes out of (expense). */
+  accountName?: string;
   notes?: string;
 }> = [
-  // Expenses
-  { name: "Founder salary draw", kind: "income", category: "Salary", amount: 6500, currency: "USD", cadence: "monthly", notes: "Conservative draw; can reduce." },
-  { name: "Side consulting", kind: "income", category: "Consulting", amount: 2500, currency: "USD", cadence: "monthly", notes: "1 day/week. Variable." },
-  { name: "USD mortgage payment", kind: "expense", category: "Housing", amount: 1850, currency: "USD", cadence: "monthly" },
-  { name: "Lagos rent (assistant + nanny)", kind: "expense", category: "Family", amount: 850_000, currency: "NGN", cadence: "monthly" },
-  { name: "Health insurance", kind: "expense", category: "Insurance", amount: 480, currency: "USD", cadence: "monthly" },
-  { name: "Family living (food, transport)", kind: "expense", category: "Personal", amount: 2200, currency: "USD", cadence: "monthly" },
-  { name: "School fees", kind: "expense", category: "Family", amount: 12_000, currency: "USD", cadence: "yearly", notes: "Paid in 2 tranches." },
-  { name: "AWS personal projects", kind: "expense", category: "Cloud / SaaS", amount: 95, currency: "USD", cadence: "monthly" },
-  { name: "Subscriptions bundle", kind: "expense", category: "Subscription", amount: 78, currency: "USD", cadence: "monthly", notes: "Anthropic, Linear, Notion, Spotify, NYT." },
-  { name: "Travel float", kind: "expense", category: "Personal", amount: 600, currency: "USD", cadence: "monthly", notes: "Annualized — actual is lumpy." },
+  // Income — lands in matching cash accounts
+  { name: "Founder salary draw", kind: "income", category: "Salary", amount: 6500, currency: "USD", cadence: "monthly", accountName: "Mercury USD checking", notes: "Conservative draw; can reduce." },
+  { name: "Side consulting", kind: "income", category: "Consulting", amount: 2500, currency: "USD", cadence: "monthly", accountName: "Mercury USD checking", notes: "1 day/week. Variable." },
+  // Expenses — drawn from matching cash accounts
+  { name: "USD mortgage payment", kind: "expense", category: "Housing", amount: 1850, currency: "USD", cadence: "monthly", accountName: "Mercury USD checking", notes: "Tracks the planned payment. Log a transfer transaction monthly to actually reduce the loan balance." },
+  { name: "Lagos rent (assistant + nanny)", kind: "expense", category: "Family", amount: 850_000, currency: "NGN", cadence: "monthly", accountName: "GTBank naira savings" },
+  { name: "Health insurance", kind: "expense", category: "Insurance", amount: 480, currency: "USD", cadence: "monthly", accountName: "Mercury USD checking" },
+  { name: "Family living (food, transport)", kind: "expense", category: "Personal", amount: 2200, currency: "USD", cadence: "monthly", accountName: "Mercury USD checking" },
+  { name: "School fees", kind: "expense", category: "Family", amount: 12_000, currency: "USD", cadence: "yearly", accountName: "Mercury USD checking", notes: "Paid in 2 tranches." },
+  { name: "AWS personal projects", kind: "expense", category: "Cloud / SaaS", amount: 95, currency: "USD", cadence: "monthly", accountName: "Mercury USD checking" },
+  { name: "Subscriptions bundle", kind: "expense", category: "Subscription", amount: 78, currency: "USD", cadence: "monthly", accountName: "Mercury USD checking", notes: "Anthropic, Linear, Notion, Spotify, NYT." },
+  { name: "Travel float", kind: "expense", category: "Personal", amount: 600, currency: "USD", cadence: "monthly", accountName: "Mercury USD checking", notes: "Annualized — actual is lumpy." },
 ];
 
 const BUDGETS: Array<{
@@ -193,6 +196,7 @@ const BUDGETS: Array<{
 ];
 
 const SAVINGS_GOALS: Array<{
+  kind?: "savings" | "net_worth" | "fire" | "debt_payoff";
   name: string;
   category: string | null;
   targetAmount: number | null;
@@ -201,8 +205,11 @@ const SAVINGS_GOALS: Array<{
   monthlyContribution: number;
   expectedReturnPct: number;
   horizonMonths: number;
+  targetDate?: string | null;
+  fireMultiplier?: number | null;
   startedAt: string;
   notes?: string;
+  accountName?: string;
 }> = [
   {
     name: "Emergency fund",
@@ -239,6 +246,51 @@ const SAVINGS_GOALS: Array<{
     horizonMonths: 8,
     startedAt: "2026-03-01",
     notes: "Quarterly estimate buffer + April catch-up.",
+  },
+  {
+    kind: "net_worth",
+    name: "First million",
+    category: "Net worth",
+    targetAmount: 1_000_000,
+    currentAmount: 0,
+    currency: "USD",
+    monthlyContribution: 4_500,
+    expectedReturnPct: 7,
+    horizonMonths: 60,
+    targetDate: "2030-01-01",
+    startedAt: "2026-01-01",
+    notes:
+      "Total liquid + non-grant net worth. Plan against floor; equity is upside.",
+  },
+  {
+    kind: "fire",
+    name: "Financial independence",
+    category: "Retirement",
+    targetAmount: null,
+    currentAmount: 0,
+    currency: "USD",
+    monthlyContribution: 4_500,
+    expectedReturnPct: 7,
+    horizonMonths: 240,
+    fireMultiplier: 25,
+    startedAt: "2026-01-01",
+    notes:
+      "25× annual expenses (4% rule). Computed live from your recurring flow expenses.",
+  },
+  {
+    kind: "debt_payoff",
+    name: "Pay off USD mortgage",
+    category: "Housing",
+    targetAmount: 0,
+    currentAmount: 49_500, // original principal at goal creation
+    currency: "USD",
+    monthlyContribution: 1_400,
+    expectedReturnPct: 0,
+    horizonMonths: 36,
+    targetDate: "2029-01-01",
+    accountName: "USD mortgage",
+    startedAt: "2026-01-01",
+    notes: "Aggressive principal pay-down plan.",
   },
 ];
 
@@ -435,7 +487,12 @@ export async function seedSampleData() {
 
   await db.insert(schema.decisions).values(DECISIONS);
 
-  await db.insert(schema.recurringFlows).values(FLOWS);
+  // Resolve flow accountName → accountId before insert.
+  const flowRows = FLOWS.map(({ accountName, ...rest }) => ({
+    ...rest,
+    accountId: accountName ? (idsByName[accountName] ?? null) : null,
+  }));
+  await db.insert(schema.recurringFlows).values(flowRows);
 
   const txRows = buildSampleTransactions(idsByName);
   if (txRows.length > 0) {
@@ -447,7 +504,15 @@ export async function seedSampleData() {
   }
 
   if (SAVINGS_GOALS.length > 0) {
-    await db.insert(schema.savingsGoals).values(SAVINGS_GOALS);
+    // Resolve accountName → accountId for debt_payoff goals.
+    const accountByName = new Map(
+      (await db.select().from(schema.accounts)).map((a) => [a.name, a.id]),
+    );
+    const goalRows = SAVINGS_GOALS.map(({ accountName, ...rest }) => ({
+      ...rest,
+      accountId: accountName ? (accountByName.get(accountName) ?? null) : null,
+    }));
+    await db.insert(schema.savingsGoals).values(goalRows);
   }
 
   revalidatePath("/", "layout");

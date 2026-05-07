@@ -10,14 +10,23 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { listDecisions, getSetting } from "@/lib/db/queries";
+import { listDecisions } from "@/lib/db/queries";
+import {
+  getAdvisorProvider,
+  isAdvisorConfigured,
+  PROVIDER_LABEL,
+} from "@/lib/ai/provider";
 import { AdvisorChat } from "./advisor-chat";
 
+export const dynamic = "force-dynamic";
+
 export default async function AdvisorPage() {
-  const [decisions, key] = await Promise.all([
+  const [decisions, provider, configured] = await Promise.all([
     listDecisions({ onlyOpen: true }),
-    getSetting("anthropic_api_key"),
+    getAdvisorProvider(),
+    isAdvisorConfigured(),
   ]);
+  const providerName = PROVIDER_LABEL[provider].split(" ")[0];
 
   return (
     <>
@@ -25,8 +34,10 @@ export default async function AdvisorPage() {
         title="Advisor"
         description="A finance co-pilot anchored on your three real decisions and your full balance sheet."
         actions={
-          <Badge variant={key ? "secondary" : "outline"}>
-            {key ? "BYO key configured" : "Add API key in Settings"}
+          <Badge variant={configured ? "secondary" : "outline"}>
+            {configured
+              ? `BYO ${providerName} key configured`
+              : `Add ${providerName} key in Settings`}
           </Badge>
         }
       />

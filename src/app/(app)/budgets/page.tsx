@@ -1,11 +1,19 @@
 import { PageHeader } from "@/components/app/page-header";
 import { BudgetsManager } from "@/components/app/budgets-manager";
 import { getBaseCurrency } from "@/lib/db/queries";
-import { computeBudgetStatus } from "@/lib/aggregation";
+import {
+  computeBudgetStatus,
+  computeCashRunway,
+  computeMonthlyCashFlow,
+} from "@/lib/aggregation";
 
 export default async function BudgetsPage() {
   const baseCurrency = await getBaseCurrency();
-  const summary = await computeBudgetStatus(baseCurrency);
+  const [summary, cashFlow, runway] = await Promise.all([
+    computeBudgetStatus(baseCurrency),
+    computeMonthlyCashFlow(baseCurrency),
+    computeCashRunway(baseCurrency),
+  ]);
 
   return (
     <>
@@ -18,6 +26,10 @@ export default async function BudgetsPage() {
         rows={summary.rows}
         totalLimit={summary.totalLimit}
         totalSpent={summary.totalSpent}
+        monthlyIncome={cashFlow.income}
+        recurringByCategory={cashFlow.byCategory.expense}
+        liquidCash={runway.liquidCash}
+        monthsRunway={runway.monthsRunway}
       />
     </>
   );

@@ -59,6 +59,8 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/app/empty-state";
+import { AddTransactionDialog } from "@/components/app/add-transaction-dialog";
+import type { TransactionAccountOption } from "@/components/app/transaction-form-fields";
 import {
   createFlow,
   deleteFlow,
@@ -83,6 +85,7 @@ export type FlowRow = {
   amount: number;
   currency: string;
   cadence: FlowCadence;
+  accountId: number | null;
   archived: boolean;
   notes: string | null;
 };
@@ -90,15 +93,26 @@ export type FlowRow = {
 function FlowFields({
   defaults,
   defaultKind,
+  accountOptions,
 }: {
   defaults?: FlowRow;
   defaultKind?: FlowKind;
+  accountOptions: Array<{ id: number; name: string; currency: string; type?: string }>;
 }) {
   const kind = defaults?.kind ?? defaultKind ?? "expense";
   const categories =
     kind === "income"
       ? SUGGESTED_INCOME_CATEGORIES
       : SUGGESTED_EXPENSE_CATEGORIES;
+  const initialAccountId =
+    defaults?.accountId != null
+      ? String(defaults.accountId)
+      : accountOptions[0]
+        ? String(accountOptions[0].id)
+        : "none";
+  const [accountId, setAccountId] = useState(initialAccountId);
+  const linkedAccount = accountOptions.find((a) => String(a.id) === accountId);
+  const isLoanAccount = linkedAccount?.type === "loan";
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
@@ -171,6 +185,45 @@ function FlowFields({
         </div>
       </div>
       <input type="hidden" name="kind" value={kind} />
+
+      <div className="space-y-1.5">
+        <Label htmlFor="account_id">
+          {kind === "income" ? "Lands in account" : "Comes out of account"}
+        </Label>
+        <input type="hidden" name="account_id" value={accountId} />
+        <Select value={accountId} onValueChange={setAccountId}>
+          <SelectTrigger id="account_id">
+            <SelectValue
+              placeholder={
+                accountOptions.length === 0
+                  ? "Add an account first"
+                  : "Pick an account"
+              }
+            />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">
+              <span className="text-muted-foreground">— none —</span>
+            </SelectItem>
+            {accountOptions.map((a) => (
+              <SelectItem key={a.id} value={String(a.id)}>
+                {a.name} ({a.currency})
+                {a.type === "loan" ? " · loan" : ""}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {isLoanAccount ? (
+          <p className="text-[10px] text-amber-300/90 leading-relaxed">
+            Heads up: paying a loan account isn&apos;t really an expense — it&apos;s
+            a transfer. To reduce the loan&apos;s balance each month, also log a
+            transaction (kind = transfer) from your cash account to this loan
+            account. The recurring flow tracks the planned amount; the
+            transaction applies it.
+          </p>
+        ) : null}
+      </div>
+
       <div className="space-y-1.5">
         <Label htmlFor="notes">Notes (optional)</Label>
         <textarea
@@ -186,7 +239,13 @@ function FlowFields({
   );
 }
 
-function AddFlowDialog({ defaultKind }: { defaultKind: FlowKind }) {
+function AddFlowDialog({
+  defaultKind,
+  accountOptions,
+}: {
+  defaultKind: FlowKind;
+  accountOptions: Array<{ id: number; name: string; currency: string; type?: string }>;
+}) {
   const role = useRole();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -199,11 +258,9 @@ function AddFlowDialog({ defaultKind }: { defaultKind: FlowKind }) {
           New {defaultKind}
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>
-            New recurring {defaultKind}
-          </DialogTitle>
+          <DialogTitle>New recurring {defaultKind}</DialogTitle>
           <DialogDescription>
             Recurring {defaultKind === "income" ? "inflows feed" : "outflows reduce"} your
             monthly cash flow and the runway widget on the dashboard.
@@ -218,7 +275,10 @@ function AddFlowDialog({ defaultKind }: { defaultKind: FlowKind }) {
           }
           className="space-y-4"
         >
-          <FlowFields defaultKind={defaultKind} />
+          <FlowFields
+            defaultKind={defaultKind}
+            accountOptions={accountOptions}
+          />
           <DialogFooter>
             <Button type="submit" disabled={pending}>
               {pending ? "Saving…" : "Add"}
@@ -234,17 +294,19 @@ function EditFlowDialog({
   flow,
   open,
   onOpenChange,
+  accountOptions,
 }: {
   flow: FlowRow;
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  accountOptions: Array<{ id: number; name: string; currency: string; type?: string }>;
 }) {
   const role = useRole();
   const [pending, startTransition] = useTransition();
   if (role === "viewer") return null;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Edit {flow.kind}</DialogTitle>
         </DialogHeader>
@@ -258,7 +320,7 @@ function EditFlowDialog({
           className="space-y-4"
         >
           <input type="hidden" name="id" value={flow.id} />
-          <FlowFields defaults={flow} />
+          <FlowFields defaults={flow} accountOptions={accountOptions} />
           <DialogFooter>
             <Button type="submit" disabled={pending}>
               {pending ? "Saving…" : "Save"}
@@ -270,12 +332,19 @@ function EditFlowDialog({
   );
 }
 
-function FlowRow({ flow }: { flow: FlowRow }) {
+function FlowRow({
+  flow,
+  accountOptions,
+}: {
+  flow: FlowRow;
+  accountOptions: Array<{ id: number; name: string; currency: string; type?: string }>;
+}) {
   const role = useRole();
   const [editOpen, setEditOpen] = useState(false);
   const [, startTransition] = useTransition();
   const monthly = monthlyEquivalent(flow.amount, flow.cadence);
   const readOnly = role === "viewer";
+  const linked = accountOptions.find((a) => a.id === flow.accountId);
 
   function handleArchive() {
     const fd = new FormData();
@@ -334,7 +403,7 @@ function FlowRow({ flow }: { flow: FlowRow }) {
           )}
         </div>
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="font-medium truncate">{flow.name}</span>
             {flow.category ? (
               <Badge variant="secondary" className="text-[10px]">
@@ -344,6 +413,18 @@ function FlowRow({ flow }: { flow: FlowRow }) {
             <span className="text-[10px] font-mono text-muted-foreground">
               {FLOW_CADENCE_LABEL[flow.cadence].toLowerCase()}
             </span>
+            {linked ? (
+              <span className="text-[10px] font-mono text-muted-foreground">
+                · {isIncome ? "→" : "←"} {linked.name}
+                {linked.type === "loan" ? (
+                  <span className="text-amber-300/80"> (loan)</span>
+                ) : null}
+              </span>
+            ) : (
+              <span className="text-[10px] font-mono text-amber-300/70">
+                · no account linked
+              </span>
+            )}
           </div>
           {flow.notes ? (
             <div className="text-xs text-muted-foreground truncate">{flow.notes}</div>
@@ -427,7 +508,12 @@ function FlowRow({ flow }: { flow: FlowRow }) {
         )}
       </div>
 
-      <EditFlowDialog flow={flow} open={editOpen} onOpenChange={setEditOpen} />
+      <EditFlowDialog
+        flow={flow}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        accountOptions={accountOptions}
+      />
     </div>
   );
 }
@@ -437,11 +523,13 @@ export function FlowsManager({
   baseCurrency,
   monthlyIncomeInBase,
   monthlyExpensesInBase,
+  accountOptions,
 }: {
   flows: FlowRow[];
   baseCurrency: string;
   monthlyIncomeInBase: number;
   monthlyExpensesInBase: number;
+  accountOptions: TransactionAccountOption[];
 }) {
   const [tab, setTab] = useState<"all" | "expense" | "income">("all");
   const filtered = useMemo(
@@ -491,7 +579,7 @@ export function FlowsManager({
         </Card>
       </div>
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <Tabs
           value={tab}
           onValueChange={(v) => setTab(v as typeof tab)}
@@ -503,11 +591,31 @@ export function FlowsManager({
             <TabsTrigger value="income">Income</TabsTrigger>
           </TabsList>
         </Tabs>
-        <div className="flex items-center gap-2">
-          <AddFlowDialog defaultKind="income" />
-          <AddFlowDialog defaultKind="expense" />
+        <div className="flex flex-wrap items-center gap-2">
+          {accountOptions.length > 0 ? (
+            <AddTransactionDialog
+              accounts={accountOptions}
+              defaultKind="expense"
+              trigger={
+                <Button size="sm" variant="outline">
+                  <Plus className="size-4" />
+                  One-time
+                </Button>
+              }
+            />
+          ) : null}
+          <AddFlowDialog defaultKind="income" accountOptions={accountOptions} />
+          <AddFlowDialog defaultKind="expense" accountOptions={accountOptions} />
         </div>
       </div>
+      <p className="text-[11px] text-muted-foreground -mt-2 leading-relaxed">
+        <span className="text-foreground font-medium">Recurring</span>{" "}
+        flows shape your monthly take.{" "}
+        <span className="text-foreground font-medium">One-time</span>{" "}
+        events (vacation, tax bill, lawyer fee) are logged as transactions —
+        click <span className="font-mono">One-time</span> to add one without
+        leaving this page.
+      </p>
 
       {filtered.length === 0 ? (
         <EmptyState
@@ -516,8 +624,8 @@ export function FlowsManager({
           description="Add your fixed monthly outflows and inflows. The dashboard runway widget and projections will use these immediately."
           action={
             <div className="flex gap-2">
-              <AddFlowDialog defaultKind="expense" />
-              <AddFlowDialog defaultKind="income" />
+              <AddFlowDialog defaultKind="expense" accountOptions={accountOptions} />
+              <AddFlowDialog defaultKind="income" accountOptions={accountOptions} />
             </div>
           }
         />
@@ -532,7 +640,7 @@ export function FlowsManager({
               ) : null}
               <div className="space-y-2">
                 {expenses.map((f) => (
-                  <FlowRow key={f.id} flow={f} />
+                  <FlowRow key={f.id} flow={f} accountOptions={accountOptions} />
                 ))}
               </div>
             </div>
@@ -546,7 +654,7 @@ export function FlowsManager({
               ) : null}
               <div className="space-y-2">
                 {incomes.map((f) => (
-                  <FlowRow key={f.id} flow={f} />
+                  <FlowRow key={f.id} flow={f} accountOptions={accountOptions} />
                 ))}
               </div>
             </div>

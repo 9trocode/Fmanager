@@ -224,7 +224,7 @@ export function QuickAddVoiceDialog({
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Voice transaction</DialogTitle>
           <DialogDescription>

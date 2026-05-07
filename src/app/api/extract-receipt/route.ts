@@ -1,32 +1,12 @@
 import { NextResponse } from "next/server";
 import { generateText, Output } from "ai";
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { db, schema } from "@/lib/db";
 import { isAuthenticated } from "@/lib/auth/session";
 import { SUPPORTED_CURRENCIES } from "@/lib/format";
 import { SUGGESTED_EXPENSE_CATEGORIES } from "@/lib/flows";
+import { buildAdvisorClient } from "@/lib/ai/provider";
 
 export const runtime = "nodejs";
-
-async function getApiKey(): Promise<string | null> {
-  const row = await db
-    .select()
-    .from(schema.settings)
-    .where(eq(schema.settings.key, "anthropic_api_key"))
-    .limit(1);
-  return row[0]?.value || process.env.ANTHROPIC_API_KEY || null;
-}
-
-async function getModelId(): Promise<string> {
-  const row = await db
-    .select()
-    .from(schema.settings)
-    .where(eq(schema.settings.key, "advisor_model"))
-    .limit(1);
-  return row[0]?.value || "claude-sonnet-4-6";
-}
 
 const ReceiptSchema = z.object({
   vendor: z.string().nullable(),
@@ -46,14 +26,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const apiKey = await getApiKey();
-  if (!apiKey) {
-    return new NextResponse(
-      "No Anthropic API key configured. Add one in Settings → Advisor or set ANTHROPIC_API_KEY.",
-      { status: 400 },
-    );
-  }
-
   const body = (await req.json().catch(() => null)) as {
     imageBase64?: string;
     mimeType?: string;
@@ -71,8 +43,15 @@ export async function POST(req: Request) {
     });
   }
 
-  const anthropic = createAnthropic({ apiKey });
-  const modelId = await getModelId();
+  let client;
+  try {
+    client = await buildAdvisorClient();
+  } catch (err) {
+    return new NextResponse(
+      err instanceof Error ? err.message : "Advisor not configured.",
+      { status: 400 },
+    );
+  }
 
   const promptText = [
     "You are extracting structured fields from a photo of a receipt.",
@@ -90,7 +69,7 @@ export async function POST(req: Request) {
   try {
     const buffer = Buffer.from(imageBase64, "base64");
     const { output } = await generateText({
-      model: anthropic(modelId),
+      model: client.model,
       output: Output.object({ schema: ReceiptSchema }),
       messages: [
         {

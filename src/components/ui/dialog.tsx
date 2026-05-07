@@ -4,8 +4,10 @@ import * as React from "react"
 import { Dialog as DialogPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
+
+const closeButtonClass =
+  "absolute top-3 right-3 grid place-items-center size-9 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:pointer-events-none"
 
 function Dialog({
   ...props
@@ -33,6 +35,7 @@ function DialogClose({
 
 function DialogOverlay({
   className,
+  onClick,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Overlay>) {
   return (
@@ -42,6 +45,13 @@ function DialogOverlay({
         "fixed inset-0 isolate z-50 bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
         className
       )}
+      // Stop click bubbling through the React tree to ancestor onClick handlers
+      // (e.g. clickable rows that own their own edit dialog). Without this, the
+      // close-then-reopen race makes the X / click-outside appear broken.
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick?.(e);
+      }}
       {...props}
     />
   )
@@ -51,6 +61,7 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  onClick,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
@@ -61,23 +72,35 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          // Width strategy:
+          //   * `w-[calc(100%-2rem)]` keeps the dialog inside phone viewports.
+          //   * `sm:w-full` lets it grow to whatever the consumer cap allows.
+          //   * `sm:max-w-md` is the default cap (448px). Consumers can pass
+          //     `sm:max-w-lg|xl|2xl` to override — same media-query group, so
+          //     tailwind-merge lets the override win deterministically.
+          "fixed top-1/2 left-1/2 z-50 grid w-[calc(100%-2rem)] sm:w-full -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-md data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
         )}
+        onClick={(e) => {
+          // Same reason as DialogOverlay: prevent the click from bubbling
+          // up through the React tree to a clickable row that owns this dialog.
+          e.stopPropagation();
+          onClick?.(e);
+        }}
         {...props}
       >
         {children}
         {showCloseButton && (
-          <DialogPrimitive.Close data-slot="dialog-close" asChild>
-            <Button
-              variant="ghost"
-              className="absolute top-2 right-2"
-              size="icon-sm"
+          <DialogPrimitive.Close asChild>
+            <button
+              type="button"
+              data-slot="dialog-close"
+              aria-label="Close"
+              className={closeButtonClass}
             >
-              <XIcon
-              />
+              <XIcon />
               <span className="sr-only">Close</span>
-            </Button>
+            </button>
           </DialogPrimitive.Close>
         )}
       </DialogPrimitive.Content>
@@ -115,7 +138,12 @@ function DialogFooter({
       {children}
       {showCloseButton && (
         <DialogPrimitive.Close asChild>
-          <Button variant="outline">Close</Button>
+          <button
+            type="button"
+            className="inline-flex items-center justify-center rounded-md border border-border bg-background px-4 h-9 text-sm font-medium hover:bg-muted transition-colors"
+          >
+            Close
+          </button>
         </DialogPrimitive.Close>
       )}
     </div>

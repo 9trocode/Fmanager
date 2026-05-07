@@ -29,7 +29,7 @@ export function AddGrantDialog() {
           New grant
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>New equity grant</DialogTitle>
           <DialogDescription>
