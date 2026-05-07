@@ -3,7 +3,24 @@ import { tool } from "ai";
 import { z } from "zod";
 import { db, schema } from "@/lib/db";
 import { accountTypes, flowCadences, flowKinds } from "@/lib/db/schema";
-import { listAccounts } from "@/lib/db/queries";
+import {
+  getBaseCurrency,
+  listAccounts,
+  listAccountsWithEffective,
+  listFlows,
+  listSavingsGoals,
+  listDecisions,
+  listGrants,
+  listTransactions,
+  type TransactionFilter,
+} from "@/lib/db/queries";
+import {
+  computeBudgetStatus,
+  computeCashRunway,
+  computeMonthlyCashFlow,
+  computeNetWorth,
+} from "@/lib/aggregation";
+import { getRate, convert } from "@/lib/fx";
 import { localToday } from "@/lib/dates";
 import { eq } from "drizzle-orm";
 
@@ -385,14 +402,543 @@ const updateLoanTermsTool = tool({
   },
 });
 
+// ─── FX (cached in DB) ──────────────────────────────────────────────────
+
+const getExchangeRateTool = tool({
+  description:
+    "Look up the cached exchange rate from one currency to another. The app keeps rates in fx_rates with a 12h freshness window; this tool returns whatever the app would use for a conversion. Use this BEFORE asking the user for a rate — never ask the user 'what is the USD/NGN rate?', this tool already knows.",
+  inputSchema: z.object({
+    base: z.string().min(3).max(3).describe("Source currency, e.g. USD"),
+    quote: z.string().min(3).max(3).describe("Target currency, e.g. NGN"),
+  }),
+  execute: async ({ base, quote }) => {
+    const rate = await getRate(base.toUpperCase(), quote.toUpperCase());
+    return {
+      base: base.toUpperCase(),
+      quote: quote.toUpperCase(),
+      rate,
+      summary: `1 ${base.toUpperCase()} = ${rate} ${quote.toUpperCase()}`,
+    };
+  },
+});
+
+const convertCurrencyTool = tool({
+  description:
+    "Convert an amount from one currency to another using the cached rate. Returns both the converted value and the rate used. Use this when the user gives an amount in currency A and you need the equivalent in currency B — e.g. they said 'log a $20 lunch' but the account is in NGN.",
+  inputSchema: z.object({
+    amount: z.number(),
+    from: z.string().min(3).max(3),
+    to: z.string().min(3).max(3),
+  }),
+  execute: async ({ amount, from, to }) => {
+    const f = from.toUpperCase();
+    const t = to.toUpperCase();
+    const rate = await getRate(f, t);
+    const converted = await convert(amount, f, t);
+    return {
+      amount,
+      from: f,
+      to: t,
+      rate,
+      converted,
+      summary: `${amount} ${f} ≈ ${converted.toFixed(2)} ${t} (rate ${rate})`,
+    };
+  },
+});
+
+// ─── lookups (read-only, expanded) ──────────────────────────────────────
+
+const listSavingsGoalsTool = tool({
+  description:
+    "List active savings goals (savings, net_worth, fire, debt_payoff). Use to find a goal id before commenting / updating, and to spot underfunded targets when reviewing.",
+  inputSchema: z.object({}),
+  execute: async () => {
+    const rows = await listSavingsGoals();
+    return {
+      goals: rows.map((g) => ({
+        id: g.id,
+        kind: g.kind,
+        name: g.name,
+        currency: g.currency,
+        targetAmount: g.targetAmount,
+        currentAmount: g.currentAmount,
+        monthlyContribution: g.monthlyContribution,
+        horizonMonths: g.horizonMonths,
+        accountId: g.accountId,
+        notes: g.notes,
+      })),
+    };
+  },
+});
+
+const listFlowsTool = tool({
+  description:
+    "List active recurring cash flows (income/expense). Use to find a flow id before commenting / updating, and to sanity-check whether the user has the inflows and outflows the conversation implies.",
+  inputSchema: z.object({}),
+  execute: async () => {
+    const rows = await listFlows();
+    return {
+      flows: rows.map((f) => ({
+        id: f.id,
+        name: f.name,
+        kind: f.kind,
+        category: f.category,
+        amount: f.amount,
+        currency: f.currency,
+        cadence: f.cadence,
+        accountId: f.accountId,
+        nextDueAt: f.nextDueAt,
+        notes: f.notes,
+      })),
+    };
+  },
+});
+
+const listDecisionsTool = tool({
+  description:
+    "List the user's decisions (open / decided / deferred). Open decisions are what the advisor anchors on — review these on every meaningful turn so advice stays specific.",
+  inputSchema: z.object({
+    onlyOpen: z.boolean().optional().describe("Default true — only return open."),
+  }),
+  execute: async ({ onlyOpen }) => {
+    const rows = await listDecisions({ onlyOpen: onlyOpen ?? true });
+    return {
+      decisions: rows.map((d) => ({
+        id: d.id,
+        question: d.question,
+        status: d.status,
+        outcome: d.outcome,
+        context: d.context,
+      })),
+    };
+  },
+});
+
+const listGrantsTool = tool({
+  description:
+    "List equity grants (company, total/vested shares, strike, FMV, expected exit, currency).",
+  inputSchema: z.object({}),
+  execute: async () => {
+    const rows = await listGrants();
+    return {
+      grants: rows.map((g) => ({
+        id: g.id,
+        company: g.company,
+        grantType: g.grantType,
+        totalShares: g.totalShares,
+        vestedShares: g.vestedShares,
+        strikePrice: g.strikePrice,
+        fmvPerShare: g.fmvPerShare,
+        exitPricePerShare: g.exitPricePerShare,
+        currency: g.currency,
+      })),
+    };
+  },
+});
+
+const listTransactionsTool = tool({
+  description:
+    "List recent transactions, optionally filtered by account, category, kind, or date range. Defaults to the most recent 50 across all accounts. Use when verifying user claims ('did I really spend that much on Food this month?') or when leaving a note tied to a specific tx.",
+  inputSchema: z.object({
+    accountId: z.number().int().positive().optional(),
+    category: z.string().optional(),
+    kind: z.enum(["income", "expense", "transfer"]).optional(),
+    dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    limit: z.number().int().positive().max(200).optional(),
+  }),
+  execute: async (input) => {
+    const filter: TransactionFilter = {
+      accountId: input.accountId,
+      category: input.category,
+      kind: input.kind,
+      dateFrom: input.dateFrom,
+      dateTo: input.dateTo,
+      limit: input.limit ?? 50,
+    };
+    const rows = await listTransactions(filter);
+    return {
+      transactions: rows.map((t) => ({
+        id: t.id,
+        accountId: t.accountId,
+        destAccountId: t.destAccountId,
+        kind: t.kind,
+        amount: t.amount,
+        currency: t.currency,
+        category: t.category,
+        occurredAt: t.occurredAt,
+        notes: t.notes,
+        flowId: t.flowId,
+      })),
+    };
+  },
+});
+
+// ─── computed snapshots (proactive checks) ──────────────────────────────
+
+const getNetWorthTool = tool({
+  description:
+    "Snapshot of the user's three-scenario net worth (floor / liquid / expected) in their base currency, broken down by category and currency. Use when the user asks 'where am I?' or before suggesting any allocation move.",
+  inputSchema: z.object({}),
+  execute: async () => {
+    const baseCurrency = await getBaseCurrency();
+    const summary = await computeNetWorth(baseCurrency);
+    return {
+      baseCurrency,
+      totals: summary.totals,
+      byCategory: summary.byCategory.floor,
+      byCurrency: Object.fromEntries(
+        Object.entries(summary.byCurrency.floor).map(([k, v]) => [
+          k,
+          { native: v.native, inBase: v.inBase },
+        ]),
+      ),
+      hasData: summary.hasData,
+    };
+  },
+});
+
+const getRunwayCheckTool = tool({
+  description:
+    "ALARM-ENABLED runway check. Returns liquid cash, monthly burn, months of runway, and a severity flag. Severity: 'ok' if runway > 6 months OR income covers expenses; 'tight' if 3–6 months; 'critical' if < 3 months. CALL THIS PROACTIVELY at the start of any review-style turn — the user explicitly asked you to alarm them when they're going broke. If severity is 'critical', open the response with the warning before anything else.",
+  inputSchema: z.object({}),
+  execute: async () => {
+    const baseCurrency = await getBaseCurrency();
+    const runway = await computeCashRunway(baseCurrency);
+    let severity: "ok" | "tight" | "critical" = "ok";
+    const months = runway.monthsNetRunway ?? runway.monthsRunway ?? Infinity;
+    if (months < 3) severity = "critical";
+    else if (months < 6) severity = "tight";
+    return {
+      baseCurrency,
+      liquidCash: runway.liquidCash,
+      monthlyExpenses: runway.monthlyExpenses,
+      monthlyIncome: runway.monthlyIncome,
+      netMonthly: runway.netMonthly,
+      monthsRunway: runway.monthsRunway,
+      monthsNetRunway: runway.monthsNetRunway,
+      severity,
+      message:
+        severity === "critical"
+          ? `⚠️ Runway is ${months.toFixed(1)} months at current burn — call this out to the user.`
+          : severity === "tight"
+            ? `Runway is ${months.toFixed(1)} months — flag as something to watch.`
+            : "Runway looks healthy.",
+    };
+  },
+});
+
+const getBudgetStatusTool = tool({
+  description:
+    "Per-budget month-to-date spend vs limit. Use to sanity-check before suggesting a discretionary purchase, or to flag categories that are about to blow past their cap.",
+  inputSchema: z.object({}),
+  execute: async () => {
+    const baseCurrency = await getBaseCurrency();
+    const summary = await computeBudgetStatus(baseCurrency);
+    return {
+      baseCurrency,
+      totalLimit: summary.totalLimit,
+      totalSpent: summary.totalSpent,
+      overBudget: summary.overBudget.map((r) => ({
+        id: r.id,
+        category: r.category,
+        spentThisMonth: r.spentThisMonth,
+        monthlyLimit: r.monthlyLimit,
+        percentUsed: r.percentUsed,
+        currency: r.baseCurrency,
+      })),
+      rows: summary.rows.map((r) => ({
+        id: r.id,
+        category: r.category,
+        spentThisMonth: r.spentThisMonth,
+        monthlyLimit: r.monthlyLimit,
+        percentUsed: r.percentUsed,
+        currency: r.baseCurrency,
+      })),
+    };
+  },
+});
+
+const getCashFlowTool = tool({
+  description:
+    "Monthly recurring inflows vs outflows in base currency, broken down by category. Use when reviewing the user's structural budget shape.",
+  inputSchema: z.object({}),
+  execute: async () => {
+    const baseCurrency = await getBaseCurrency();
+    const flow = await computeMonthlyCashFlow(baseCurrency);
+    return {
+      baseCurrency,
+      income: flow.income,
+      expenses: flow.expenses,
+      net: flow.net,
+      byCategory: flow.byCategory,
+    };
+  },
+});
+
+const getAccountBalancesTool = tool({
+  description:
+    "Effective balance for every active account (latest snapshot + signed transactions since). Returns native currency values; use convertCurrency if you need them in base.",
+  inputSchema: z.object({}),
+  execute: async () => {
+    const accounts = await listAccountsWithEffective();
+    return {
+      accounts: accounts.map((a) => ({
+        id: a.id,
+        name: a.name,
+        type: a.type,
+        currency: a.currency,
+        effectiveValue: a.effectiveValue,
+        latestValue: a.latestValue,
+        latestAsOf: a.latestAsOf,
+      })),
+    };
+  },
+});
+
+// ─── notes (cross-entity) ───────────────────────────────────────────────
+
+const NOTE_ENTITIES = [
+  "budget",
+  "savingsGoal",
+  "flow",
+  "account",
+  "transaction",
+  "decision",
+] as const;
+type NoteEntity = (typeof NOTE_ENTITIES)[number];
+
+const addNoteTool = tool({
+  description:
+    "Append a dated note to an existing entity (budget, savingsGoal, flow, account, transaction, or decision). Existing notes are preserved — the new note lands at the top with a [YYYY-MM-DD] prefix. Use this PROACTIVELY: when the user mentions context that would be useful next week ('I'll revisit this after the rent hits'), leave a note. When you spot a budget about to blow, leave a note on it. Decisions use the `context` field.",
+  inputSchema: z.object({
+    entity: z.enum(NOTE_ENTITIES),
+    id: z.number().int().positive(),
+    note: z.string().min(1),
+  }),
+  execute: async ({ entity, id, note }) => {
+    const dated = `[${localToday()}] ${note.trim()}`;
+    const updatedAtIso = new Date().toISOString();
+    const result = await applyNote(entity, id, dated, updatedAtIso);
+    if (!result.ok) return result;
+    return {
+      ok: true,
+      entity,
+      id,
+      summary: `Noted on ${entity} #${id}: ${note.trim().slice(0, 80)}${note.length > 80 ? "…" : ""}`,
+    };
+  },
+});
+
+async function applyNote(
+  entity: NoteEntity,
+  id: number,
+  dated: string,
+  updatedAtIso: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  switch (entity) {
+    case "budget": {
+      const [row] = await db
+        .select({ notes: schema.budgets.notes })
+        .from(schema.budgets)
+        .where(eq(schema.budgets.id, id))
+        .limit(1);
+      if (!row) return { ok: false, error: `budget ${id} not found` };
+      const next = row.notes ? `${dated}\n\n${row.notes}` : dated;
+      await db
+        .update(schema.budgets)
+        .set({ notes: next, updatedAt: updatedAtIso })
+        .where(eq(schema.budgets.id, id));
+      return { ok: true };
+    }
+    case "savingsGoal": {
+      const [row] = await db
+        .select({ notes: schema.savingsGoals.notes })
+        .from(schema.savingsGoals)
+        .where(eq(schema.savingsGoals.id, id))
+        .limit(1);
+      if (!row) return { ok: false, error: `savingsGoal ${id} not found` };
+      const next = row.notes ? `${dated}\n\n${row.notes}` : dated;
+      await db
+        .update(schema.savingsGoals)
+        .set({ notes: next, updatedAt: updatedAtIso })
+        .where(eq(schema.savingsGoals.id, id));
+      return { ok: true };
+    }
+    case "flow": {
+      const [row] = await db
+        .select({ notes: schema.recurringFlows.notes })
+        .from(schema.recurringFlows)
+        .where(eq(schema.recurringFlows.id, id))
+        .limit(1);
+      if (!row) return { ok: false, error: `flow ${id} not found` };
+      const next = row.notes ? `${dated}\n\n${row.notes}` : dated;
+      await db
+        .update(schema.recurringFlows)
+        .set({ notes: next, updatedAt: updatedAtIso })
+        .where(eq(schema.recurringFlows.id, id));
+      return { ok: true };
+    }
+    case "account": {
+      const [row] = await db
+        .select({ notes: schema.accounts.notes })
+        .from(schema.accounts)
+        .where(eq(schema.accounts.id, id))
+        .limit(1);
+      if (!row) return { ok: false, error: `account ${id} not found` };
+      const next = row.notes ? `${dated}\n\n${row.notes}` : dated;
+      await db
+        .update(schema.accounts)
+        .set({ notes: next, updatedAt: updatedAtIso })
+        .where(eq(schema.accounts.id, id));
+      return { ok: true };
+    }
+    case "transaction": {
+      const [row] = await db
+        .select({ notes: schema.transactions.notes })
+        .from(schema.transactions)
+        .where(eq(schema.transactions.id, id))
+        .limit(1);
+      if (!row) return { ok: false, error: `transaction ${id} not found` };
+      const next = row.notes ? `${dated}\n\n${row.notes}` : dated;
+      await db
+        .update(schema.transactions)
+        .set({ notes: next, updatedAt: updatedAtIso })
+        .where(eq(schema.transactions.id, id));
+      return { ok: true };
+    }
+    case "decision": {
+      // Decisions use `context` — there's no separate notes column on
+      // this table. Same append shape; the field name is just different.
+      const [row] = await db
+        .select({ context: schema.decisions.context })
+        .from(schema.decisions)
+        .where(eq(schema.decisions.id, id))
+        .limit(1);
+      if (!row) return { ok: false, error: `decision ${id} not found` };
+      const next = row.context ? `${dated}\n\n${row.context}` : dated;
+      await db
+        .update(schema.decisions)
+        .set({ context: next, updatedAt: updatedAtIso })
+        .where(eq(schema.decisions.id, id));
+      return { ok: true };
+    }
+  }
+}
+
+// ─── updates (broader than budgets) ─────────────────────────────────────
+
+const updateSavingsGoalTool = tool({
+  description:
+    "Update a savings goal — adjust monthly contribution, target, horizon, or archive it. Use after the user signals a change ('I can do 100k/mo now') or after you spot the goal is unreachable at the current pace.",
+  inputSchema: z.object({
+    goalId: z.number().int().positive(),
+    monthlyContribution: z.number().nonnegative().optional(),
+    targetAmount: z.number().positive().optional(),
+    horizonMonths: z.number().int().positive().optional(),
+    expectedReturnPct: z.number().min(0).max(20).optional(),
+    archived: z.boolean().optional(),
+  }),
+  execute: async (input) => {
+    const set: Record<string, unknown> = {
+      updatedAt: new Date().toISOString(),
+    };
+    if (input.monthlyContribution != null)
+      set.monthlyContribution = input.monthlyContribution;
+    if (input.targetAmount != null) set.targetAmount = input.targetAmount;
+    if (input.horizonMonths != null) set.horizonMonths = input.horizonMonths;
+    if (input.expectedReturnPct != null)
+      set.expectedReturnPct = input.expectedReturnPct;
+    if (input.archived != null) set.archived = input.archived;
+    await db
+      .update(schema.savingsGoals)
+      .set(set)
+      .where(eq(schema.savingsGoals.id, input.goalId));
+    return { ok: true };
+  },
+});
+
+const updateFlowTool = tool({
+  description:
+    "Update a recurring flow — change amount, cadence, next-due date, category, or archive it. Useful for raises ('salary went from 2M to 2.4M'), bill changes, or pausing a flow.",
+  inputSchema: z.object({
+    flowId: z.number().int().positive(),
+    amount: z.number().positive().optional(),
+    cadence: z.enum(flowCadences).optional(),
+    nextDueAt: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional(),
+    category: z.string().optional(),
+    archived: z.boolean().optional(),
+  }),
+  execute: async (input) => {
+    const set: Record<string, unknown> = {
+      updatedAt: new Date().toISOString(),
+    };
+    if (input.amount != null) set.amount = input.amount;
+    if (input.cadence != null) set.cadence = input.cadence;
+    if (input.nextDueAt != null) set.nextDueAt = input.nextDueAt;
+    if (input.category != null) set.category = input.category;
+    if (input.archived != null) set.archived = input.archived;
+    await db
+      .update(schema.recurringFlows)
+      .set(set)
+      .where(eq(schema.recurringFlows.id, input.flowId));
+    return { ok: true };
+  },
+});
+
+const decideDecisionTool = tool({
+  description:
+    "Close out (or defer) one of the user's decisions, optionally recording the outcome. Use when the conversation arrived at a clear conclusion the user agreed with.",
+  inputSchema: z.object({
+    decisionId: z.number().int().positive(),
+    status: z.enum(["decided", "deferred"]),
+    outcome: z.string().optional(),
+  }),
+  execute: async (input) => {
+    await db
+      .update(schema.decisions)
+      .set({
+        status: input.status,
+        outcome: input.outcome ?? null,
+        decidedAt: input.status === "decided" ? localToday() : null,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(schema.decisions.id, input.decisionId));
+    return { ok: true };
+  },
+});
+
 export const advisorTools = {
+  // Read
   listAccounts: listAccountsTool,
   listBudgets: listBudgetsTool,
+  listSavingsGoals: listSavingsGoalsTool,
+  listFlows: listFlowsTool,
+  listDecisions: listDecisionsTool,
+  listGrants: listGrantsTool,
+  listTransactions: listTransactionsTool,
+  // Computed
+  getNetWorth: getNetWorthTool,
+  getRunwayCheck: getRunwayCheckTool,
+  getBudgetStatus: getBudgetStatusTool,
+  getCashFlow: getCashFlowTool,
+  getAccountBalances: getAccountBalancesTool,
+  // FX (cached)
+  getExchangeRate: getExchangeRateTool,
+  convertCurrency: convertCurrencyTool,
+  // Write
   createTransaction: createTransactionTool,
   createBudget: createBudgetTool,
   updateBudget: updateBudgetTool,
   createFlow: createFlowTool,
+  updateFlow: updateFlowTool,
   createSavingsGoal: createSavingsGoalTool,
+  updateSavingsGoal: updateSavingsGoalTool,
   createAccount: createAccountTool,
   updateLoanTerms: updateLoanTermsTool,
+  decideDecision: decideDecisionTool,
+  addNote: addNoteTool,
 };

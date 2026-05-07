@@ -60,8 +60,15 @@ export default async function AdvisorPage({
         }
       />
 
+      {/*
+        Sized so the chat dominates on desktop while still leaving the
+        decisions sidebar comfortably visible. Min keeps it usable on
+        smaller laptops; the calc lets it grow with the viewport so a
+        long conversation has room to breathe instead of fighting an
+        artificial ~640px ceiling.
+      */}
       <div className="grid lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-2 h-[640px] flex flex-col">
+        <Card className="lg:col-span-2 flex flex-col min-h-[680px] h-[calc(100vh-12rem)]">
           <CardHeader className="border-b border-border">
             <CardTitle className="text-base flex items-center gap-2">
               <Sparkles className="size-4 text-muted-foreground" />

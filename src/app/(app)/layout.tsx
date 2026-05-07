@@ -6,6 +6,7 @@ import {
   isAuthenticated,
 } from "@/lib/auth/session";
 import { RoleProvider } from "@/components/app/role-context";
+import { FloatingAdvisor } from "@/components/app/floating-advisor";
 import { accrueDueFlows } from "@/lib/flow-accrual";
 
 // Every page in the (app) segment reads from the SQLite DB (accounts, flows,
@@ -63,6 +64,9 @@ export default async function AppLayout({
             {children}
           </div>
         </main>
+        {/* Always-on advisor entry. Admin-only — viewers can't write
+            data, so a chat that mostly does is useless to them. */}
+        {role === "admin" ? <FloatingAdvisor /> : null}
       </div>
     </RoleProvider>
   );
