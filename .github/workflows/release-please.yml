@@ -1,0 +1,49 @@
+name: Release Please
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Don't pile up release PRs — only one in flight per ref.
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  release-please:
+    name: release-please
+    runs-on: ubuntu-latest
+    steps:
+      # Walks conventional-commit history on main and either:
+      #   - opens/updates a PR titled "chore(main): release X.Y.Z" with a
+      #     bumped package.json + CHANGELOG.md, OR
+      #   - on merge of that PR, tags vX.Y.Z and creates a GitHub Release
+      #     whose body is the generated changelog.
+      #
+      # By default this step uses GITHUB_TOKEN. GitHub deliberately
+      # suppresses workflow cascades from GITHUB_TOKEN (so a bot can't
+      # endlessly retrigger itself), which means the resulting tag push
+      # will NOT auto-fire docker.yml.
+      #
+      # Two ways to make the image build also fire on each release:
+      #
+      #   1. (Recommended) Create a fine-grained PAT with
+      #      `contents: write` + `actions: write`, store it as the
+      #      repo secret RELEASE_PLEASE_TOKEN, and the action will use
+      #      it instead of GITHUB_TOKEN. Tags pushed via a PAT DO
+      #      cascade, so docker.yml will fire on the v* tag push.
+      #
+      #   2. Skip the PAT and trigger docker.yml manually after each
+      #      release via the Actions tab → "Build and publish Docker
+      #      image" → Run workflow → pick the new tag.
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          release-type: node
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}

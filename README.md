@@ -130,6 +130,14 @@ The script creates a dedicated buildx builder (`founder-finance-builder`) and fa
 
 The published GHCR image is built by the GitHub Actions workflow at `.github/workflows/docker.yml` on every push to `main` and on tagged releases. After the first successful publish, flip the package to public once on github.com → your profile → Packages → `fmanager` → Package settings → Change visibility — GHCR defaults new packages to private.
 
+## Releases
+
+Releases are driven by [release-please](https://github.com/googleapis/release-please) on every push to `main`. Conventional-commit prefixes (`feat:`, `fix:`, `perf:`, `chore:`, `BREAKING CHANGE:`) are converted into a versioned `CHANGELOG.md` entry; the bot maintains a single open "release PR" with the version bump and accumulated changelog, and merging that PR tags `vX.Y.Z` + creates a GitHub Release.
+
+The Docker workflow (`.github/workflows/docker.yml`) also fires on `release: published` and on `v*` tag pushes, so a merged release PR ends with a freshly published `ghcr.io/9trocode/fmanager:vX.Y.Z` (and `:latest` from the same SHA on `main`).
+
+By default release-please uses `GITHUB_TOKEN`, which (intentionally) does not cascade workflows. To get end-to-end auto-publishing — release PR merge → tag → Docker build — create a fine-grained PAT with `contents: write` + `actions: write`, save it as the repo secret `RELEASE_PLEASE_TOKEN`, and the workflow picks it up automatically. Without the PAT, tag the image yourself via the Actions tab → "Build and publish Docker image" → Run workflow.
+
 ## Backup
 
 This is a self-hosted single-file SQLite app. **You are the SRE.** Pick one:

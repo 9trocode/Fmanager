@@ -6,6 +6,11 @@ on:
     tags: ["v*"]
   pull_request:
     branches: [main]
+  # Also fire on release publish so that releases cut from the GitHub
+  # UI (or from release-please.yml when a PAT is configured) build the
+  # image even if the underlying tag push didn't cascade.
+  release:
+    types: [published]
   workflow_dispatch:
 
 # Only one publish per ref at a time. PRs cancel previous runs to save CI;
