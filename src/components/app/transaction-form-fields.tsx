@@ -43,11 +43,19 @@ export function TransactionFields({
   defaults,
   defaultKind = "expense",
   defaultAccountId,
+  budgets = [],
 }: {
   accounts: TransactionAccountOption[];
   defaults?: TransactionDefaults;
   defaultKind?: TransactionKind;
   defaultAccountId?: number;
+  /**
+   * Active budgets, used to surface a "Tie to a budget" select on
+   * expense transactions. Picking a budget auto-fills the category
+   * with the budget's category text — that's what makes the spend
+   * count toward the budget cap (budgets aggregate by category).
+   */
+  budgets?: Array<{ id: number; category: string; currency: string }>;
 }) {
   const initialKind = defaults?.kind ?? defaultKind;
   const initialAccountId =
@@ -65,6 +73,22 @@ export function TransactionFields({
   const [currency, setCurrency] = useState<string>(
     defaults?.currency ?? initialAccount?.currency ?? "USD",
   );
+
+  // Controlled category so the Budget select can write to it. Same
+  // pattern as the recurring-flow form — picking a budget sets the
+  // text; user can still type a custom category if they want one
+  // not tied to a budget.
+  const [category, setCategory] = useState<string>(defaults?.category ?? "");
+  const initialBudgetId = (() => {
+    if (!defaults?.category) return "none";
+    const match = budgets.find(
+      (b) =>
+        b.category.trim().toLowerCase() ===
+        defaults.category!.trim().toLowerCase(),
+    );
+    return match ? String(match.id) : "none";
+  })();
+  const [budgetId, setBudgetId] = useState<string>(initialBudgetId);
 
   const today = localToday();
 
@@ -151,7 +175,20 @@ export function TransactionFields({
             <Input
               id="category"
               name="category"
-              defaultValue={defaults?.category ?? ""}
+              value={category}
+              onChange={(e) => {
+                setCategory(e.target.value);
+                if (
+                  budgetId !== "none" &&
+                  e.target.value.trim().toLowerCase() !==
+                    budgets
+                      .find((b) => String(b.id) === budgetId)
+                      ?.category.trim()
+                      .toLowerCase()
+                ) {
+                  setBudgetId("none");
+                }
+              }}
               placeholder={categories[0]}
               list={datalistId}
             />
@@ -163,6 +200,45 @@ export function TransactionFields({
           </div>
         )}
       </div>
+
+      {/*
+        Tie this expense to a budget. Picking one sets the category
+        text to match — that's how the budget aggregator finds it (it
+        sums transactions by category, optionally per-account). Hidden
+        for income / transfer kinds since budgets don't apply.
+      */}
+      {kind === "expense" && budgets.length > 0 ? (
+        <div className="space-y-1.5">
+          <Label htmlFor="budget_id">Tie to a budget (optional)</Label>
+          <Select
+            value={budgetId}
+            onValueChange={(v) => {
+              setBudgetId(v);
+              if (v === "none") return;
+              const b = budgets.find((x) => String(x.id) === v);
+              if (b) setCategory(b.category);
+            }}
+          >
+            <SelectTrigger id="budget_id">
+              <SelectValue placeholder="No budget" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">
+                <span className="text-muted-foreground">— no budget —</span>
+              </SelectItem>
+              {budgets.map((b) => (
+                <SelectItem key={b.id} value={String(b.id)}>
+                  {b.category} ({b.currency})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-[10px] text-muted-foreground leading-relaxed">
+            One-time spends counted toward this month&apos;s budget for
+            the chosen category.
+          </p>
+        </div>
+      ) : null}
 
       {kind === "transfer" ? (
         <div className="space-y-1.5">
@@ -214,6 +290,10 @@ export function TransactionFields({
             type="date"
             defaultValue={defaults?.occurredAt ?? today}
             required
+            // Invert the calendar icon under the dark theme so the
+            // browser-native indicator stays visible against our dark
+            // input background.
+            className="dark:[color-scheme:dark]"
           />
         </div>
       </div>

@@ -759,6 +759,7 @@ export function FlowsManager({
             <AddTransactionDialog
               accounts={accountOptions}
               defaultKind="expense"
+              budgets={budgetsArray}
               trigger={
                 <Button size="sm" variant="outline">
                   <Plus className="size-4" />

@@ -17,6 +17,7 @@ import { TransactionItem } from "@/components/app/transactions-list";
 import {
   getBaseCurrency,
   listAccounts,
+  listBudgets,
   listTransactionCategories,
   listTransactions,
   type TransactionFilter,
@@ -117,17 +118,24 @@ export default async function TransactionsPage({
         ? `Showing ${effectiveFrom ?? "earliest"} → ${effectiveTo ?? "latest"}`
         : "Showing all time";
 
-  const [accounts, categories, transactions, baseCurrency] = await Promise.all([
-    listAccounts({ includeArchived: true }),
-    listTransactionCategories(),
-    listTransactions(filter),
-    getBaseCurrency(),
-  ]);
+  const [accounts, categories, transactions, baseCurrency, budgetRows] =
+    await Promise.all([
+      listAccounts({ includeArchived: true }),
+      listTransactionCategories(),
+      listTransactions(filter),
+      getBaseCurrency(),
+      listBudgets(),
+    ]);
 
   const accountOptions = accounts.map((a) => ({
     id: a.id,
     name: a.name,
     currency: a.currency,
+  }));
+  const budgetOptions = budgetRows.map((b) => ({
+    id: b.id,
+    category: b.category,
+    currency: b.currency,
   }));
 
   // Compute totals in base currency for the filtered range.
@@ -168,12 +176,14 @@ export default async function TransactionsPage({
               <AddTransactionDialog
                 accounts={accountOptions}
                 defaultAccountId={filter.accountId}
+                budgets={budgetOptions}
               />
             </>
           ) : (
             <AddTransactionDialog
               accounts={accountOptions}
               defaultAccountId={filter.accountId}
+              budgets={budgetOptions}
             />
           )
         }
@@ -276,7 +286,10 @@ export default async function TransactionsPage({
           }
           action={
             accounts.length > 0 ? (
-              <AddTransactionDialog accounts={accountOptions} />
+              <AddTransactionDialog
+                accounts={accountOptions}
+                budgets={budgetOptions}
+              />
             ) : null
           }
         />

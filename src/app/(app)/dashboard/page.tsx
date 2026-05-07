@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { Wallet } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
 import { HeroBackground } from "@/components/app/hero-background";
+import { MonthFilter } from "@/components/app/month-filter";
 
 // Reads onboarding state + auth cookie + DB live every request.
 // Must NOT be statically prerendered, or the build-time snapshot
@@ -31,13 +32,20 @@ import {
   computeThisMonthActuals,
 } from "@/lib/aggregation";
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ m?: string }>;
+}) {
   // Send first-time users into onboarding instead of an empty dashboard.
   const onboardingComplete =
     (await getSetting("onboarding_complete")) === "true";
   if (!onboardingComplete) {
     redirect("/welcome");
   }
+
+  const params = await searchParams;
+  const monthKey = params.m;
 
   const baseCurrency = await getBaseCurrency();
   const [
@@ -52,8 +60,8 @@ export default async function DashboardPage() {
   ] = await Promise.all([
     computeNetWorth(baseCurrency),
     computeCashRunway(baseCurrency),
-    computeBudgetStatus(baseCurrency),
-    computeThisMonthActuals(baseCurrency),
+    computeBudgetStatus(baseCurrency, monthKey),
+    computeThisMonthActuals(baseCurrency, monthKey),
     computeMonthlyCashFlow(baseCurrency),
     listAccounts({ includeArchived: true }),
     listLatestTransactions(8),
@@ -68,7 +76,8 @@ export default async function DashboardPage() {
       <PageHeader
         size="lg"
         title="Home"
-        description={`Where your money is going in ${month.monthLabel}. Add transactions, watch budgets, work toward goals.`}
+        description={`Where your money is going in ${month.monthLabel}. Add transactions, watch budgets, work toward goals. Each month resets — recurring flows + budget caps carry over as a skeleton, but spend starts fresh.`}
+        actions={<MonthFilter />}
       />
 
       {!summary.hasData ? (

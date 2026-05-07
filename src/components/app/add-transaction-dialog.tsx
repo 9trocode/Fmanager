@@ -26,12 +26,19 @@ export function AddTransactionDialog({
   defaultAccountId,
   trigger,
   size = "sm",
+  budgets = [],
 }: {
   accounts: TransactionAccountOption[];
   defaultKind?: TransactionKind;
   defaultAccountId?: number;
   trigger?: React.ReactNode;
   size?: "sm" | "default" | "lg";
+  /**
+   * Active budgets the form can offer as a "Tie to a budget" select.
+   * Default empty — the picker just doesn't render in that case, so
+   * existing call sites are unchanged.
+   */
+  budgets?: Array<{ id: number; category: string; currency: string }>;
 }) {
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -47,7 +54,7 @@ export function AddTransactionDialog({
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>New transaction</DialogTitle>
           <DialogDescription>
@@ -84,6 +91,7 @@ export function AddTransactionDialog({
             accounts={accounts}
             defaultKind={defaultKind}
             defaultAccountId={defaultAccountId}
+            budgets={budgets}
           />
           <DialogFooter>
             <Button type="submit" disabled={pending} loading={pending}>

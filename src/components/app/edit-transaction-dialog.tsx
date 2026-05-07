@@ -30,7 +30,7 @@ export function EditTransactionDialog({
   const [pending, startTransition] = useTransition();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>Edit transaction</DialogTitle>
         </DialogHeader>

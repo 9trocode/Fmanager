@@ -144,12 +144,13 @@ export type MonthActuals = {
 
 export async function computeThisMonthActuals(
   baseCurrency: string,
+  monthKey?: string,
 ): Promise<MonthActuals> {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = now.getMonth();
-  const start = new Date(y, m, 1).toISOString().slice(0, 10);
-  const end = new Date(y, m + 1, 0).toISOString().slice(0, 10);
+  const target = parseMonthKey(monthKey);
+  const y = target.getFullYear();
+  const m = target.getMonth();
+  const start = ymd(new Date(y, m, 1));
+  const end = ymd(new Date(y, m + 1, 0));
 
   const txs = await listTransactionsBetween(start, end);
 
@@ -163,7 +164,7 @@ export async function computeThisMonthActuals(
     else expenses += inBase;
     count++;
   }
-  const monthLabel = now.toLocaleString("en-US", {
+  const monthLabel = target.toLocaleString("en-US", {
     month: "long",
     year: "numeric",
   });
@@ -286,14 +287,34 @@ export type BudgetSummary = {
  * matches the user's expectations on month rollovers. The server-side
  * Date constructor reflects this without any extra config.
  */
-function currentMonthRange(): { from: string; to: string } {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = now.getMonth();
+/**
+ * Boundaries of an arbitrary month in local time. Pass a `YYYY-MM`
+ * `monthKey` to look at a past month; defaults to the current month.
+ */
+function monthRange(monthKey?: string): { from: string; to: string } {
+  const target = parseMonthKey(monthKey);
+  const y = target.getFullYear();
+  const m = target.getMonth();
   return {
     from: ymd(new Date(y, m, 1)),
     to: ymd(new Date(y, m + 1, 0)),
   };
+}
+
+/**
+ * Parses `YYYY-MM` into a local-time Date pinned to the 1st of that
+ * month. Falls back to today if the input is missing or malformed —
+ * lets callers blindly forward a query param without first-class
+ * validation.
+ */
+function parseMonthKey(monthKey?: string): Date {
+  if (!monthKey) return new Date();
+  const m = /^(\d{4})-(\d{2})$/.exec(monthKey);
+  if (!m) return new Date();
+  const year = Number(m[1]);
+  const month = Number(m[2]) - 1;
+  if (!Number.isFinite(year) || month < 0 || month > 11) return new Date();
+  return new Date(year, month, 1);
 }
 
 /**
@@ -311,6 +332,7 @@ function ymd(d: Date): string {
 
 export async function computeBudgetStatus(
   baseCurrency: string,
+  monthKey?: string,
 ): Promise<BudgetSummary> {
   const budgets = await listBudgets();
   if (budgets.length === 0) {
@@ -323,7 +345,7 @@ export async function computeBudgetStatus(
     };
   }
 
-  const { from, to } = currentMonthRange();
+  const { from, to } = monthRange(monthKey);
   const monthTxs = await listTransactions({
     kind: "expense",
     dateFrom: from,

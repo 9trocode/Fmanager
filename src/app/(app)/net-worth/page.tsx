@@ -13,6 +13,10 @@ import { EmptyState } from "@/components/app/empty-state";
 import { AddAccountDialog } from "@/components/app/add-account-dialog";
 import { AddGrantDialog } from "@/components/app/add-grant-dialog";
 import { HeroBackground } from "@/components/app/hero-background";
+import {
+  ExplainPopover,
+  type ExplainLine,
+} from "@/components/app/explain-popover";
 import { getBaseCurrency, listAccounts } from "@/lib/db/queries";
 import {
   computeNetWorth,
@@ -119,12 +123,45 @@ function ScenarioHero({
 }) {
   const value = summary.totals[scenario];
   const others = SCENARIOS.filter((s) => s !== scenario);
+
+  // Build the breakdown lines that explain how the headline number was
+  // computed — every non-zero asset / liability category that fed into
+  // the scenario total. Helps answer "wait, why is this NGN 57k?"
+  // without the user having to crawl the per-category panel below.
+  const cats = summary.byCategory[scenario];
+  const breakdownLines: ExplainLine[] = CATEGORY_DISPLAY_ORDER.filter(
+    (k) => cats[k] !== 0,
+  ).map((k) => ({
+    label: CATEGORY_LABEL[k],
+    value: formatMoney(cats[k], baseCurrency, { signed: cats[k] < 0 }),
+  }));
+  breakdownLines.push({
+    label: "Total",
+    value: formatMoney(value, baseCurrency),
+    emphasis: "total",
+  });
+
   return (
     <Card>
       <CardHeader>
         <CardDescription>{SCENARIO_DESCRIPTION[scenario]}</CardDescription>
-        <CardTitle className="text-5xl font-semibold tracking-tight tabular-nums mt-2">
+        <CardTitle className="text-5xl font-semibold tracking-tight tabular-nums mt-2 flex items-center gap-2">
           {formatMoney(value, baseCurrency)}
+          <ExplainPopover
+            title={formatMoney(value, baseCurrency)}
+            subtitle={`${SCENARIO_LABEL[scenario]} net worth — sum of every account and grant under this scenario.`}
+            lines={breakdownLines}
+            formula={`= ${CATEGORY_DISPLAY_ORDER.filter((k) => cats[k] !== 0)
+              .map((k) => CATEGORY_LABEL[k])
+              .join(" + ")}`}
+            footer={
+              scenario === "floor"
+                ? "Floor pretends company equity is worth $0 today — the honest baseline you can plan against."
+                : scenario === "liquid"
+                  ? "Liquid uses each grant's vested shares × current FMV minus tax — what you could realistically convert today."
+                  : "Expected uses each grant's full share count × target exit price minus tax — the if-it-works-out number."
+            }
+          />
         </CardTitle>
       </CardHeader>
       <CardContent className="border-t border-border pt-4 flex items-center gap-6 text-xs">

@@ -1,5 +1,6 @@
 import { PageHeader } from "@/components/app/page-header";
 import { BudgetsManager } from "@/components/app/budgets-manager";
+import { MonthFilter } from "@/components/app/month-filter";
 import {
   getBaseCurrency,
   listAccounts,
@@ -13,21 +14,35 @@ import {
 import { convert } from "@/lib/fx";
 import { localToday } from "@/lib/dates";
 
-export default async function BudgetsPage() {
+export default async function BudgetsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ m?: string }>;
+}) {
+  const params = await searchParams;
+  const monthKey = params.m;
   const baseCurrency = await getBaseCurrency();
 
-  // Calendar-month range, local TZ. Same shape `currentMonthRange()` uses
-  // inside aggregation; duplicated here so we can keep this page's query
-  // concrete (we want the actual transactions, not just the aggregate).
+  // Resolve the month boundaries from the query param if present, else
+  // current month. Used both for the aggregator call and for the local
+  // listTransactions query (we want the actual rows for the bucketing
+  // step below — not just the aggregate).
   const today = localToday();
-  const [y, m] = today.split("-").map(Number);
+  const fallback = today.split("-").map(Number);
+  const [y, m] = (() => {
+    if (monthKey && /^(\d{4})-(\d{2})$/.test(monthKey)) {
+      const [yk, mk] = monthKey.split("-").map(Number);
+      return [yk, mk];
+    }
+    return [fallback[0], fallback[1]];
+  })();
   const monthFrom = `${y}-${String(m).padStart(2, "0")}-01`;
   const lastDay = new Date(y, m, 0).getDate();
   const monthTo = `${y}-${String(m).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
 
   const [summary, cashFlow, runway, monthExpenses, accounts] =
     await Promise.all([
-      computeBudgetStatus(baseCurrency),
+      computeBudgetStatus(baseCurrency, monthKey),
       computeMonthlyCashFlow(baseCurrency),
       computeCashRunway(baseCurrency),
       listTransactions({
@@ -63,7 +78,8 @@ export default async function BudgetsPage() {
     <>
       <PageHeader
         title="Budgets"
-        description="Per-category monthly spending limits. Actuals come from your transactions for the current calendar month."
+        description="Per-category monthly spending limits. Spend resets each month — caps carry over as the skeleton."
+        actions={<MonthFilter />}
       />
       <BudgetsManager
         baseCurrency={baseCurrency}

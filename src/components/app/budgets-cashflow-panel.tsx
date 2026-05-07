@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { AlertTriangle, Wallet } from "lucide-react";
+import { AlertTriangle, Info, Wallet } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -310,33 +310,34 @@ export function BudgetsCashFlowPanel({
           )
         ) : null}
 
-        {/* Overlap warning */}
+        {/*
+          Linked-flow info. When a recurring flow shares a budget category,
+          its auto-accrued transactions land in that budget — no
+          double-count. Used to be a warning ("budget is on top of, not
+          instead of") which was wrong post auto-accrual; now it's just a
+          neutral confirmation so the user understands the linkage.
+        */}
         {overlappingCategories.length > 0 ? (
-          <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs">
-            <AlertTriangle className="size-4 text-amber-400 shrink-0 mt-0.5" />
+          <div className="flex items-start gap-2 rounded-md border border-blue-500/25 bg-blue-500/5 p-3 text-xs">
+            <Info className="size-4 text-blue-400 shrink-0 mt-0.5" />
             <div className="space-y-1">
-              <div className="font-medium text-amber-200">
-                Possible double-count on{" "}
+              <div className="font-medium text-blue-200">
                 {overlappingCategories.length === 1
-                  ? "1 category"
-                  : `${overlappingCategories.length} categories`}
+                  ? "1 recurring flow auto-fills a budget"
+                  : `${overlappingCategories.length} recurring flows auto-fill budgets`}
                 .
               </div>
               <div className="text-muted-foreground leading-relaxed">
-                You have a budget AND a recurring flow under{" "}
-                {overlappingCategories
-                  .map((c, i) => (
-                    <span key={c.name}>
-                      <span className="font-mono text-foreground">
-                        {c.name}
-                      </span>
-                      {i < overlappingCategories.length - 1 ? ", " : ""}
-                    </span>
-                  ))}
-                . The recurring flow already commits{" "}
-                {formatMoney(recurringOverlap, baseCurrency)} per month — the
-                budget is on top of (not instead of) that. We only count the
-                budget here so the bar isn&apos;t doubled.
+                Recurring{" "}
+                {overlappingCategories.map((c, i) => (
+                  <span key={c.name}>
+                    <span className="font-mono text-foreground">{c.name}</span>
+                    {i < overlappingCategories.length - 1 ? ", " : ""}
+                  </span>
+                ))}{" "}
+                ({formatMoney(recurringOverlap, baseCurrency)} / mo) accrues
+                straight into the matching budget — no double-count, the
+                budget cap is the source of truth.
               </div>
             </div>
           </div>
