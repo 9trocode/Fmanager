@@ -1,6 +1,5 @@
 "use client";
 
-import NextScript from "next/script";
 import {
   createContext,
   useCallback,
@@ -13,29 +12,30 @@ import {
 /**
  * Minimal theme provider.
  *
- * Why not `next-themes`?
- *   `next-themes` injects an inline FOUC script via React.createElement
- *   inside `<body>`. React 19 emits the warning:
+ * Why the bespoke implementation?
+ *   `next-themes` (and any equivalent) injects an inline FOUC script via
+ *   React.createElement. React 19 emits the warning:
  *     "Encountered a script tag while rendering React component …
  *      scripts inside React components are never executed when rendering
  *      on the client."
- *   That warning fires for ANY <script> rendered through React, regardless
- *   of where in the tree it lives — including <head>. There's no flag in
- *   next-themes to disable its inline script, so the warning is permanent
- *   while we use it.
+ *   That warning fires for ANY <script> rendered through React — even via
+ *   `next/script` `beforeInteractive` and even when rendered inside <head>.
+ *   No flag silences it while a script is in the React tree.
  *
- *   This module replaces it with a thin equivalent: a Server Component
- *   `<ThemeInitScript>` that emits the FOUC script directly into the SSR'd
- *   HTML (only runs on initial server render — never re-rendered on the
- *   client, so React 19 doesn't warn), plus a client `<ThemeProvider>` that
- *   exposes the same `useTheme()` shape consumers already use:
- *     `{ theme, setTheme, resolvedTheme }`.
+ *   This module avoids the issue entirely by NOT rendering a script. The
+ *   server reads the saved theme from a cookie in the root layout and bakes
+ *   `class="light"` or `class="dark"` directly into <html>. ThemeProvider
+ *   mirrors any change back to the cookie + localStorage so the next SSR
+ *   stays in sync. Net result: no script, no warning, no flash.
  */
 
 type Theme = "light" | "dark" | "system";
 type Resolved = "light" | "dark";
 
 const STORAGE_KEY = "theme";
+// Long-lived theme cookie — small (≤6 chars), HttpOnly off so the client
+// can mirror updates, SameSite=Lax for normal navigation, max-age 1 year.
+const COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 
 type ThemeContextValue = {
   theme: Theme;
@@ -45,27 +45,9 @@ type ThemeContextValue = {
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
-/**
- * Render this once in the root layout (place it inside `<body>`, before
- * any other content). Uses `next/script` with `strategy="beforeInteractive"`
- * so Next injects the script into the document head OUTSIDE of React's
- * render tree. That sidesteps React 19's "Encountered a script tag while
- * rendering React component" warning, which fires for ANY <script> element
- * rendered through JSX — even one in <head> of a server component.
- */
-export function ThemeInitScript({
-  defaultTheme = "dark",
-}: {
-  defaultTheme?: Theme;
-}) {
-  const script = `(function(){try{var s=localStorage.getItem('${STORAGE_KEY}')||'${defaultTheme}';var sys=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';var t=s==='system'?sys:s;var d=document.documentElement;d.classList.remove('light','dark');d.classList.add(t);d.style.colorScheme=t;}catch(e){}})();`;
-  return (
-    <NextScript
-      id="theme-init"
-      strategy="beforeInteractive"
-      dangerouslySetInnerHTML={{ __html: script }}
-    />
-  );
+function writeCookie(theme: Theme) {
+  if (typeof document === "undefined") return;
+  document.cookie = `${STORAGE_KEY}=${theme}; path=/; max-age=${COOKIE_MAX_AGE}; SameSite=Lax`;
 }
 
 export function ThemeProvider({
@@ -99,7 +81,8 @@ export function ThemeProvider({
     return theme;
   });
 
-  // Apply class to <html> whenever theme changes, and persist.
+  // Apply class to <html> whenever theme changes, persist to localStorage,
+  // and mirror to the cookie so the next SSR can read it back.
   useEffect(() => {
     const root = document.documentElement;
     const sysDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -113,6 +96,9 @@ export function ThemeProvider({
     } catch {
       // Ignore quota / private-mode failures.
     }
+    // The cookie carries the *concrete* (resolved) theme so the server can
+    // apply it directly without needing matchMedia. "system" → resolved.
+    writeCookie(next);
   }, [theme]);
 
   // Live-update on OS preference change while in "system" mode.
@@ -126,6 +112,7 @@ export function ThemeProvider({
       root.classList.add(next);
       root.style.colorScheme = next;
       setResolvedTheme(next);
+      writeCookie(next);
     };
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);

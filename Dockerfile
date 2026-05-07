@@ -25,6 +25,14 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 ENV DATABASE_URL=/data/app.db
+# Resource-budget tuning. Personal-finance app for one user — no need for
+# the V8 default heap (~1.5GB on 64-bit) or libuv's 4-thread pool.
+#   * --max-old-space-size=384  caps Node heap at ~384 MB
+#   * --no-deprecation/--no-warnings  trims log noise (cosmetic, no perf)
+#   * UV_THREADPOOL_SIZE=2  halves libuv's worker threads (saves ~2 MB +
+#     reduces idle CPU when better-sqlite3 / fs uses async I/O)
+ENV NODE_OPTIONS="--max-old-space-size=384 --no-deprecation"
+ENV UV_THREADPOOL_SIZE=2
 
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S -u 1001 -G nodejs nextjs && \
