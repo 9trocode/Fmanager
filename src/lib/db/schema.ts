@@ -136,6 +136,18 @@ export const recurringFlows = sqliteTable("recurring_flows", {
   accountId: integer("account_id").references(() => accounts.id, {
     onDelete: "set null",
   }),
+  /**
+   * Last calendar period (`YYYY-MM-DD`) for which an auto-accrued
+   * transaction has already been posted. Drives `accrueDueFlows()` so a
+   * monthly salary turns into a real transaction on the linked account
+   * once each month has elapsed — making net worth actually reflect the
+   * recurring inflow instead of it being a "plan" that never materialises.
+   *
+   * Null means the flow has never been accrued. New flows are seeded with
+   * the period boundary at creation time so the first accrual fires after
+   * one full cadence has passed (no surprise back-dated transactions).
+   */
+  lastPostedAt: text("last_posted_at"),
   archived: integer("archived", { mode: "boolean" }).notNull().default(false),
   notes: text("notes"),
   createdAt: createdAt(),

@@ -1,0 +1,1 @@
+ALTER TABLE `recurring_flows` ADD `last_posted_at` text;

@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { flowCadences, flowKinds } from "@/lib/db/schema";
 import { assertAdmin } from "@/lib/auth/session";
+import { localToday } from "@/lib/dates";
 
 function revalidate() {
   revalidatePath("/", "layout");
@@ -59,7 +60,13 @@ export async function createFlow(formData: FormData) {
   await assertAdmin();
   const fields = commonFields(formData);
   if (!fields.name) throw new Error("Name is required.");
-  await db.insert(schema.recurringFlows).values(fields);
+  // Seed `lastPostedAt` to today so the first auto-accrual fires after
+  // ONE full cadence has passed (a monthly salary added Feb 15 generates
+  // its first transaction Mar 15, not Feb 15). Avoids surprise back-dated
+  // posts at creation.
+  await db
+    .insert(schema.recurringFlows)
+    .values({ ...fields, lastPostedAt: localToday() });
   revalidate();
 }
 

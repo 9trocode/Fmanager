@@ -6,6 +6,7 @@ import {
   isAuthenticated,
 } from "@/lib/auth/session";
 import { RoleProvider } from "@/components/app/role-context";
+import { accrueDueFlows } from "@/lib/flow-accrual";
 
 // Every page in the (app) segment reads from the SQLite DB (accounts, flows,
 // budgets, etc.). Forcing dynamic rendering on the layout prevents Next from
@@ -27,6 +28,21 @@ export default async function AppLayout({
   }
   if (!(await isAuthenticated())) redirect("/login");
   const role = (await getRole()) ?? "admin";
+
+  // Lazy auto-accrual. Once the user is past auth, post any recurring
+  // flows whose cadence has elapsed since the last accrual — that's how
+  // a monthly salary turns into real transactions on the linked account
+  // and net worth actually reflects it. Cheap when nothing is due.
+  // Viewer role is read-only by design, so skip writes there.
+  if (role === "admin") {
+    try {
+      await accrueDueFlows();
+    } catch (err) {
+      // Don't fail the whole layout if accrual hits a snag — log and
+      // let the user keep using the app.
+      console.error("[accrueDueFlows] failed:", err);
+    }
+  }
 
   return (
     <RoleProvider role={role}>
