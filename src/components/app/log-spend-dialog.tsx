@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/select";
 import { createTransaction } from "@/lib/actions/transactions";
 import { useRole } from "@/components/app/role-context";
+import { localToday } from "@/lib/dates";
 
 export function LogSpendDialog({
   category,
@@ -96,7 +97,7 @@ export function LogSpendDialog({
                 id="occurred_at"
                 name="occurred_at"
                 type="date"
-                defaultValue={new Date().toISOString().slice(0, 10)}
+                defaultValue={localToday()}
                 required
               />
             </div>

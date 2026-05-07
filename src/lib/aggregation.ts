@@ -271,14 +271,40 @@ export type BudgetSummary = {
   totalSpent: number;
 };
 
+/**
+ * Boundaries of the *current* calendar month in the server's local
+ * timezone. Returns YYYY-MM-DD strings that match how transactions are
+ * stored (`occurred_at` is a date-only string entered by the user, not a
+ * timestamp).
+ *
+ * Why local — not UTC: a user in Lagos (UTC+1) logging a 11:30 PM
+ * transaction on Jan 31 is unambiguously a January transaction in their
+ * lived time, even though it's already Feb 1 UTC. Self-hosted servers
+ * usually run in the user's TZ (or `TZ=` env var), so local-time math
+ * matches the user's expectations on month rollovers. The server-side
+ * Date constructor reflects this without any extra config.
+ */
 function currentMonthRange(): { from: string; to: string } {
   const now = new Date();
-  const y = now.getUTCFullYear();
-  const m = now.getUTCMonth();
-  const from = new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10);
-  // Last day of this month: day 0 of next month.
-  const to = new Date(Date.UTC(y, m + 1, 0)).toISOString().slice(0, 10);
-  return { from, to };
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  return {
+    from: ymd(new Date(y, m, 1)),
+    to: ymd(new Date(y, m + 1, 0)),
+  };
+}
+
+/**
+ * `YYYY-MM-DD` of a Date *in local time* — independent of the host's
+ * default toISOString() (which is always UTC). Used so date strings the
+ * server emits match what the user picked in `<input type="date">` form
+ * controls (those also operate on local time).
+ */
+function ymd(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 export async function computeBudgetStatus(

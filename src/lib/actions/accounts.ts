@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { accountTypes } from "@/lib/db/schema";
 import { assertAdmin } from "@/lib/auth/session";
+import { localToday } from "@/lib/dates";
 
 function revalidate(path?: string) {
   if (path) revalidatePath(path);
@@ -54,7 +55,7 @@ export async function createAccount(formData: FormData) {
   const openingBalance = parseAmount(formData.get("opening_balance"));
   const asOf =
     String(formData.get("as_of") ?? "").trim() ||
-    new Date().toISOString().slice(0, 10);
+    localToday();
   const details = parseDetailFields(formData);
 
   const [created] = await db
@@ -143,7 +144,7 @@ export async function addSnapshot(formData: FormData) {
   const currency = String(formData.get("currency") ?? "USD").toUpperCase();
   const asOf =
     String(formData.get("as_of") ?? "").trim() ||
-    new Date().toISOString().slice(0, 10);
+    localToday();
 
   await db.insert(schema.valueSnapshots).values({
     accountId,

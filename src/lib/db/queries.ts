@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { and, asc, desc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import type { AccountType, TransactionKind } from "@/lib/db/schema";
@@ -58,9 +59,13 @@ export async function setSetting(key: SettingKey, value: string | null) {
     });
 }
 
-export async function getBaseCurrency(): Promise<string> {
+/**
+ * Per-request memo. Hit by every page that renders money — getting it
+ * from one row in the settings table on every aggregation call adds up.
+ */
+export const getBaseCurrency = cache(async (): Promise<string> => {
   return (await getSetting("base_currency")) ?? "USD";
-}
+});
 
 export async function listDecisions(opts: { onlyOpen?: boolean } = {}) {
   const where = opts.onlyOpen

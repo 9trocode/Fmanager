@@ -14,6 +14,7 @@ import {
 import { SUPPORTED_CURRENCIES } from "@/lib/format";
 import { ACCOUNT_TYPE_LABEL, ACCOUNT_TYPE_ORDER } from "@/lib/account-types";
 import type { AccountType } from "@/lib/db/schema";
+import { localToday } from "@/lib/dates";
 
 export type AccountFieldsValue = {
   name?: string;
@@ -109,7 +110,7 @@ export function AccountFields({
               id="as_of"
               name="as_of"
               type="date"
-              defaultValue={new Date().toISOString().slice(0, 10)}
+              defaultValue={localToday()}
             />
           </div>
         </div>

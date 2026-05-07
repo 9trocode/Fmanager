@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { MoneyInput } from "@/components/app/money-input";
 import { addSnapshot } from "@/lib/actions/accounts";
 import { useRole } from "@/components/app/role-context";
+import { localToday } from "@/lib/dates";
 
 export function AddSnapshotDialog({
   accountId,
@@ -73,7 +74,7 @@ export function AddSnapshotDialog({
                 id="as_of"
                 name="as_of"
                 type="date"
-                defaultValue={new Date().toISOString().slice(0, 10)}
+                defaultValue={localToday()}
                 required
               />
             </div>

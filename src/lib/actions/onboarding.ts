@@ -8,6 +8,7 @@ import { SUPPORTED_CURRENCIES } from "@/lib/format";
 import { accountTypes } from "@/lib/db/schema";
 import { assertAdmin } from "@/lib/auth/session";
 import { refreshFxRates } from "@/lib/actions/fx";
+import { localToday } from "@/lib/dates";
 
 export async function welcomeSetup(formData: FormData) {
   await assertAdmin();
@@ -67,7 +68,7 @@ export async function welcomeFirstAccount(formData: FormData) {
       accountId: created.id,
       value: safeOpening,
       currency,
-      asOf: new Date().toISOString().slice(0, 10),
+      asOf: localToday(),
       source: "manual",
     });
   }

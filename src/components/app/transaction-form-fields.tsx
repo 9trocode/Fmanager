@@ -18,6 +18,7 @@ import {
   SUGGESTED_INCOME_CATEGORIES,
 } from "@/lib/flows";
 import type { TransactionKind } from "@/lib/db/schema";
+import { localToday } from "@/lib/dates";
 
 export type TransactionAccountOption = {
   id: number;
@@ -65,7 +66,7 @@ export function TransactionFields({
     defaults?.currency ?? initialAccount?.currency ?? "USD",
   );
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localToday();
 
   function handleAccountChange(value: string) {
     const id = Number(value);

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { assertAdmin } from "@/lib/auth/session";
+import { localToday } from "@/lib/dates";
 
 function revalidate(id?: number) {
   revalidatePath("/savings");
@@ -53,7 +54,7 @@ function parseKind(
 function commonFields(formData: FormData) {
   const startedAt =
     String(formData.get("started_at") ?? "").trim() ||
-    new Date().toISOString().slice(0, 10);
+    localToday();
   return {
     kind: parseKind(formData.get("kind")),
     name: String(formData.get("name") ?? "").trim(),

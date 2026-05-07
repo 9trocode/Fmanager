@@ -8,6 +8,7 @@ import {
   SUGGESTED_INCOME_CATEGORIES,
 } from "@/lib/flows";
 import { buildAdvisorClient } from "@/lib/ai/provider";
+import { localToday } from "@/lib/dates";
 
 export const runtime = "nodejs";
 
@@ -48,7 +49,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localToday();
 
   const promptText = [
     "You are parsing a spoken description of a money movement into structured fields.",

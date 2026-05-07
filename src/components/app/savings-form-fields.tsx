@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { SUPPORTED_CURRENCIES } from "@/lib/format";
+import { localToday } from "@/lib/dates";
 
 const SUGGESTED_CATEGORIES = [
   "Emergency fund",
@@ -497,7 +498,7 @@ export function SavingsGoalFields({
                 name="started_at"
                 type="date"
                 defaultValue={
-                  defaults?.startedAt ?? new Date().toISOString().slice(0, 10)
+                  defaults?.startedAt ?? localToday()
                 }
               />
             </div>

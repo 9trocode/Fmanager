@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { transactionKinds } from "@/lib/db/schema";
 import { assertAdmin } from "@/lib/auth/session";
+import { localToday } from "@/lib/dates";
 
 function revalidate(accountId?: number) {
   revalidatePath("/", "layout");
@@ -79,7 +80,7 @@ function commonFields(formData: FormData) {
 
   const occurredAt =
     String(formData.get("occurred_at") ?? "").trim() ||
-    new Date().toISOString().slice(0, 10);
+    localToday();
 
   const category = String(formData.get("category") ?? "").trim() || null;
   const notes = String(formData.get("notes") ?? "").trim() || null;
