@@ -94,7 +94,7 @@ export function RunwayCard({ runway }: { runway: RunwaySummary }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="border-t border-border pt-3 space-y-2">
-        <div className="grid grid-cols-2 gap-3 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
           <div>
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
               Income

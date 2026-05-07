@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { Sidebar } from "@/components/app/sidebar";
+import { MobileTopBar, Sidebar } from "@/components/app/sidebar";
 import {
   getRole,
   isAdminConfigured,
@@ -30,10 +30,20 @@ export default async function AppLayout({
 
   return (
     <RoleProvider role={role}>
-      <div className="min-h-screen flex">
+      {/*
+        Layout strategy:
+          * <md  — single column. <MobileTopBar> is a sticky header with
+                   a hamburger that opens the same nav inside a Sheet.
+          *  md+ — two-column flex. <Sidebar> is the always-visible 288px
+                   left rail; main column gets the rest.
+        Mobile padding is tighter (px-4 py-6) so cramped phone viewports
+        don't waste edge gutters; desktop keeps the breathable px-8 py-12.
+      */}
+      <div className="min-h-screen flex flex-col md:flex-row">
+        <MobileTopBar />
         <Sidebar />
         <main className="flex-1 min-w-0 relative">
-          <div className="max-w-6xl mx-auto px-8 py-10 md:py-12 relative">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 md:px-8 py-6 md:py-12 relative">
             {children}
           </div>
         </main>

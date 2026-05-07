@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import {
   LayoutGrid,
   Receipt,
@@ -16,11 +17,20 @@ import {
   Settings,
   LogOut,
   Eye,
+  Menu,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/app/theme-toggle";
 import { useRole } from "@/components/app/role-context";
+import {
+  Sheet,
+  SheetContent,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import { VisuallyHidden } from "radix-ui";
 
 type NavItem = {
   href: string;
@@ -73,15 +83,27 @@ function isActive(pathname: string, href: string): boolean {
   return pathname.startsWith(href + "/");
 }
 
-export function Sidebar() {
+/**
+ * Inner content of the sidebar — brand, nav sections, role + sign-out.
+ * Reused by both the desktop sidebar (always visible at md+) and the
+ * mobile slide-out sheet (triggered from the top bar).
+ *
+ * `onNavigate` is called when the user picks a link, so the parent can
+ * close the sheet on mobile.
+ */
+function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const role = useRole();
 
   return (
-    <aside className="sticky top-0 self-start h-screen w-72 shrink-0 border-r border-border bg-card/40 backdrop-blur-md flex flex-col">
+    <>
       {/* Brand */}
       <div className="px-5 py-6">
-        <Link href="/dashboard" className="flex items-center gap-3 group">
+        <Link
+          href="/dashboard"
+          onClick={onNavigate}
+          className="flex items-center gap-3 group"
+        >
           <div className="size-10 rounded-lg bg-gradient-to-br from-primary to-primary/70 text-primary-foreground grid place-items-center text-lg font-semibold shadow-sm group-hover:shadow-md transition-shadow">
             ƒ
           </div>
@@ -109,6 +131,7 @@ export function Sidebar() {
                 <Link
                   key={href}
                   href={href}
+                  onClick={onNavigate}
                   className={cn(
                     "relative flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
                     active
@@ -165,6 +188,69 @@ export function Sidebar() {
           v0.1.0
         </div>
       </div>
+    </>
+  );
+}
+
+/**
+ * Desktop-only sidebar. Hidden below md so it doesn't squeeze the main
+ * column on phones. Mobile users get the same nav via <MobileTopBar>.
+ */
+export function Sidebar() {
+  return (
+    <aside className="hidden md:flex sticky top-0 self-start h-screen w-72 shrink-0 border-r border-border bg-card/40 backdrop-blur-md flex-col">
+      <SidebarContent />
     </aside>
+  );
+}
+
+/**
+ * Mobile top bar with brand + hamburger. The hamburger opens a left-side
+ * sheet containing the full sidebar. Auto-closes on route change so the
+ * user lands on the new page without an open drawer.
+ */
+export function MobileTopBar() {
+  const pathname = usePathname();
+  const [open, setOpen] = useState(false);
+
+  // Close the sheet when the route changes — clicking a link inside the
+  // sheet would otherwise leave it stuck open on the new page.
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
+
+  return (
+    <header className="md:hidden sticky top-0 z-40 flex items-center justify-between gap-3 h-14 px-4 border-b border-border bg-background/85 backdrop-blur-md">
+      <Link href="/dashboard" className="flex items-center gap-2 min-w-0">
+        <div className="size-8 rounded-md bg-gradient-to-br from-primary to-primary/70 text-primary-foreground grid place-items-center text-sm font-semibold shrink-0">
+          ƒ
+        </div>
+        <span className="text-sm font-semibold tracking-tight truncate">
+          Founder Finance
+        </span>
+      </Link>
+      <Sheet open={open} onOpenChange={setOpen}>
+        <SheetTrigger asChild>
+          <button
+            type="button"
+            aria-label="Open navigation"
+            className="size-9 grid place-items-center rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
+          >
+            {open ? <X className="size-5" /> : <Menu className="size-5" />}
+          </button>
+        </SheetTrigger>
+        <SheetContent
+          side="left"
+          className="w-72 max-w-[85vw] p-0 flex flex-col bg-card/95 backdrop-blur-md"
+          showCloseButton={false}
+        >
+          {/* Sheet requires a title for a11y; we don't want it visible. */}
+          <VisuallyHidden.Root asChild>
+            <SheetTitle>Navigation</SheetTitle>
+          </VisuallyHidden.Root>
+          <SidebarContent onNavigate={() => setOpen(false)} />
+        </SheetContent>
+      </Sheet>
+    </header>
   );
 }

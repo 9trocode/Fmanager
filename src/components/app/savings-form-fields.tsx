@@ -143,7 +143,7 @@ export function SavingsGoalFields({
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="name">Name</Label>
           <Input
@@ -252,7 +252,7 @@ export function SavingsGoalFields({
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="space-y-1.5">
             <Label htmlFor="target_amount">
               {isDebt ? "Original loan" : isNetWorth ? "Target net worth" : "Target"}
@@ -329,7 +329,7 @@ export function SavingsGoalFields({
         - Other kinds show all three.
       */}
       {isDebt ? (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="space-y-1.5">
             <Label
               htmlFor="monthly_contribution"
@@ -371,7 +371,7 @@ export function SavingsGoalFields({
           <input type="hidden" name="expected_return_pct" value="0" />
         </div>
       ) : (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="space-y-1.5">
             <Label
               htmlFor="monthly_contribution"
@@ -431,7 +431,7 @@ export function SavingsGoalFields({
         for FIRE goals; hide it everywhere else so it doesn't suggest the
         user can configure something that won't be read.
       */}
-      <div className={isFire ? "grid grid-cols-2 gap-3" : "grid grid-cols-1 gap-3"}>
+      <div className={isFire ? "grid grid-cols-1 sm:grid-cols-2 gap-3" : "grid grid-cols-1 gap-3"}>
         <div className="space-y-1.5">
           <Label htmlFor="target_date">Target date (optional)</Label>
           <Input
@@ -489,7 +489,7 @@ export function SavingsGoalFields({
         </summary>
 
         <div className="space-y-4 mt-4">
-          <div className={isDebt ? "grid grid-cols-1 gap-3" : "grid grid-cols-2 gap-3"}>
+          <div className={isDebt ? "grid grid-cols-1 gap-3" : "grid grid-cols-1 sm:grid-cols-2 gap-3"}>
             <div className="space-y-1.5">
               <Label htmlFor="started_at">Started on</Label>
               <Input

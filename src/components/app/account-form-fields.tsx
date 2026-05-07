@@ -50,7 +50,7 @@ export function AccountFields({
           required
         />
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="type">Type</Label>
           <Select name="type" defaultValue={defaults?.type ?? "cash"}>
@@ -92,7 +92,7 @@ export function AccountFields({
         />
       </div>
       {showOpening ? (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="space-y-1.5">
             <Label htmlFor="opening_balance">Opening balance</Label>
             <MoneyInput
@@ -141,7 +141,7 @@ export function AccountFields({
           </span>
         </summary>
         <div className="space-y-4 mt-4">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="account_number">Account number</Label>
               <Input
@@ -163,7 +163,7 @@ export function AccountFields({
               />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="swift_bic">SWIFT / BIC</Label>
               <Input
@@ -184,7 +184,7 @@ export function AccountFields({
               />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="holder_name">Account holder</Label>
               <Input
@@ -205,7 +205,7 @@ export function AccountFields({
               />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="login_url">Login URL</Label>
               <Input

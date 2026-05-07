@@ -115,7 +115,7 @@ function FlowFields({
   const isLoanAccount = linkedAccount?.type === "loan";
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="name">Name</Label>
           <Input
@@ -143,7 +143,7 @@ function FlowFields({
           </datalist>
         </div>
       </div>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="amount">Amount</Label>
           <MoneyInput

@@ -35,7 +35,7 @@ export type GrantFieldsValue = {
 export function GrantFields({ defaults }: { defaults?: GrantFieldsValue }) {
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="company">Company</Label>
           <Input
@@ -63,7 +63,7 @@ export function GrantFields({ defaults }: { defaults?: GrantFieldsValue }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="total_shares">Total shares</Label>
           <Input
@@ -88,7 +88,7 @@ export function GrantFields({ defaults }: { defaults?: GrantFieldsValue }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="strike_price">Strike</Label>
           <MoneyInput
@@ -118,7 +118,7 @@ export function GrantFields({ defaults }: { defaults?: GrantFieldsValue }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="currency">Currency</Label>
           <Select name="currency" defaultValue={defaults?.currency ?? "USD"}>
@@ -159,7 +159,7 @@ export function GrantFields({ defaults }: { defaults?: GrantFieldsValue }) {
         </summary>
 
         <div className="space-y-4 mt-4">
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="vesting_start_date">Vesting start</Label>
               <Input
@@ -193,7 +193,7 @@ export function GrantFields({ defaults }: { defaults?: GrantFieldsValue }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="expected_exit_months">Expected exit (months from today)</Label>
               <Input

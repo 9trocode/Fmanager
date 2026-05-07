@@ -149,7 +149,7 @@ export function ProjectionsExplorer({
         </CardHeader>
         <CardContent>
           {last && first ? (
-            <div className="grid grid-cols-3 gap-4 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
               {(["floor", "liquid", "expected"] as const).map((s) => (
                 <div key={s} className="space-y-0.5">
                   <div className="flex items-center gap-1.5">

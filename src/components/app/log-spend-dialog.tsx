@@ -80,7 +80,7 @@ export function LogSpendDialog({
           <input type="hidden" name="category" value={category} />
           <input type="hidden" name="currency" value={currency} />
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="amount">Amount ({currency})</Label>
               <MoneyInput
