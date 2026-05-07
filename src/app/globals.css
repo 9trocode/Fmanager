@@ -39,6 +39,12 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+
+  --color-glass-border: oklch(1 0 0 / 10%);
+  --color-glass-bg: oklch(1 0 0 / 40%);
+  --shadow-pillow: 0 8px 32px 0 oklch(0 0 0 / 4%);
+  --shadow-pillow-hover: 0 12px 48px 0 oklch(0 0 0 / 8%);
+
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -127,4 +133,18 @@
   html {
     @apply font-sans;
   }
-}
+  }
+
+  @layer utilities {
+  .glass {
+    background: var(--color-glass-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--color-glass-border);
+  }
+
+  .dark .glass {
+    --color-glass-bg: oklch(0.205 0 0 / 40%);
+    --color-glass-border: oklch(1 0 0 / 5%);
+  }
+  }
