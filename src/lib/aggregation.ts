@@ -151,7 +151,11 @@ export type MonthActuals = {
   monthLabel: string;
 };
 
-export async function computeThisMonthActuals(
+/**
+ * Per-request memo. Used by the dashboard headline + sometimes by
+ * other surfaces — collapsing repeats inside one render is free perf.
+ */
+export const computeThisMonthActuals = cache(async function computeThisMonthActualsImpl(
   baseCurrency: string,
   monthKey?: string,
 ): Promise<MonthActuals> {
@@ -185,7 +189,7 @@ export async function computeThisMonthActuals(
     txCount: count,
     monthLabel,
   };
-}
+});
 
 export type CashFlowSummary = {
   baseCurrency: string;
@@ -195,7 +199,12 @@ export type CashFlowSummary = {
   byCategory: { income: Record<string, number>; expense: Record<string, number> };
 };
 
-export async function computeMonthlyCashFlow(
+/**
+ * Per-request memo. Called both directly by /cash-flow / dashboard
+ * AND transitively from `computeCashRunway` — without this, every
+ * dashboard render fired this twice.
+ */
+export const computeMonthlyCashFlow = cache(async function computeMonthlyCashFlowImpl(
   baseCurrency: string,
 ): Promise<CashFlowSummary> {
   const flows = await listFlows();
@@ -220,7 +229,7 @@ export async function computeMonthlyCashFlow(
   }
   result.net = result.income - result.expenses;
   return result;
-}
+});
 
 export type RunwaySummary = {
   baseCurrency: string;
@@ -339,7 +348,11 @@ function ymd(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-export async function computeBudgetStatus(
+/**
+ * Per-request memo. Dashboard + /budgets both call this; sometimes
+ * twice on the same render path.
+ */
+export const computeBudgetStatus = cache(async function computeBudgetStatusImpl(
   baseCurrency: string,
   monthKey?: string,
 ): Promise<BudgetSummary> {
@@ -409,4 +422,4 @@ export async function computeBudgetStatus(
     totalLimit,
     totalSpent,
   };
-}
+});

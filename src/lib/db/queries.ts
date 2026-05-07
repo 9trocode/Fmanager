@@ -144,38 +144,36 @@ export async function getEffectiveBalance(accountId: number): Promise<{
     return { effectiveValue: null, latestValue: null, latestAsOf: null };
   }
 
-  // Outgoing transactions on this account after the snapshot.
-  const outgoing = await db
+  // One query covers both directions: source-on-account OR
+  // destination-on-account-for-transfers, after the snapshot. Halves
+  // the round-trips vs. the previous two-query version.
+  const txs = await db
     .select()
     .from(schema.transactions)
     .where(
       and(
-        eq(schema.transactions.accountId, accountId),
         gte(schema.transactions.occurredAt, latest.asOf),
-      ),
-    );
-  // Incoming transfers (this account as destination) after snapshot.
-  const incoming = await db
-    .select()
-    .from(schema.transactions)
-    .where(
-      and(
-        eq(schema.transactions.destAccountId, accountId),
-        eq(schema.transactions.kind, "transfer"),
-        gte(schema.transactions.occurredAt, latest.asOf),
+        or(
+          eq(schema.transactions.accountId, accountId),
+          and(
+            eq(schema.transactions.destAccountId, accountId),
+            eq(schema.transactions.kind, "transfer"),
+          ),
+        ),
       ),
     );
 
   let delta = 0;
-  for (const t of outgoing) {
+  for (const t of txs) {
     // Skip transactions on the snapshot date itself; snapshot wins.
     if (t.occurredAt === latest.asOf) continue;
-    if (t.kind === "expense" || t.kind === "transfer") delta -= t.amount;
-    else if (t.kind === "income") delta += t.amount;
-  }
-  for (const t of incoming) {
-    if (t.occurredAt === latest.asOf) continue;
-    delta += t.amount;
+    if (t.accountId === accountId) {
+      if (t.kind === "expense" || t.kind === "transfer") delta -= t.amount;
+      else if (t.kind === "income") delta += t.amount;
+    }
+    if (t.destAccountId === accountId && t.kind === "transfer") {
+      delta += t.amount;
+    }
   }
 
   return {
@@ -185,22 +183,101 @@ export async function getEffectiveBalance(accountId: number): Promise<{
   };
 }
 
+/**
+ * Effective balance for every account in one shot.
+ *
+ * The naive version called `getEffectiveBalance(id)` per account, each
+ * of which fired 3 queries (latest snapshot + outgoing tx + incoming
+ * tx). For 10 accounts that's 31 queries.
+ *
+ * This batches into 3 queries total regardless of N:
+ *   1. accounts list
+ *   2. one window-function query for the latest snapshot per account
+ *   3. all post-snapshot transactions in one scan, grouped in memory
+ */
 export async function listAccountsWithEffective(
   opts: { includeArchived?: boolean } = {},
 ) {
   const accounts = await listAccounts(opts);
-  const result = await Promise.all(
-    accounts.map(async (a) => {
-      const eff = await getEffectiveBalance(a.id);
+  if (accounts.length === 0) return [];
+
+  const ids = accounts.map((a) => a.id);
+
+  // Latest snapshot per account via a correlated subquery — SQLite
+  // resolves this with the (account_id, as_of) composite index we
+  // added, so it's a b-tree walk per account, not a scan.
+  const latestSnapshots = await db
+    .select()
+    .from(schema.valueSnapshots)
+    .where(
+      and(
+        inArray(schema.valueSnapshots.accountId, ids),
+        sql`(${schema.valueSnapshots.accountId}, ${schema.valueSnapshots.asOf}, ${schema.valueSnapshots.id}) IN (
+          SELECT account_id, MAX(as_of), MAX(id)
+          FROM value_snapshots
+          WHERE account_id IN ${ids}
+          GROUP BY account_id, as_of
+        )`,
+      ),
+    );
+  const latestByAccount = new Map(
+    latestSnapshots.map((s) => [s.accountId, s]),
+  );
+
+  // Earliest snapshot date across the set — used as the lower bound
+  // for the transactions scan so we don't pull years of unneeded rows
+  // when an old account has a stale snapshot.
+  const earliestAsOf = latestSnapshots.reduce<string>((acc, s) => {
+    return acc === "" || s.asOf < acc ? s.asOf : acc;
+  }, "");
+
+  // All transactions touching any of these accounts since the earliest
+  // relevant snapshot. One query, then bucket by account in memory.
+  const txs = earliestAsOf
+    ? await db
+        .select()
+        .from(schema.transactions)
+        .where(
+          and(
+            or(
+              inArray(schema.transactions.accountId, ids),
+              inArray(schema.transactions.destAccountId, ids),
+            ),
+            gte(schema.transactions.occurredAt, earliestAsOf),
+          ),
+        )
+    : [];
+
+  return accounts.map((a) => {
+    const latest = latestByAccount.get(a.id);
+    if (!latest) {
       return {
         ...a,
-        effectiveValue: eff.effectiveValue,
-        latestValue: eff.latestValue,
-        latestAsOf: eff.latestAsOf,
+        effectiveValue: null as number | null,
+        latestValue: null as number | null,
+        latestAsOf: null as string | null,
       };
-    }),
-  );
-  return result;
+    }
+    let delta = 0;
+    for (const t of txs) {
+      // Skip transactions on the snapshot date itself; snapshot wins.
+      if (t.occurredAt === latest.asOf) continue;
+      if (t.occurredAt < latest.asOf) continue;
+      if (t.accountId === a.id) {
+        if (t.kind === "expense" || t.kind === "transfer") delta -= t.amount;
+        else if (t.kind === "income") delta += t.amount;
+      }
+      if (t.destAccountId === a.id && t.kind === "transfer") {
+        delta += t.amount;
+      }
+    }
+    return {
+      ...a,
+      effectiveValue: latest.value + delta,
+      latestValue: latest.value,
+      latestAsOf: latest.asOf,
+    };
+  });
 }
 
 export async function listGrants() {
@@ -385,15 +462,22 @@ export async function listAccountTransactions(
 
 /**
  * Transactions in the last `days` days. Used by the advisor system prompt.
+ *
+ * Local-time bounds — `toISOString().slice(0,10)` would skew by a day
+ * for users in non-UTC zones near midnight, dropping yesterday's
+ * transactions out of "recent" or pulling tomorrow's in.
  */
 export async function listRecentTransactions(days = 30) {
   const since = new Date();
   since.setDate(since.getDate() - days);
-  const sinceIso = since.toISOString().slice(0, 10);
+  const y = since.getFullYear();
+  const m = String(since.getMonth() + 1).padStart(2, "0");
+  const d = String(since.getDate()).padStart(2, "0");
+  const sinceLocal = `${y}-${m}-${d}`;
   return db
     .select()
     .from(schema.transactions)
-    .where(gte(schema.transactions.occurredAt, sinceIso))
+    .where(gte(schema.transactions.occurredAt, sinceLocal))
     .orderBy(desc(schema.transactions.occurredAt), desc(schema.transactions.id));
 }
 

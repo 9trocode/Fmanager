@@ -36,6 +36,13 @@
       "when": 1778141570801,
       "tag": "0004_round_siren",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1778143271546,
+      "tag": "0005_nebulous_midnight",
+      "breakpoints": true
     }
   ]
 }

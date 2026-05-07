@@ -30,28 +30,36 @@ export const accountTypes = [
 ] as const;
 export type AccountType = (typeof accountTypes)[number];
 
-export const accounts = sqliteTable("accounts", {
-  id: id(),
-  name: text("name").notNull(),
-  type: text("type", { enum: accountTypes }).notNull(),
-  currency: text("currency").notNull(),
-  institution: text("institution"),
-  notes: text("notes"),
-  // Optional account-detail fields. All free-text, all optional.
-  // Stored locally — anyone with disk access can read these. Use disk encryption
-  // if you put sensitive numbers here.
-  accountNumber: text("account_number"),
-  routingOrIban: text("routing_or_iban"),
-  swiftBic: text("swift_bic"),
-  holderName: text("holder_name"),
-  branch: text("branch"),
-  loginUrl: text("login_url"),
-  contactPhone: text("contact_phone"),
-  statementsUrl: text("statements_url"),
-  archived: integer("archived", { mode: "boolean" }).notNull().default(false),
-  createdAt: createdAt(),
-  updatedAt: updatedAt(),
-});
+export const accounts = sqliteTable(
+  "accounts",
+  {
+    id: id(),
+    name: text("name").notNull(),
+    type: text("type", { enum: accountTypes }).notNull(),
+    currency: text("currency").notNull(),
+    institution: text("institution"),
+    notes: text("notes"),
+    // Optional account-detail fields. All free-text, all optional.
+    // Stored locally — anyone with disk access can read these. Use disk
+    // encryption if you put sensitive numbers here.
+    accountNumber: text("account_number"),
+    routingOrIban: text("routing_or_iban"),
+    swiftBic: text("swift_bic"),
+    holderName: text("holder_name"),
+    branch: text("branch"),
+    loginUrl: text("login_url"),
+    contactPhone: text("contact_phone"),
+    statementsUrl: text("statements_url"),
+    archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    // listAccounts() filters by archived everywhere except the
+    // includeArchived path; small cardinality but the index is free.
+    archivedIdx: index("accounts_archived_idx").on(t.archived),
+  }),
+);
 
 export const valueSnapshots = sqliteTable(
   "value_snapshots",
@@ -77,56 +85,82 @@ export const valueSnapshots = sqliteTable(
   }),
 );
 
-export const equityGrants = sqliteTable("equity_grants", {
-  id: id(),
-  accountId: integer("account_id").references(() => accounts.id, {
-    onDelete: "set null",
+export const equityGrants = sqliteTable(
+  "equity_grants",
+  {
+    id: id(),
+    accountId: integer("account_id").references(() => accounts.id, {
+      onDelete: "set null",
+    }),
+    company: text("company").notNull(),
+    grantType: text("grant_type", {
+      enum: ["iso", "nso", "rsu", "founder_shares", "safe", "other"],
+    })
+      .notNull()
+      .default("nso"),
+    totalShares: real("total_shares").notNull(),
+    vestedShares: real("vested_shares").notNull().default(0),
+    strikePrice: real("strike_price"),
+    currency: text("currency").notNull().default("USD"),
+    fmvPerShare: real("fmv_per_share"),
+    exitPricePerShare: real("exit_price_per_share"),
+    vestingStartDate: text("vesting_start_date"),
+    vestingMonths: integer("vesting_months").default(48),
+    cliffMonths: integer("cliff_months").default(12),
+    expectedExitMonths: integer("expected_exit_months"),
+    taxRatePct: real("tax_rate_pct"),
+    vestingNotes: text("vesting_notes"),
+    grantedAt: text("granted_at"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    accountIdx: index("equity_grants_account_idx").on(t.accountId),
   }),
-  company: text("company").notNull(),
-  grantType: text("grant_type", {
-    enum: ["iso", "nso", "rsu", "founder_shares", "safe", "other"],
-  })
-    .notNull()
-    .default("nso"),
-  totalShares: real("total_shares").notNull(),
-  vestedShares: real("vested_shares").notNull().default(0),
-  strikePrice: real("strike_price"),
-  currency: text("currency").notNull().default("USD"),
-  fmvPerShare: real("fmv_per_share"),
-  exitPricePerShare: real("exit_price_per_share"),
-  vestingStartDate: text("vesting_start_date"),
-  vestingMonths: integer("vesting_months").default(48),
-  cliffMonths: integer("cliff_months").default(12),
-  expectedExitMonths: integer("expected_exit_months"),
-  taxRatePct: real("tax_rate_pct"),
-  vestingNotes: text("vesting_notes"),
-  grantedAt: text("granted_at"),
-  createdAt: createdAt(),
-  updatedAt: updatedAt(),
-});
+);
 
-export const fxRates = sqliteTable("fx_rates", {
-  id: id(),
-  base: text("base").notNull(),
-  quote: text("quote").notNull(),
-  rate: real("rate").notNull(),
-  fetchedAt: text("fetched_at")
-    .notNull()
-    .default(sql`(CURRENT_TIMESTAMP)`),
-});
+export const fxRates = sqliteTable(
+  "fx_rates",
+  {
+    id: id(),
+    base: text("base").notNull(),
+    quote: text("quote").notNull(),
+    rate: real("rate").notNull(),
+    fetchedAt: text("fetched_at")
+      .notNull()
+      .default(sql`(CURRENT_TIMESTAMP)`),
+  },
+  (t) => ({
+    // getRate() runs constantly — every aggregator hits this table.
+    // Composite covers the WHERE base=? AND quote=? plus the
+    // ORDER BY fetchedAt DESC LIMIT 1 in one b-tree walk.
+    pairFetchedIdx: index("fx_rates_pair_fetched_idx").on(
+      t.base,
+      t.quote,
+      t.fetchedAt,
+    ),
+  }),
+);
 
-export const decisions = sqliteTable("decisions", {
-  id: id(),
-  question: text("question").notNull(),
-  context: text("context"),
-  status: text("status", { enum: ["open", "decided", "deferred"] })
-    .notNull()
-    .default("open"),
-  decidedAt: text("decided_at"),
-  outcome: text("outcome"),
-  createdAt: createdAt(),
-  updatedAt: updatedAt(),
-});
+export const decisions = sqliteTable(
+  "decisions",
+  {
+    id: id(),
+    question: text("question").notNull(),
+    context: text("context"),
+    status: text("status", { enum: ["open", "decided", "deferred"] })
+      .notNull()
+      .default("open"),
+    decidedAt: text("decided_at"),
+    outcome: text("outcome"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    // listDecisions({ onlyOpen: true }) is the dominant pattern.
+    statusIdx: index("decisions_status_idx").on(t.status),
+  }),
+);
 
 export const flowCadences = ["weekly", "monthly", "yearly"] as const;
 export type FlowCadence = (typeof flowCadences)[number];
@@ -172,6 +206,7 @@ export const recurringFlows = sqliteTable(
     // accrueDueFlows() filters by archived=false + accountId not null;
     // listAccountFlows reads by accountId. Index covers both.
     accountIdx: index("recurring_flows_account_idx").on(t.accountId),
+    archivedIdx: index("recurring_flows_archived_idx").on(t.archived),
   }),
 );
 
@@ -203,30 +238,37 @@ export type GoalKind = (typeof goalKinds)[number];
  *  - debt_payoff: Drive a linked loan account's balance to zero. Current =
  *                 effective balance of that account.
  */
-export const savingsGoals = sqliteTable("savings_goals", {
-  id: id(),
-  kind: text("kind", { enum: goalKinds }).notNull().default("savings"),
-  name: text("name").notNull(),
-  category: text("category"),
-  targetAmount: real("target_amount"),
-  currentAmount: real("current_amount").notNull().default(0),
-  currency: text("currency").notNull(),
-  monthlyContribution: real("monthly_contribution").notNull().default(0),
-  expectedReturnPct: real("expected_return_pct").notNull().default(0),
-  horizonMonths: integer("horizon_months").notNull().default(12),
-  /** Optional explicit target date (ISO YYYY-MM-DD). If null, horizonMonths is used. */
-  targetDate: text("target_date"),
-  /** Multiplier for FIRE kind (default 25 = 4% rule). */
-  fireMultiplier: real("fire_multiplier"),
-  startedAt: text("started_at").notNull(),
-  accountId: integer("account_id").references(() => accounts.id, {
-    onDelete: "set null",
+export const savingsGoals = sqliteTable(
+  "savings_goals",
+  {
+    id: id(),
+    kind: text("kind", { enum: goalKinds }).notNull().default("savings"),
+    name: text("name").notNull(),
+    category: text("category"),
+    targetAmount: real("target_amount"),
+    currentAmount: real("current_amount").notNull().default(0),
+    currency: text("currency").notNull(),
+    monthlyContribution: real("monthly_contribution").notNull().default(0),
+    expectedReturnPct: real("expected_return_pct").notNull().default(0),
+    horizonMonths: integer("horizon_months").notNull().default(12),
+    /** Optional explicit target date (ISO YYYY-MM-DD). If null, horizonMonths is used. */
+    targetDate: text("target_date"),
+    /** Multiplier for FIRE kind (default 25 = 4% rule). */
+    fireMultiplier: real("fire_multiplier"),
+    startedAt: text("started_at").notNull(),
+    accountId: integer("account_id").references(() => accounts.id, {
+      onDelete: "set null",
+    }),
+    notes: text("notes"),
+    archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    archivedIdx: index("savings_goals_archived_idx").on(t.archived),
+    accountIdx: index("savings_goals_account_idx").on(t.accountId),
   }),
-  notes: text("notes"),
-  archived: integer("archived", { mode: "boolean" }).notNull().default(false),
-  createdAt: createdAt(),
-  updatedAt: updatedAt(),
-});
+);
 
 export const budgets = sqliteTable(
   "budgets",
@@ -254,6 +296,7 @@ export const budgets = sqliteTable(
       t.category,
       t.currency,
     ),
+    accountIdx: index("budgets_account_idx").on(t.accountId),
   }),
 );
 
