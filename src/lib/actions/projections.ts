@@ -6,8 +6,14 @@ import { z } from "zod";
 import { assertAdmin } from "@/lib/auth/session";
 import { buildAdvisorClient } from "@/lib/ai/provider";
 import { computeMonthlyCashFlow, computeNetWorth } from "@/lib/aggregation";
-import { listSavingsGoals, getBaseCurrency } from "@/lib/db/queries";
+import {
+  listFlows,
+  listSavingsGoals,
+  getBaseCurrency,
+} from "@/lib/db/queries";
 import { computeGoalState } from "@/lib/goals";
+import { monthlyEquivalent } from "@/lib/flows";
+import { convert } from "@/lib/fx";
 import type { ScenarioEvent } from "@/lib/projections";
 
 /**
@@ -129,11 +135,54 @@ export async function suggestScenarios(
   }
 
   const baseCurrency = await getBaseCurrency();
-  const [summary, cashFlow, goals] = await Promise.all([
+  const [summary, cashFlow, goals, flows] = await Promise.all([
     computeNetWorth(baseCurrency),
     computeMonthlyCashFlow(baseCurrency),
     listSavingsGoals(),
+    listFlows(),
   ]);
+
+  // Per-currency flow breakdown so the model can SEE the multi-currency
+  // shape of the user's life — instead of just a base-currency
+  // aggregate that hides which currency the income lands in. Without
+  // this, asking "what if I 3x my $1,600 USD income?" produces
+  // proposals that ignore the dollar→naira conversion AND the floor
+  // imposed by NGN-denominated expenses.
+  type FlowSummary = {
+    income: number;
+    expenses: number;
+    net: number;
+    inBase: { income: number; expenses: number; net: number };
+  };
+  const byCurrency = new Map<string, FlowSummary>();
+  for (const f of flows) {
+    const cur = f.currency.toUpperCase();
+    const monthlyNative = monthlyEquivalent(f.amount, f.cadence);
+    const monthlyBase = await convert(monthlyNative, cur, baseCurrency);
+    const bucket = byCurrency.get(cur) ?? {
+      income: 0,
+      expenses: 0,
+      net: 0,
+      inBase: { income: 0, expenses: 0, net: 0 },
+    };
+    if (f.kind === "income") {
+      bucket.income += monthlyNative;
+      bucket.inBase.income += monthlyBase;
+    } else {
+      bucket.expenses += monthlyNative;
+      bucket.inBase.expenses += monthlyBase;
+    }
+    bucket.net = bucket.income - bucket.expenses;
+    bucket.inBase.net = bucket.inBase.income - bucket.inBase.expenses;
+    byCurrency.set(cur, bucket);
+  }
+  // Plausible upper bound for monthlyContribution: net inflow + any
+  // realistic expense compression. We pass this as guardrail context
+  // so the model doesn't propose "save 10x your net income".
+  const realisticContributionCap = Math.max(
+    0,
+    cashFlow.income - Math.max(0, cashFlow.expenses * 0.4),
+  );
 
   // Goal context: if the user is asking against a specific goal, include
   // the current state + ETA so the model can reason about the gap.
@@ -172,16 +221,27 @@ export async function suggestScenarios(
     "You are a personal finance scenario planner. Generate 3-5 DISTINCT, USEFUL projection scenarios for the user.",
     "Each scenario tests a different lever — raise/income bump, expense cut, lump sum (bonus/refund), longer horizon, higher contribution, or a mix.",
     "Use the user's actual numbers below. Don't invent figures or pick generic placeholders.",
-    "Express monthly amounts in the user's base currency. Events use atMonth offsets from today (0 = next month).",
     "",
-    `HORIZON: every scenario MUST set horizonMonths to exactly ${safeHorizon} (about ${horizonYears} years). The user picked this — do not override it. Tune the LEVERS (contribution, return, events) to fit the horizon, not the other way around.`,
+    `## Currency rules`,
+    `- Base currency: ${baseCurrency}. ALL numbers you output (monthlyContribution, event newMonthly, event amount) MUST be in ${baseCurrency}.`,
+    `- The user's flows live in their NATIVE currencies (see "Monthly cash flow (recurring)" below). When the user says "$1,600 raise" or "₦200k cut", convert to ${baseCurrency} using the implied current rates from the data — don't ask for rates.`,
+    `- Cite the user's currency context in the rationale so it's traceable: e.g. "USD income jumps from $1,600 to $4,800 (≈ ${baseCurrency} terms)" rather than just a base-currency number.`,
+    "",
+    "## Contribution rules (CRITICAL — most common failure mode)",
+    "- `monthlyContribution` is the user's NET monthly SAVINGS — what's actually left over after expenses. NOT gross income, NOT income after the raise.",
+    "- A raise increases income; expenses don't disappear. Contribution after a 3x raise = (3x income) − (existing expenses), NOT 3x income.",
+    "- Stay at or below the 'Realistic monthlyContribution upper bound' shown in the data unless the user explicitly accepts cutting all discretionary spending.",
+    "- If the user asks for 'aggressive savings', model it as a believable expense cut (e.g. 'expenses drop 30%') plus the raise — show both, don't just inflate the contribution.",
+    "",
+    `## Horizon`,
+    `Every scenario MUST set horizonMonths to exactly ${safeHorizon} (about ${horizonYears} years). The user picked this — do not override it.`,
     "",
     "For each scenario, write TWO short pieces of context:",
-    "  - rationale: 1 sentence on WHY this scenario is worth running for THIS user (anchor on their numbers / goal / cash flow).",
+    "  - rationale: 1 sentence on WHY this scenario is worth running for THIS user (anchor on their currencies / goal / cash flow).",
     "  - summary: 1 sentence on WHAT the path involves and what they'd land at — the practical takeaway. e.g. 'Hits the emergency fund 9 months earlier but requires sustaining ~80k/mo until December.'",
     "Both fields are required. Keep each under 25 words. No fluff, no headers, no bullets — plain prose.",
     "",
-    "Event shape rules:",
+    "## Event shape rules",
     "  - For kind='raise' or kind='expense_shock': set the `newMonthly` field to the contribution AFTER the change. Do NOT set `amount`.",
     "  - For kind='lump_sum': set the `amount` field (positive = injection, negative = withdrawal). Do NOT set `newMonthly`.",
     `  - Always include 'atMonth' (0–${safeHorizon}). Always include 'kind'.`,
@@ -190,13 +250,27 @@ export async function suggestScenarios(
     "If a scenario has no mid-stream changes, return `events: []`.",
   ].join("\n");
 
+  const perCurrencyLines: string[] = [];
+  for (const [cur, b] of byCurrency.entries()) {
+    perCurrencyLines.push(
+      `- ${cur}: income ${b.income.toFixed(0)} ${cur} (≈ ${b.inBase.income.toFixed(0)} ${baseCurrency}), expenses ${b.expenses.toFixed(0)} ${cur} (≈ ${b.inBase.expenses.toFixed(0)} ${baseCurrency}), net ${b.net.toFixed(0)} ${cur}`,
+    );
+  }
+
   const dataPrompt = [
     `## Base currency: ${baseCurrency}`,
     `## Liquid net worth (floor scenario): ${summary.totals.floor.toFixed(0)} ${baseCurrency}`,
-    `## Monthly cash flow (recurring)`,
+    "",
+    "## Monthly cash flow (recurring) — NATIVE currencies, with base-currency equivalent",
+    perCurrencyLines.length ? perCurrencyLines.join("\n") : "(no recurring flows)",
+    "",
+    "## Aggregated cash flow (base currency only — for sanity-checking)",
     `- Income:   ${cashFlow.income.toFixed(0)} ${baseCurrency}`,
     `- Expenses: ${cashFlow.expenses.toFixed(0)} ${baseCurrency}`,
     `- Net:      ${cashFlow.net.toFixed(0)} ${baseCurrency}${cashFlow.net < 0 ? " (drawing down)" : ""}`,
+    "",
+    `## Realistic monthlyContribution upper bound: ${realisticContributionCap.toFixed(0)} ${baseCurrency}`,
+    "(This is income minus a 40%-expense floor. Don't exceed it unless the prompt explicitly says to ignore expenses entirely. A 'X% raise' affects income, not the contribution — savings still need to subtract expenses.)",
     "",
     goalContext ? `## ${goalContext}\n` : "",
     "## Active goals",
@@ -227,16 +301,35 @@ export async function suggestScenarios(
     // horizon back to the user's chosen value — the model is told to
     // honor it via the system prompt, but we don't trust that with
     // money math, so the action layer is the enforcement point.
+    //
+    // Soft cap on contribution + event newMonthly: 2× the realistic
+    // upper bound. The model is allowed to push past the realistic
+    // line for "aggressive" scenarios, but not into nonsense (e.g.
+    // 10× net income). When clamped, the rationale already mentions
+    // the lever, so we don't rewrite the prose — just the number.
+    const hardCap = realisticContributionCap > 0
+      ? realisticContributionCap * 2
+      : Infinity;
+    const clampMoney = (n: number) => {
+      if (!Number.isFinite(n)) return 0;
+      if (hardCap === Infinity) return n;
+      // Allow withdrawals (negative) — the cap is an upper bound only.
+      return Math.min(n, hardCap);
+    };
     const scenarios: SuggestedScenario[] = result.output.scenarios.map((s) => ({
       name: s.name,
       rationale: s.rationale,
       summary: s.summary,
-      monthlyContribution: s.monthlyContribution,
+      monthlyContribution: clampMoney(s.monthlyContribution),
       annualReturnPct: s.annualReturnPct,
       horizonMonths: safeHorizon,
       events: s.events
         .map(flatToScenarioEvent)
-        .filter((e): e is ScenarioEvent => e != null),
+        .filter((e): e is ScenarioEvent => e != null)
+        .map((e): ScenarioEvent => {
+          if (e.kind === "lump_sum") return e;
+          return { ...e, newMonthly: clampMoney(e.newMonthly) };
+        }),
     }));
     return { ok: true, scenarios };
   } catch (err) {

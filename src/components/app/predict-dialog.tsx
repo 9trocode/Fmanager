@@ -61,6 +61,7 @@ export function PredictDialog({
   goals,
   defaultGoalId,
   defaultHorizonMonths,
+  baseCurrency,
   onApply,
 }: {
   open: boolean;
@@ -68,6 +69,7 @@ export function PredictDialog({
   goals: PredictDialogGoal[];
   defaultGoalId: number | null;
   defaultHorizonMonths: number;
+  baseCurrency: string;
   onApply: (scenarios: SuggestedScenario[]) => void;
 }) {
   const [goalId, setGoalId] = useState<number | null>(defaultGoalId);
@@ -180,6 +182,7 @@ export function PredictDialog({
               scenarios={results!}
               picked={picked}
               onToggle={toggle}
+              baseCurrency={baseCurrency}
             />
           ) : (
             <FormBody
@@ -401,10 +404,12 @@ function PreviewList({
   scenarios,
   picked,
   onToggle,
+  baseCurrency,
 }: {
   scenarios: SuggestedScenario[];
   picked: Set<number>;
   onToggle: (i: number) => void;
+  baseCurrency: string;
 }) {
   return (
     <div className="space-y-3">
@@ -437,7 +442,7 @@ function PreviewList({
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-sm font-medium">{s.name}</span>
                   <Badge variant="secondary" className="text-[10px] font-mono">
-                    {formatMoney(s.monthlyContribution, "USD", { compact: true }).replace(/\$/g, "")}/mo
+                    {formatMoney(s.monthlyContribution, baseCurrency, { compact: true })}/mo
                   </Badge>
                   <Badge variant="secondary" className="text-[10px] font-mono">
                     {s.annualReturnPct}% APR

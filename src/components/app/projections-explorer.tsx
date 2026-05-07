@@ -569,6 +569,7 @@ export function ProjectionsExplorer({
             ...scenarios.map((s) => s.inputs.horizonMonths || 60),
           )
         }
+        baseCurrency={baseCurrency}
         onApply={applySuggestions}
       />
 
