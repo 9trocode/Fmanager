@@ -118,6 +118,62 @@ export type SuggestScenariosResult =
   | { ok: true; scenarios: SuggestedScenario[] }
   | { ok: false; error: string };
 
+export type RefineScenarioResult =
+  | { ok: true; scenario: SuggestedScenario }
+  | { ok: false; error: string };
+
+/**
+ * Iterative refinement on a single scenario. Same data context as
+ * `suggestScenarios` but constrained to ONE output, and the user's
+ * existing scenario is shown as the starting point so the model
+ * tweaks rather than restarts.
+ *
+ * Why a separate action: lets the user iterate inside the predict
+ * workspace without nuking the rest of the generated set. "Make this
+ * one more aggressive", "swap the lump sum for a recurring raise",
+ * "what if expenses also drop 20%" — each is a one-scenario tweak.
+ */
+export async function refineScenario(
+  current: SuggestedScenario,
+  refinePrompt: string,
+  goalId: number | null,
+  horizonMonths: number = 60,
+): Promise<RefineScenarioResult> {
+  const result = await suggestScenarios(
+    [
+      "Refine the SINGLE scenario described below per the user's instruction. Return exactly ONE scenario in the response array. Keep horizon + currency rules identical.",
+      "",
+      `## Current scenario`,
+      `- name: ${current.name}`,
+      `- monthlyContribution: ${current.monthlyContribution}`,
+      `- annualReturnPct: ${current.annualReturnPct}`,
+      `- horizonMonths: ${current.horizonMonths}`,
+      `- rationale: ${current.rationale}`,
+      `- summary: ${current.summary}`,
+      `- events (${current.events.length}): ${
+        current.events
+          .map((e) =>
+            e.kind === "lump_sum"
+              ? `lump_sum ${e.amount} @ ${e.atMonth}`
+              : `${e.kind} → ${e.newMonthly} @ ${e.atMonth}`,
+          )
+          .join("; ") || "(none)"
+      }`,
+      "",
+      `## User instruction`,
+      refinePrompt.trim() || "Improve it — make it sharper or more realistic.",
+    ].join("\n"),
+    goalId,
+    horizonMonths,
+  );
+  if (!result.ok) return { ok: false, error: result.error };
+  if (result.scenarios.length === 0) {
+    return { ok: false, error: "No refined scenario was returned." };
+  }
+  // Take the first; ignore extras even if the model returned several.
+  return { ok: true, scenario: result.scenarios[0] };
+}
+
 export async function suggestScenarios(
   prompt: string,
   goalId: number | null,

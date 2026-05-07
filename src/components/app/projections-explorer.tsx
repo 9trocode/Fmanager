@@ -570,6 +570,10 @@ export function ProjectionsExplorer({
           )
         }
         baseCurrency={baseCurrency}
+        startNonGrantInBase={startNonGrantInBase}
+        grants={grants}
+        fxToBase={fxToBase}
+        view={view}
         onApply={applySuggestions}
       />
 
