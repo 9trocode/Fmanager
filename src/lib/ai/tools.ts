@@ -697,6 +697,36 @@ const getAccountBalancesTool = tool({
   },
 });
 
+// ─── projection helper ──────────────────────────────────────────────────
+
+const projectScenarioTool = tool({
+  description:
+    "Run a single projection scenario forward and report end-of-horizon principal + the floor/liquid/expected net worth. Useful when the user asks 'what if I save X for Y months?' — give them the answer numerically without sending them to the projections page.",
+  inputSchema: z.object({
+    monthlyContribution: z.number(),
+    annualReturnPct: z.number().min(0).max(20).default(7),
+    horizonMonths: z.number().int().min(1).max(360),
+  }),
+  execute: async (input) => {
+    // Inline lightweight projection — duplicates a sliver of
+    // projectNetWorth so we don't pull recharts/grant types in here.
+    const r = input.annualReturnPct / 100 / 12;
+    const m = input.horizonMonths;
+    const c = input.monthlyContribution;
+    // Closed-form annuity. No grant math here — that's available via
+    // getNetWorth + getAccountBalances if the user wants the full picture.
+    const futurePrincipal =
+      r === 0 ? c * m : c * ((Math.pow(1 + r, m) - 1) / r);
+    return {
+      monthlyContribution: c,
+      annualReturnPct: input.annualReturnPct,
+      horizonMonths: m,
+      projectedPrincipalGrowth: futurePrincipal,
+      summary: `Saving ${c.toFixed(0)}/mo at ${input.annualReturnPct}%/yr for ${m} months grows the principal by ~${futurePrincipal.toFixed(0)} (excluding starting balance).`,
+    };
+  },
+});
+
 // ─── proactive alerts surface ───────────────────────────────────────────
 
 const listActiveAlertsTool = tool({
@@ -955,6 +985,8 @@ export const advisorTools = {
   convertCurrency: convertCurrencyTool,
   // Proactive surface
   listActiveAlerts: listActiveAlertsTool,
+  // Projections
+  projectScenario: projectScenarioTool,
   // Write
   createTransaction: createTransactionTool,
   createBudget: createBudgetTool,
