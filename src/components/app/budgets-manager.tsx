@@ -48,6 +48,13 @@ export type BudgetsManagerProps = {
   totalSpent: number;
   monthlyIncome: number;
   recurringByCategory: Record<string, number>;
+  /**
+   * MTD posted expense transactions whose category is NOT in any budget.
+   * Surfaced as a separate "one-time" slice on the Budgets vs cash flow
+   * panel so the user sees how much income is actually free after every
+   * commitment AND every actual unbudgeted spend so far this month.
+   */
+  oneTimeExpensesThisMonth: number;
   liquidCash: number;
   monthsRunway: number | null;
 };
@@ -196,6 +203,7 @@ export function BudgetsManager({
   totalSpent,
   monthlyIncome,
   recurringByCategory,
+  oneTimeExpensesThisMonth,
   liquidCash,
   monthsRunway,
 }: BudgetsManagerProps) {
@@ -212,6 +220,7 @@ export function BudgetsManager({
         totalBudgeted={totalLimit}
         recurringByCategory={recurringByCategory}
         budgetedCategories={budgetedCategories}
+        oneTimeExpenses={oneTimeExpensesThisMonth}
         liquidCash={liquidCash}
         monthsRunway={monthsRunway}
       />

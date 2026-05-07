@@ -20,6 +20,13 @@ export type BudgetsCashFlowProps = {
   recurringByCategory: Record<string, number>;
   /** Categories that already have a budget. We use this to flag overlap. */
   budgetedCategories: string[];
+  /**
+   * MTD posted expenses with no matching budget category (i.e. truly
+   * one-off this month). Lives as its own slice so the user sees actual
+   * unbudgeted spend chip away at "free" cash, not just planned
+   * commitments.
+   */
+  oneTimeExpenses?: number;
   liquidCash: number;
   monthsRunway: number | null;
 };
@@ -31,12 +38,14 @@ function pct(part: number, whole: number): number {
 
 /**
  * "Budgets vs cash flow" — answers: where is my monthly income going,
- * and how much is actually free after budgets + recurring outflows?
+ * and how much is actually free after budgets + recurring outflows + the
+ * one-time expenses already logged this month?
  *
- * Three buckets:
+ * Four buckets:
  *   1. Budgeted    — sum of budget caps (intended discretionary spend)
  *   2. Recurring   — recurring flow expenses NOT covered by a budget category
- *   3. Unallocated — income − budgeted − recurring (free to save / invest)
+ *   3. One-time    — MTD posted expenses with no matching budget category
+ *   4. Free        — income − budgeted − recurring − one-time
  *
  * If a budget category overlaps a recurring flow category, we flag it so
  * the user knows they may be double-counting that category.
@@ -47,6 +56,7 @@ export function BudgetsCashFlowPanel({
   totalBudgeted,
   recurringByCategory,
   budgetedCategories,
+  oneTimeExpenses = 0,
   liquidCash,
   monthsRunway,
 }: BudgetsCashFlowProps) {
@@ -68,7 +78,11 @@ export function BudgetsCashFlowPanel({
     }
   }
 
-  const allocated = totalBudgeted + recurringNotBudgeted;
+  const safeOneTime = Number.isFinite(oneTimeExpenses)
+    ? Math.max(0, oneTimeExpenses)
+    : 0;
+
+  const allocated = totalBudgeted + recurringNotBudgeted + safeOneTime;
   const unallocated = Math.max(0, monthlyIncome - allocated);
   const overAllocated = Math.max(0, allocated - monthlyIncome);
 
@@ -77,6 +91,7 @@ export function BudgetsCashFlowPanel({
   const denom = Math.max(monthlyIncome, allocated, 1);
   const wBudget = pct(totalBudgeted, denom);
   const wRecurring = pct(recurringNotBudgeted, denom);
+  const wOneTime = pct(safeOneTime, denom);
   const wFree = monthlyIncome > allocated ? pct(unallocated, denom) : 0;
   const wOver = overAllocated > 0 ? pct(overAllocated, denom) : 0;
 
@@ -140,6 +155,13 @@ export function BudgetsCashFlowPanel({
                 title={`Recurring (un-budgeted): ${formatMoney(recurringNotBudgeted, baseCurrency)}`}
               />
             ) : null}
+            {wOneTime > 0 ? (
+              <div
+                className="h-full bg-orange-500/80"
+                style={{ width: `${wOneTime}%` }}
+                title={`One-time spend this month: ${formatMoney(safeOneTime, baseCurrency)}`}
+              />
+            ) : null}
             {wFree > 0 ? (
               <div
                 className="h-full bg-emerald-500/70"
@@ -156,7 +178,7 @@ export function BudgetsCashFlowPanel({
             ) : null}
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
             <LegendItem
               swatch="bg-blue-500/80"
               label="Budgeted"
@@ -177,6 +199,18 @@ export function BudgetsCashFlowPanel({
                   : null
               }
               hint="Fixed monthly flows not in a budget"
+            />
+            <LegendItem
+              swatch="bg-orange-500/80"
+              label="One-time"
+              amount={safeOneTime}
+              currency={baseCurrency}
+              share={
+                monthlyIncome > 0
+                  ? (safeOneTime / monthlyIncome) * 100
+                  : null
+              }
+              hint="MTD posted spend with no matching budget"
             />
             {overAllocated > 0 ? (
               <LegendItem
