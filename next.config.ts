@@ -10,8 +10,9 @@ const nextConfig: NextConfig = {
   // output's node_modules. The runtime migrate script (scripts/migrate.mjs)
   // is a separate Node process — Next doesn't bundle it — so it needs the
   // real package wrappers (index.js, lib/) on disk, not just the .node
-  // binary. The previous narrower glob only included the binary, leaving
-  // /app/node_modules/better-sqlite3/index.js missing in the runner image.
+  // binary. Transitive deps (`bindings`, `file-uri-to-path`) live only in
+  // pnpm's `.pnpm/` store and have no top-level symlink, so we COPY them
+  // explicitly in the Dockerfile runner stage instead of trying to trace.
   outputFileTracingIncludes: {
     "/**": [
       "./node_modules/better-sqlite3/**/*",

@@ -41,6 +41,17 @@ COPY --from=builder --chown=nextjs:nodejs /app/drizzle ./drizzle
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/migrate.mjs ./scripts/migrate.mjs
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/entrypoint.sh ./scripts/entrypoint.sh
 
+# Transitive runtime deps that Next's tracing can't capture because pnpm
+# only places them under `.pnpm/`. better-sqlite3 dynamically requires
+# `bindings`, which in turn requires `file-uri-to-path`. We copy the actual
+# package contents to the flat layout Node expects at /app/node_modules/.
+COPY --from=deps --chown=nextjs:nodejs \
+  /app/node_modules/.pnpm/bindings@1.5.0/node_modules/bindings \
+  /app/node_modules/bindings
+COPY --from=deps --chown=nextjs:nodejs \
+  /app/node_modules/.pnpm/file-uri-to-path@1.0.0/node_modules/file-uri-to-path \
+  /app/node_modules/file-uri-to-path
+
 USER nextjs
 EXPOSE 3000
 VOLUME ["/data"]
