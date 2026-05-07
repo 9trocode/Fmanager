@@ -3,11 +3,13 @@ import { redirect } from "next/navigation";
 import { Wallet } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
 import { HeroBackground } from "@/components/app/hero-background";
+import { AlertsBanner } from "@/components/app/alerts-banner";
 import { resolveMonthKey } from "@/lib/month-filter";
 import { EmptyState } from "@/components/app/empty-state";
 import { AddAccountDialog } from "@/components/app/add-account-dialog";
 import { AddGrantDialog } from "@/components/app/add-grant-dialog";
 import { getBaseCurrency, getSetting } from "@/lib/db/queries";
+import { listActiveAlerts } from "@/lib/advisor-alerts";
 import {
   computeNetWorth,
   computeThisMonthActuals,
@@ -63,10 +65,15 @@ export default async function DashboardPage({
 
   // Two cheap-but-shared awaits up front: net worth (for empty-state)
   // and this-month label (for the header). Both memoised.
-  const [summary, month] = await Promise.all([
+  // Active alerts pull alongside — the banner only renders criticals,
+  // but the query is cheap and shared with the (app) layout's count
+  // via the underlying drizzle prepared statement.
+  const [summary, month, activeAlerts] = await Promise.all([
     computeNetWorth(baseCurrency),
     computeThisMonthActuals(baseCurrency, monthKey),
+    listActiveAlerts(),
   ]);
+  const criticalAlerts = activeAlerts.filter((a) => a.severity === "critical");
 
   return (
     <>
@@ -76,6 +83,17 @@ export default async function DashboardPage({
         title="Home"
         description={`Where your money's going in ${month.monthLabel}.`}
       />
+
+      {criticalAlerts.length > 0 ? (
+        <AlertsBanner
+          alerts={criticalAlerts.map((a) => ({
+            id: a.id,
+            title: a.title,
+            body: a.body,
+            actionUrl: a.actionUrl,
+          }))}
+        />
+      ) : null}
 
       {!summary.hasData ? (
         <EmptyState

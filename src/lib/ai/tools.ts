@@ -21,6 +21,7 @@ import {
   computeNetWorth,
 } from "@/lib/aggregation";
 import { getRate, convert } from "@/lib/fx";
+import { listActiveAlerts } from "@/lib/advisor-alerts";
 import { localToday } from "@/lib/dates";
 import { eq } from "drizzle-orm";
 
@@ -696,6 +697,29 @@ const getAccountBalancesTool = tool({
   },
 });
 
+// ─── proactive alerts surface ───────────────────────────────────────────
+
+const listActiveAlertsTool = tool({
+  description:
+    "List active proactive alerts that the system has flagged for the user (runway, over-budget, off-pace goals). These are the same things the user sees on the /alerts page and as banners on the dashboard. Reference them in conversation so the user knows you're aware: 'I see your Food budget is 35% over this month — want me to help re-cap it?'",
+  inputSchema: z.object({}),
+  execute: async () => {
+    const rows = await listActiveAlerts();
+    return {
+      alerts: rows.map((a) => ({
+        id: a.id,
+        kind: a.kind,
+        severity: a.severity,
+        title: a.title,
+        body: a.body,
+        actionUrl: a.actionUrl,
+        contextJson: a.contextJson,
+        createdAt: a.createdAt,
+      })),
+    };
+  },
+});
+
 // ─── notes (cross-entity) ───────────────────────────────────────────────
 
 const NOTE_ENTITIES = [
@@ -929,6 +953,8 @@ export const advisorTools = {
   // FX (cached)
   getExchangeRate: getExchangeRateTool,
   convertCurrency: convertCurrencyTool,
+  // Proactive surface
+  listActiveAlerts: listActiveAlertsTool,
   // Write
   createTransaction: createTransactionTool,
   createBudget: createBudgetTool,

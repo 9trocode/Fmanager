@@ -14,6 +14,7 @@ import {
   Coins,
   Award,
   Sparkles,
+  Bell,
   Settings,
   LogOut,
   Eye,
@@ -73,6 +74,7 @@ const SECTIONS: NavSection[] = [
     label: "Tools",
     items: [
       { href: "/advisor", label: "Advisor", icon: Sparkles },
+      { href: "/alerts", label: "Alerts", icon: Bell },
       { href: "/settings", label: "Settings", icon: Settings },
     ],
   },
@@ -92,7 +94,15 @@ function isActive(pathname: string, href: string): boolean {
  * `onNavigate` is called when the user picks a link, so the parent can
  * close the sheet on mobile.
  */
-function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
+function SidebarContent({
+  onNavigate,
+  alertCount = 0,
+  alertCritical = 0,
+}: {
+  onNavigate?: () => void;
+  alertCount?: number;
+  alertCritical?: number;
+}) {
   const pathname = usePathname();
   const role = useRole();
 
@@ -150,6 +160,19 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                     )}
                   />
                   <span className="truncate">{label}</span>
+                  {href === "/alerts" && alertCount > 0 ? (
+                    <span
+                      className={cn(
+                        "ml-auto inline-flex min-w-[1.25rem] h-5 px-1.5 items-center justify-center rounded-full text-[10px] font-mono font-medium tabular-nums",
+                        alertCritical > 0
+                          ? "bg-destructive text-destructive-foreground"
+                          : "bg-secondary text-foreground",
+                      )}
+                      aria-label={`${alertCount} active alerts${alertCritical > 0 ? `, ${alertCritical} critical` : ""}`}
+                    >
+                      {alertCount}
+                    </span>
+                  ) : null}
                 </Link>
               );
             })}
@@ -206,10 +229,16 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
  * Desktop-only sidebar. Hidden below md so it doesn't squeeze the main
  * column on phones. Mobile users get the same nav via <MobileTopBar>.
  */
-export function Sidebar() {
+export function Sidebar({
+  alertCount,
+  alertCritical,
+}: {
+  alertCount?: number;
+  alertCritical?: number;
+}) {
   return (
     <aside className="hidden md:flex sticky top-0 self-start h-screen w-72 shrink-0 border-r border-border bg-card/40 backdrop-blur-md flex-col">
-      <SidebarContent />
+      <SidebarContent alertCount={alertCount} alertCritical={alertCritical} />
     </aside>
   );
 }
@@ -219,7 +248,13 @@ export function Sidebar() {
  * sheet containing the full sidebar. Auto-closes on route change so the
  * user lands on the new page without an open drawer.
  */
-export function MobileTopBar() {
+export function MobileTopBar({
+  alertCount,
+  alertCritical,
+}: {
+  alertCount?: number;
+  alertCritical?: number;
+}) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
@@ -258,7 +293,11 @@ export function MobileTopBar() {
           <VisuallyHidden.Root asChild>
             <SheetTitle>Navigation</SheetTitle>
           </VisuallyHidden.Root>
-          <SidebarContent onNavigate={() => setOpen(false)} />
+          <SidebarContent
+            onNavigate={() => setOpen(false)}
+            alertCount={alertCount}
+            alertCritical={alertCritical}
+          />
         </SheetContent>
       </Sheet>
     </header>

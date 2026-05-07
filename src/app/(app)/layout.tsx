@@ -8,6 +8,10 @@ import {
 import { RoleProvider } from "@/components/app/role-context";
 import { FloatingAdvisor } from "@/components/app/floating-advisor";
 import { accrueDueFlows } from "@/lib/flow-accrual";
+import {
+  countActiveAlerts,
+  runAdvisorChecks,
+} from "@/lib/advisor-alerts";
 
 // Every page in the (app) segment reads from the SQLite DB (accounts, flows,
 // budgets, etc.). Forcing dynamic rendering on the layout prevents Next from
@@ -43,6 +47,26 @@ export default async function AppLayout({
       // let the user keep using the app.
       console.error("[accrueDueFlows] failed:", err);
     }
+    // Same throttle pattern as accrueDueFlows — runs at most every
+    // 30 minutes per process. Keeps the proactive alerts surface in
+    // sync without thrashing the DB on every nav.
+    try {
+      await runAdvisorChecks();
+    } catch (err) {
+      console.error("[runAdvisorChecks] failed:", err);
+    }
+  }
+
+  // Drives the sidebar badge. Cheap GROUP BY query — runs after the
+  // throttled check above so the count reflects the freshest state.
+  let alertCount = 0;
+  let alertCritical = 0;
+  try {
+    const c = await countActiveAlerts();
+    alertCount = c.total;
+    alertCritical = c.critical;
+  } catch {
+    // Non-fatal — render without a badge.
   }
 
   return (
@@ -57,8 +81,8 @@ export default async function AppLayout({
         don't waste edge gutters; desktop keeps the breathable px-8 py-12.
       */}
       <div className="min-h-screen flex flex-col md:flex-row">
-        <MobileTopBar />
-        <Sidebar />
+        <MobileTopBar alertCount={alertCount} alertCritical={alertCritical} />
+        <Sidebar alertCount={alertCount} alertCritical={alertCritical} />
         <main className="flex-1 min-w-0 relative">
           <div className="max-w-6xl mx-auto px-4 sm:px-6 md:px-8 py-6 md:py-12 relative">
             {children}
