@@ -24,6 +24,20 @@ function openDb(): ReturnType<typeof drizzle<typeof schema>> {
   // immediately. Defends against transient lock contention when a server
   // boots and several handlers race to read at the same time.
   sqlite.pragma("busy_timeout = 5000");
+  // Performance pragmas. Personal-finance DBs are tiny (kilobytes for
+  // most users), so the entire working set easily fits in memory once
+  // these are tuned.
+  //   * cache_size: bump page cache from ~2MB default to ~64MB. After
+  //     warmup, virtually no disk reads for hot tables.
+  //   * mmap_size: memory-map the DB file (cap 256MB). Reads bypass
+  //     libsqlite's I/O layer when pages are mapped.
+  //   * synchronous=NORMAL: still safe with WAL; fsync at checkpoints
+  //     only. Cuts write latency.
+  //   * temp_store=MEMORY: keeps SQLite's intermediate tables off disk.
+  sqlite.pragma("cache_size = -65536");
+  sqlite.pragma("mmap_size = 268435456");
+  sqlite.pragma("synchronous = NORMAL");
+  sqlite.pragma("temp_store = MEMORY");
 
   return drizzle(sqlite, { schema });
 }

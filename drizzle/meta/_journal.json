@@ -29,6 +29,13 @@
       "when": 1778138161031,
       "tag": "0003_lyrical_logan",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1778141570801,
+      "tag": "0004_round_siren",
+      "breakpoints": true
     }
   ]
 }

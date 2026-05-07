@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import {
   listAccountsWithEffective,
   listBudgets,
@@ -49,7 +50,15 @@ function emptyCategory(): Record<CategoryKey, number> {
   };
 }
 
-export async function computeNetWorth(baseCurrency: string): Promise<NetWorthSummary> {
+/**
+ * Per-request memo. Dashboard renders both `computeNetWorth` (used by
+ * the headline + scenario panel) and `computeCashRunway`, which calls
+ * `computeNetWorth` again internally — collapsing those into one read
+ * is the largest single win on the home page.
+ */
+export const computeNetWorth = cache(async function computeNetWorthImpl(
+  baseCurrency: string,
+): Promise<NetWorthSummary> {
   const [accounts, grants] = await Promise.all([
     listAccountsWithEffective({ includeArchived: false }),
     listGrants(),
@@ -107,7 +116,7 @@ export async function computeNetWorth(baseCurrency: string): Promise<NetWorthSum
   }
 
   return { baseCurrency, totals, byCategory, byCurrency, hasData };
-}
+});
 
 export const CATEGORY_LABEL: Record<CategoryKey, string> = {
   cash: "Cash",

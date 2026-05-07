@@ -60,7 +60,24 @@ function parseYmd(s: string): Date {
   return new Date(y, (m ?? 1) - 1, d ?? 1);
 }
 
+/**
+ * Per-process throttle. The (app) layout invokes accrueDueFlows() on
+ * every page render, but the only thing that meaningfully changes per
+ * request is "did midnight pass?". A 30-minute floor between actual
+ * runs cuts ~99% of the per-nav SQL load while still catching new days
+ * within half an hour of midnight. Process restart resets the gate, so
+ * deploys don't miss a run.
+ */
+let lastAccrualAt = 0;
+const ACCRUAL_THROTTLE_MS = 30 * 60 * 1000;
+
 export async function accrueDueFlows(): Promise<{ posted: number }> {
+  const now = Date.now();
+  if (now - lastAccrualAt < ACCRUAL_THROTTLE_MS) {
+    return { posted: 0 };
+  }
+  lastAccrualAt = now;
+
   const today = localToday();
   const todayDate = parseYmd(today);
 

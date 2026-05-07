@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  index,
   integer,
   real,
   sqliteTable,
@@ -52,17 +53,29 @@ export const accounts = sqliteTable("accounts", {
   updatedAt: updatedAt(),
 });
 
-export const valueSnapshots = sqliteTable("value_snapshots", {
-  id: id(),
-  accountId: integer("account_id")
-    .notNull()
-    .references(() => accounts.id, { onDelete: "cascade" }),
-  value: real("value").notNull(),
-  currency: text("currency").notNull(),
-  asOf: text("as_of").notNull(),
-  source: text("source").notNull().default("manual"),
-  createdAt: createdAt(),
-});
+export const valueSnapshots = sqliteTable(
+  "value_snapshots",
+  {
+    id: id(),
+    accountId: integer("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    value: real("value").notNull(),
+    currency: text("currency").notNull(),
+    asOf: text("as_of").notNull(),
+    source: text("source").notNull().default("manual"),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    // Hot path: getLatestSnapshot / getEffectiveBalance read by
+    // accountId ordered by as_of desc. Covering both columns avoids a
+    // re-sort.
+    accountAsOfIdx: index("value_snapshots_account_as_of_idx").on(
+      t.accountId,
+      t.asOf,
+    ),
+  }),
+);
 
 export const equityGrants = sqliteTable("equity_grants", {
   id: id(),
@@ -121,7 +134,9 @@ export type FlowCadence = (typeof flowCadences)[number];
 export const flowKinds = ["income", "expense"] as const;
 export type FlowKind = (typeof flowKinds)[number];
 
-export const recurringFlows = sqliteTable("recurring_flows", {
+export const recurringFlows = sqliteTable(
+  "recurring_flows",
+  {
   id: id(),
   name: text("name").notNull(),
   kind: text("kind", { enum: flowKinds }).notNull(),
@@ -152,7 +167,13 @@ export const recurringFlows = sqliteTable("recurring_flows", {
   notes: text("notes"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-});
+  },
+  (t) => ({
+    // accrueDueFlows() filters by archived=false + accountId not null;
+    // listAccountFlows reads by accountId. Index covers both.
+    accountIdx: index("recurring_flows_account_idx").on(t.accountId),
+  }),
+);
 
 export const settings = sqliteTable("settings", {
   key: text("key").primaryKey(),
@@ -236,27 +257,46 @@ export const budgets = sqliteTable(
   }),
 );
 
-export const transactions = sqliteTable("transactions", {
-  id: id(),
-  accountId: integer("account_id")
-    .notNull()
-    .references(() => accounts.id, { onDelete: "cascade" }),
-  // For transfers: optional destination account
-  destAccountId: integer("dest_account_id").references(() => accounts.id, {
-    onDelete: "set null",
+export const transactions = sqliteTable(
+  "transactions",
+  {
+    id: id(),
+    accountId: integer("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    // For transfers: optional destination account
+    destAccountId: integer("dest_account_id").references(() => accounts.id, {
+      onDelete: "set null",
+    }),
+    kind: text("kind", { enum: transactionKinds }).notNull(),
+    amount: real("amount").notNull(), // always positive; sign comes from kind
+    currency: text("currency").notNull(),
+    category: text("category"), // free-text; reuse the same suggestions as flows (lib/flows.ts)
+    occurredAt: text("occurred_at").notNull(), // ISO date YYYY-MM-DD
+    notes: text("notes"),
+    flowId: integer("flow_id").references(() => recurringFlows.id, {
+      onDelete: "set null",
+    }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    // Hot-path indexes. Without these, every "this month spend",
+    // "last 30 days", "by category", "by account" query scans the whole
+    // table — fine at 100 rows, painful at 10k.
+    occurredAtIdx: index("transactions_occurred_at_idx").on(t.occurredAt),
+    accountIdx: index("transactions_account_idx").on(t.accountId),
+    destAccountIdx: index("transactions_dest_account_idx").on(t.destAccountId),
+    categoryIdx: index("transactions_category_idx").on(t.category),
+    flowIdx: index("transactions_flow_idx").on(t.flowId),
+    // Composite for the very common "transactions on account X since
+    // date Y" pattern used by getEffectiveBalance.
+    accountOccurredIdx: index("transactions_account_occurred_idx").on(
+      t.accountId,
+      t.occurredAt,
+    ),
   }),
-  kind: text("kind", { enum: transactionKinds }).notNull(),
-  amount: real("amount").notNull(), // always positive; sign comes from kind
-  currency: text("currency").notNull(),
-  category: text("category"), // free-text; reuse the same suggestions as flows (lib/flows.ts)
-  occurredAt: text("occurred_at").notNull(), // ISO date YYYY-MM-DD
-  notes: text("notes"),
-  flowId: integer("flow_id").references(() => recurringFlows.id, {
-    onDelete: "set null",
-  }),
-  createdAt: createdAt(),
-  updatedAt: updatedAt(),
-});
+);
 
 /**
  * Advisor chat history. Sessions are independent threads; messages are
@@ -271,16 +311,32 @@ export const chatSessions = sqliteTable("chat_sessions", {
   updatedAt: updatedAt(),
 });
 
-export const chatMessages = sqliteTable("chat_messages", {
-  id: id(),
-  sessionId: integer("session_id")
-    .notNull()
-    .references(() => chatSessions.id, { onDelete: "cascade" }),
-  // Stable client id (UIMessage.id) so re-sends from useChat dedupe
-  // against existing rows instead of inserting duplicates.
-  clientId: text("client_id").notNull(),
-  role: text("role").notNull(),
-  /** JSON-serialised full UIMessage (text/file/tool parts). */
-  uiJson: text("ui_json").notNull(),
-  createdAt: createdAt(),
-});
+export const chatMessages = sqliteTable(
+  "chat_messages",
+  {
+    id: id(),
+    sessionId: integer("session_id")
+      .notNull()
+      .references(() => chatSessions.id, { onDelete: "cascade" }),
+    // Stable client id (UIMessage.id) so re-sends from useChat dedupe
+    // against existing rows instead of inserting duplicates.
+    clientId: text("client_id").notNull(),
+    role: text("role").notNull(),
+    /** JSON-serialised full UIMessage (text/file/tool parts). */
+    uiJson: text("ui_json").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    // getChatSession() reads by sessionId ordered by created_at then id.
+    // Composite covers the lookup and the ordering.
+    sessionCreatedIdx: index("chat_messages_session_created_idx").on(
+      t.sessionId,
+      t.createdAt,
+    ),
+    // upsertChatMessage's "find existing by clientId" uses both columns.
+    sessionClientIdx: index("chat_messages_session_client_idx").on(
+      t.sessionId,
+      t.clientId,
+    ),
+  }),
+);
