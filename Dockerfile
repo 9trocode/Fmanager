@@ -34,6 +34,13 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
+# Migration files + the runtime migrate script + entrypoint. The migrate
+# script imports drizzle-orm and better-sqlite3 from the standalone's
+# bundled node_modules (Node walks up from /app/scripts to /app/node_modules).
+COPY --from=builder --chown=nextjs:nodejs /app/drizzle ./drizzle
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/migrate.mjs ./scripts/migrate.mjs
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/entrypoint.sh ./scripts/entrypoint.sh
+
 USER nextjs
 EXPOSE 3000
 VOLUME ["/data"]
@@ -41,4 +48,6 @@ VOLUME ["/data"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
   CMD wget -qO- http://localhost:3000/api/health || exit 1
 
-CMD ["node", "server.js"]
+# Apply migrations then start the server. Migrations are idempotent so
+# repeated boots are safe.
+ENTRYPOINT ["/bin/sh", "/app/scripts/entrypoint.sh"]
