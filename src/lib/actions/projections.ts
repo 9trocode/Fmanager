@@ -52,7 +52,10 @@ const FlatEventSchema = z.object({
 
 const RawSuggestedScenarioSchema = z.object({
   name: z.string(),
+  /** WHY this scenario is worth modeling — anchors on the user's data. */
   rationale: z.string(),
+  /** WHAT the user would experience / sacrifice / achieve under this path. */
+  summary: z.string(),
   monthlyContribution: z.number(),
   annualReturnPct: z.number(),
   horizonMonths: z.number().int(),
@@ -70,6 +73,7 @@ const ResponseSchema = z.object({
 export type SuggestedScenario = {
   name: string;
   rationale: string;
+  summary: string;
   monthlyContribution: number;
   annualReturnPct: number;
   horizonMonths: number;
@@ -163,7 +167,11 @@ export async function suggestScenarios(
     "Each scenario tests a different lever — raise/income bump, expense cut, lump sum (bonus/refund), longer horizon, higher contribution, or a mix.",
     "Use the user's actual numbers below. Don't invent figures or pick generic placeholders.",
     "Express monthly amounts in the user's base currency. Events use atMonth offsets from today (0 = next month).",
-    "Be concrete in rationales — 'lift contribution by 80k after the raise lands at month 6' beats 'save more'.",
+    "",
+    "For each scenario, write TWO short pieces of context:",
+    "  - rationale: 1 sentence on WHY this scenario is worth running for THIS user (anchor on their numbers / goal / cash flow).",
+    "  - summary: 1 sentence on WHAT the path involves and what they'd land at — the practical takeaway. e.g. 'Hits the emergency fund 9 months earlier but requires sustaining ~80k/mo until December.'",
+    "Both fields are required. Keep each under 25 words. No fluff, no headers, no bullets — plain prose.",
     "",
     "Event shape rules:",
     "  - For kind='raise' or kind='expense_shock': set the `newMonthly` field to the contribution AFTER the change. Do NOT set `amount`.",
@@ -211,6 +219,7 @@ export async function suggestScenarios(
     const scenarios: SuggestedScenario[] = result.output.scenarios.map((s) => ({
       name: s.name,
       rationale: s.rationale,
+      summary: s.summary,
       monthlyContribution: s.monthlyContribution,
       annualReturnPct: s.annualReturnPct,
       horizonMonths: s.horizonMonths,

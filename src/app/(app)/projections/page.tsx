@@ -12,14 +12,16 @@ import {
 } from "@/lib/db/queries";
 import { computeNetWorth, computeMonthlyCashFlow } from "@/lib/aggregation";
 import { getRate } from "@/lib/fx";
+import { listSavedScenarios } from "@/lib/actions/saved-scenarios";
 
 export default async function ProjectionsPage() {
   const baseCurrency = await getBaseCurrency();
-  const [summary, grants, cashFlow, goals] = await Promise.all([
+  const [summary, grants, cashFlow, goals, savedScenarios] = await Promise.all([
     computeNetWorth(baseCurrency),
     listGrants(),
     computeMonthlyCashFlow(baseCurrency),
     listSavingsGoals(),
+    listSavedScenarios(),
   ]);
 
   // Pre-resolve every (currency → base) FX rate the page will need:
@@ -98,6 +100,7 @@ export default async function ProjectionsPage() {
           fxToBase={fxToBase}
           defaultMonthlyContribution={safeDefaultContribution}
           goals={projectionGoals}
+          savedScenarios={savedScenarios}
         />
       )}
     </>

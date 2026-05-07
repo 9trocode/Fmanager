@@ -10,13 +10,16 @@ import {
   YAxis,
 } from "recharts";
 import {
+  BookmarkCheck,
+  ChevronDown,
+  ChevronRight,
+  Folder,
   Plus,
+  Save,
   Sparkles,
   Trash2,
   TrendingUp,
   Zap,
-  ChevronDown,
-  ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -41,6 +44,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -57,6 +68,12 @@ import {
   suggestScenarios,
   type SuggestedScenario,
 } from "@/lib/actions/projections";
+import {
+  deleteSavedScenario,
+  saveScenario as saveScenarioAction,
+  updateSavedScenario,
+  type SavedScenarioRow,
+} from "@/lib/actions/saved-scenarios";
 import type { Scenario as EquityScenario } from "@/lib/scenarios";
 import { formatMoney } from "@/lib/format";
 
@@ -89,10 +106,24 @@ function uid(): string {
   return Math.random().toString(36).slice(2, 9);
 }
 
+/**
+ * Local extension of `NamedScenario` with extra display + persistence
+ * metadata. Lives on the client only — the engine works with plain
+ * `NamedScenario`, so we strip these fields before projecting.
+ */
+type ExplorerScenario = NamedScenario & {
+  rationale?: string | null;
+  summary?: string | null;
+  source?: "user" | "ai";
+  savedId?: number | null;
+  /** True when the user has edited a saved scenario since the last persist. */
+  dirty?: boolean;
+};
+
 function makeBaseScenario(
   name: string,
   defaults: { monthly: number; returnPct?: number; horizon?: number },
-): NamedScenario {
+): ExplorerScenario {
   return {
     id: uid(),
     name,
@@ -102,7 +133,27 @@ function makeBaseScenario(
       horizonMonths: defaults.horizon ?? 60,
       events: [],
     },
+    source: "user",
   };
+}
+
+/**
+ * One-line digest of a scenario's events, for the summary footer.
+ * "Raise to 800k @ mo 6 · +500k lump @ mo 12 · cut to 200k @ mo 18"
+ */
+function summarizeEvents(events: ScenarioEvent[], currency: string): string {
+  if (events.length === 0) return "";
+  const parts = events.map((e) => {
+    const at = `@ mo ${e.atMonth}`;
+    if (e.kind === "raise") {
+      return `Raise to ${formatMoney(e.newMonthly, currency, { compact: true })} ${at}`;
+    }
+    if (e.kind === "expense_shock") {
+      return `Cut to ${formatMoney(e.newMonthly, currency, { compact: true })} ${at}`;
+    }
+    return `${e.amount >= 0 ? "+" : ""}${formatMoney(e.amount, currency, { compact: true })} lump ${at}`;
+  });
+  return parts.join(" · ");
 }
 
 export function ProjectionsExplorer({
@@ -112,6 +163,7 @@ export function ProjectionsExplorer({
   fxToBase,
   defaultMonthlyContribution,
   goals,
+  savedScenarios: initialSavedScenarios,
 }: {
   baseCurrency: string;
   startNonGrantInBase: number;
@@ -119,6 +171,7 @@ export function ProjectionsExplorer({
   fxToBase: Record<string, number>;
   defaultMonthlyContribution?: number;
   goals: ProjectionGoal[];
+  savedScenarios: SavedScenarioRow[];
 }) {
   const safeDefault = Number.isFinite(defaultMonthlyContribution)
     ? (defaultMonthlyContribution as number)
@@ -126,7 +179,7 @@ export function ProjectionsExplorer({
 
   // Always-on baseline scenario + room for what-if siblings. The user
   // can rename the baseline; they can't remove the last scenario.
-  const [scenarios, setScenarios] = useState<NamedScenario[]>(() => [
+  const [scenarios, setScenarios] = useState<ExplorerScenario[]>(() => [
     makeBaseScenario("Current pace", { monthly: safeDefault }),
   ]);
   const [view, setView] = useState<EquityScenario>("floor");
@@ -134,6 +187,11 @@ export function ProjectionsExplorer({
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiOpen, setAiOpen] = useState(false);
   const [aiBusy, startAi] = useTransition();
+  // Mutable client-side mirror of the server's saved-scenarios list.
+  // Updated on save / delete so the dropdown stays in sync without a
+  // full page reload.
+  const [savedLib, setSavedLib] = useState<SavedScenarioRow[]>(initialSavedScenarios);
+  const [savePending, startSave] = useTransition();
 
   const selectedGoal = goalId != null
     ? (goals.find((g) => g.id === goalId) ?? null)
@@ -193,6 +251,13 @@ export function ProjectionsExplorer({
             ...src.inputs,
             events: [...(src.inputs.events ?? [])],
           },
+          // Copies are unsaved by definition — drop savedId; keep
+          // rationale/summary for context but mark as dirty.
+          source: src.source,
+          rationale: src.rationale,
+          summary: src.summary,
+          savedId: null,
+          dirty: false,
         },
       ];
     });
@@ -202,7 +267,10 @@ export function ProjectionsExplorer({
     setScenarios((prev) => (prev.length <= 1 ? prev : prev.filter((s) => s.id !== id)));
   }
 
-  function updateScenario(id: string, patch: Partial<NamedScenario["inputs"]> & { name?: string }) {
+  function updateScenario(
+    id: string,
+    patch: Partial<NamedScenario["inputs"]> & { name?: string },
+  ) {
     setScenarios((prev) =>
       prev.map((s) =>
         s.id === id
@@ -222,6 +290,10 @@ export function ProjectionsExplorer({
                   : {}),
                 ...(patch.events !== undefined ? { events: patch.events } : {}),
               },
+              // Once a saved scenario is edited, surface that the
+              // persisted copy is now stale. The Save button flips to
+              // "Save changes" — same row, just an UPDATE.
+              dirty: s.savedId != null ? true : s.dirty,
             }
           : s,
       ),
@@ -229,8 +301,9 @@ export function ProjectionsExplorer({
   }
 
   function applySuggestions(suggestions: SuggestedScenario[]) {
-    // Prepend so the user sees the new ones immediately at the top.
-    const made: NamedScenario[] = suggestions.map((s) => ({
+    // Append so existing scenarios stay anchored at the top of the
+    // user's viewport. AI rationale + summary travel with each card.
+    const made: ExplorerScenario[] = suggestions.map((s) => ({
       id: uid(),
       name: s.name,
       inputs: {
@@ -239,8 +312,127 @@ export function ProjectionsExplorer({
         horizonMonths: s.horizonMonths,
         events: s.events,
       },
+      rationale: s.rationale,
+      summary: s.summary,
+      source: "ai",
     }));
     setScenarios((prev) => [...prev, ...made]);
+  }
+
+  function loadSavedScenario(saved: SavedScenarioRow) {
+    // Already on the canvas? Don't add a duplicate; bump the user back
+    // to it instead. (Cheap toast — easier than a scroll-to.)
+    if (scenarios.some((s) => s.savedId === saved.id)) {
+      toast.info(`"${saved.name}" is already loaded.`);
+      return;
+    }
+    setScenarios((prev) => [
+      ...prev,
+      {
+        id: uid(),
+        name: saved.name,
+        inputs: saved.inputs,
+        rationale: saved.rationale,
+        summary: null,
+        source: saved.source,
+        savedId: saved.id,
+        dirty: false,
+      },
+    ]);
+  }
+
+  function persistScenario(scenarioId: string) {
+    const s = scenarios.find((x) => x.id === scenarioId);
+    if (!s) return;
+    if (!s.name.trim()) {
+      toast.error("Give the scenario a name before saving.");
+      return;
+    }
+    startSave(async () => {
+      try {
+        if (s.savedId == null) {
+          const { id } = await saveScenarioAction({
+            name: s.name,
+            rationale: s.rationale ?? null,
+            inputs: s.inputs,
+            source: s.source ?? "user",
+            goalId: goalId,
+          });
+          setScenarios((prev) =>
+            prev.map((x) =>
+              x.id === scenarioId
+                ? { ...x, savedId: id, dirty: false }
+                : x,
+            ),
+          );
+          // Optimistic insert into the dropdown library so it shows up
+          // without a refresh round-trip.
+          const nowIso = new Date().toISOString();
+          setSavedLib((prev) => [
+            {
+              id,
+              name: s.name,
+              rationale: s.rationale ?? null,
+              source: s.source ?? "user",
+              goalId,
+              inputs: s.inputs,
+              createdAt: nowIso,
+              updatedAt: nowIso,
+            },
+            ...prev,
+          ]);
+          toast.success(`Saved "${s.name}".`);
+        } else {
+          await updateSavedScenario({
+            id: s.savedId,
+            name: s.name,
+            rationale: s.rationale ?? null,
+            inputs: s.inputs,
+            goalId: goalId,
+          });
+          setScenarios((prev) =>
+            prev.map((x) =>
+              x.id === scenarioId ? { ...x, dirty: false } : x,
+            ),
+          );
+          setSavedLib((prev) =>
+            prev.map((row) =>
+              row.id === s.savedId
+                ? {
+                    ...row,
+                    name: s.name,
+                    rationale: s.rationale ?? null,
+                    inputs: s.inputs,
+                    updatedAt: new Date().toISOString(),
+                  }
+                : row,
+            ),
+          );
+          toast.success(`Updated "${s.name}".`);
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Save failed.");
+      }
+    });
+  }
+
+  function deleteSaved(id: number) {
+    startSave(async () => {
+      try {
+        await deleteSavedScenario(id);
+        setSavedLib((prev) => prev.filter((s) => s.id !== id));
+        // Detach the savedId from any currently-loaded copy so the
+        // user can still tweak/save it as a fresh row.
+        setScenarios((prev) =>
+          prev.map((s) =>
+            s.savedId === id ? { ...s, savedId: null, dirty: false } : s,
+          ),
+        );
+        toast.success("Deleted.");
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Delete failed.");
+      }
+    });
   }
 
   function handleAiSuggest() {
@@ -304,6 +496,71 @@ export function ProjectionsExplorer({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm">
+                <Folder className="size-4" />
+                Saved
+                {savedLib.length > 0 ? (
+                  <span className="text-[10px] font-mono opacity-70 ml-1">
+                    {savedLib.length}
+                  </span>
+                ) : null}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              className="w-80 max-h-[60vh] overflow-y-auto"
+            >
+              <DropdownMenuLabel>Saved scenarios</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {savedLib.length === 0 ? (
+                <div className="px-3 py-4 text-xs text-muted-foreground text-center">
+                  Nothing saved yet. Use the Save icon on a scenario card.
+                </div>
+              ) : (
+                savedLib.map((s) => (
+                  <DropdownMenuItem
+                    key={s.id}
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      loadSavedScenario(s);
+                    }}
+                    className="group flex items-start justify-between gap-2 cursor-pointer"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium truncate flex items-center gap-1.5">
+                        {s.name}
+                        {s.source === "ai" ? (
+                          <Sparkles className="size-3 text-primary shrink-0" />
+                        ) : null}
+                      </div>
+                      {s.rationale ? (
+                        <div className="text-[11px] text-muted-foreground line-clamp-2">
+                          {s.rationale}
+                        </div>
+                      ) : null}
+                      <div className="text-[10px] font-mono text-muted-foreground">
+                        {new Date(s.updatedAt).toLocaleDateString()}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        deleteSaved(s.id);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity shrink-0 mt-0.5"
+                      aria-label="Delete saved scenario"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </DropdownMenuItem>
+                ))
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button variant="outline" size="sm" onClick={addScenario}>
             <Plus className="size-4" /> Scenario
           </Button>
@@ -359,19 +616,40 @@ export function ProjectionsExplorer({
 
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-1 space-y-3">
-          {scenarios.map((s, i) => (
-            <ScenarioCard
-              key={s.id}
-              scenario={s}
-              colorVar={`var(--${PALETTE[i % PALETTE.length]})`}
-              baseCurrency={baseCurrency}
-              etaMonths={etaByScenario[s.id] ?? null}
-              canDelete={scenarios.length > 1}
-              onUpdate={(patch) => updateScenario(s.id, patch)}
-              onDuplicate={() => duplicateScenario(s.id)}
-              onDelete={() => removeScenario(s.id)}
-            />
-          ))}
+          {scenarios.map((s, i) => {
+            const series = byScenario[s.id];
+            const endValue = series && series.length > 0
+              ? series[series.length - 1][view]
+              : null;
+            // Delta vs the first scenario in the list (the de facto
+            // baseline). The first scenario shows no delta.
+            const baselineSeries = byScenario[scenarios[0].id];
+            const baselineEnd = baselineSeries && baselineSeries.length > 0
+              ? baselineSeries[Math.min(series?.length ? series.length - 1 : 0, baselineSeries.length - 1)][view]
+              : null;
+            const deltaVsBaseline =
+              i === 0 || endValue == null || baselineEnd == null
+                ? null
+                : endValue - baselineEnd;
+            return (
+              <ScenarioCard
+                key={s.id}
+                scenario={s}
+                colorVar={`var(--${PALETTE[i % PALETTE.length]})`}
+                baseCurrency={baseCurrency}
+                viewLabel={VIEW_LABEL[view]}
+                etaMonths={etaByScenario[s.id] ?? null}
+                endValue={endValue}
+                deltaVsBaseline={deltaVsBaseline}
+                canDelete={scenarios.length > 1}
+                savePending={savePending}
+                onUpdate={(patch) => updateScenario(s.id, patch)}
+                onDuplicate={() => duplicateScenario(s.id)}
+                onDelete={() => removeScenario(s.id)}
+                onSave={() => persistScenario(s.id)}
+              />
+            );
+          })}
         </div>
 
         <Card className="lg:col-span-2">
@@ -492,23 +770,37 @@ function ScenarioCard({
   scenario,
   colorVar,
   baseCurrency,
+  viewLabel,
   etaMonths,
+  endValue,
+  deltaVsBaseline,
   canDelete,
+  savePending,
   onUpdate,
   onDuplicate,
   onDelete,
+  onSave,
 }: {
-  scenario: NamedScenario;
+  scenario: ExplorerScenario;
   colorVar: string;
   baseCurrency: string;
+  viewLabel: string;
   etaMonths: number | null;
+  endValue: number | null;
+  deltaVsBaseline: number | null;
   canDelete: boolean;
+  savePending: boolean;
   onUpdate: (patch: Partial<NamedScenario["inputs"]> & { name?: string }) => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  onSave: () => void;
 }) {
   const [open, setOpen] = useState(true);
   const events = scenario.inputs.events ?? [];
+  const eventsSummary = summarizeEvents(events, baseCurrency);
+  const isSaved = scenario.savedId != null;
+  const isDirty = Boolean(scenario.dirty);
+  const horizonYears = scenario.inputs.horizonMonths / 12;
 
   function patchEvents(next: ScenarioEvent[]) {
     onUpdate({ events: next });
@@ -554,6 +846,12 @@ function ScenarioCard({
           className="flex-1 min-w-0 bg-transparent text-sm font-medium focus:outline-none"
           aria-label="Scenario name"
         />
+        {scenario.source === "ai" ? (
+          <Sparkles className="size-3.5 text-primary shrink-0" />
+        ) : null}
+        {isSaved && !isDirty ? (
+          <BookmarkCheck className="size-3.5 text-emerald-600 dark:text-emerald-500 shrink-0" />
+        ) : null}
         {etaMonths != null ? (
           <Badge variant="secondary" className="text-[10px] shrink-0 font-mono">
             ETA {etaMonths}mo
@@ -562,6 +860,76 @@ function ScenarioCard({
       </button>
       {open ? (
         <div className="px-3 pb-3 space-y-3 border-t border-border/50">
+          {/*
+            Summary block. Shows the AI's rationale + summary up top
+            (when present), the computed end-of-horizon value, and the
+            delta against the first scenario. This is the "what does
+            this prediction actually mean" surface — the most important
+            thing on the card after the chart line.
+          */}
+          {(scenario.rationale || scenario.summary || endValue != null) ? (
+            <div className="pt-3 space-y-2">
+              {scenario.rationale ? (
+                <p className="text-[12px] leading-snug text-muted-foreground">
+                  <span className="font-medium text-foreground">Why:</span>{" "}
+                  {scenario.rationale}
+                </p>
+              ) : null}
+              {scenario.summary ? (
+                <p className="text-[12px] leading-snug text-muted-foreground">
+                  <span className="font-medium text-foreground">What happens:</span>{" "}
+                  {scenario.summary}
+                </p>
+              ) : null}
+              {endValue != null ? (
+                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-md bg-secondary/40 px-2.5 py-2">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                      In {horizonYears.toFixed(1)}y · {viewLabel.split(" ")[0]}
+                    </div>
+                    <div className="font-mono tabular-nums text-base font-medium">
+                      {formatMoney(endValue, baseCurrency, { compact: true })}
+                    </div>
+                  </div>
+                  {deltaVsBaseline != null ? (
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                        vs baseline
+                      </div>
+                      <div
+                        className={
+                          "font-mono tabular-nums text-sm " +
+                          (deltaVsBaseline > 0
+                            ? "text-emerald-600 dark:text-emerald-500"
+                            : deltaVsBaseline < 0
+                              ? "text-destructive"
+                              : "text-muted-foreground")
+                        }
+                      >
+                        {deltaVsBaseline > 0 ? "+" : ""}
+                        {formatMoney(deltaVsBaseline, baseCurrency, { compact: true })}
+                      </div>
+                    </div>
+                  ) : null}
+                  {etaMonths != null ? (
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                        Goal ETA
+                      </div>
+                      <div className="font-mono tabular-nums text-sm">
+                        {etaMonths === 0 ? "now" : `${etaMonths}mo`}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+              {eventsSummary ? (
+                <p className="text-[11px] text-muted-foreground italic">
+                  {eventsSummary}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
           <div className="grid grid-cols-2 gap-2 pt-3">
             <div className="col-span-2 space-y-1">
               <Label className="text-[11px] text-muted-foreground">
@@ -670,21 +1038,46 @@ function ScenarioCard({
             </Button>
           </div>
 
-          <div className="flex items-center justify-end gap-1 pt-1">
-            <Button variant="ghost" size="xs" onClick={onDuplicate}>
-              Duplicate
+          <div className="flex items-center justify-between gap-1 pt-1">
+            <Button
+              variant={isDirty ? "default" : isSaved ? "ghost" : "outline"}
+              size="xs"
+              onClick={onSave}
+              disabled={savePending || (isSaved && !isDirty)}
+            >
+              {isSaved && !isDirty ? (
+                <>
+                  <BookmarkCheck className="size-3.5" />
+                  Saved
+                </>
+              ) : isSaved ? (
+                <>
+                  <Save className="size-3.5" />
+                  Save changes
+                </>
+              ) : (
+                <>
+                  <Save className="size-3.5" />
+                  Save
+                </>
+              )}
             </Button>
-            {canDelete ? (
-              <Button
-                variant="ghost"
-                size="xs"
-                onClick={onDelete}
-                className="text-muted-foreground hover:text-destructive"
-              >
-                <Trash2 className="size-3.5" />
-                Delete
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="xs" onClick={onDuplicate}>
+                Duplicate
               </Button>
-            ) : null}
+              {canDelete ? (
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  onClick={onDelete}
+                  className="text-muted-foreground hover:text-destructive"
+                >
+                  <Trash2 className="size-3.5" />
+                  Remove
+                </Button>
+              ) : null}
+            </div>
           </div>
         </div>
       ) : null}
