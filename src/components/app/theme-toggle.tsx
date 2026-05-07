@@ -1,7 +1,7 @@
 "use client";
 
 import { Moon, Sun, Monitor } from "lucide-react";
-import { useTheme } from "next-themes";
+import { useTheme } from "@/components/app/theme-provider";
 import { useEffect, useState } from "react";
 import {
   DropdownMenu,
