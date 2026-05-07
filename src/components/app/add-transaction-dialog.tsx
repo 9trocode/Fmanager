@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { Plus } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -58,8 +59,23 @@ export function AddTransactionDialog({
         <form
           action={(fd) =>
             startTransition(async () => {
-              await createTransaction(fd);
-              setOpen(false);
+              try {
+                await createTransaction(fd);
+                setOpen(false);
+                // Confirmation toast — without this, the user clicks
+                // "Save", the dialog closes, and they have no signal
+                // that anything happened (especially on /cash-flow,
+                // where the new tx isn't on screen by default).
+                toast.success("Transaction saved", {
+                  description: "Visible in Transactions and the runway widget.",
+                });
+              } catch (err) {
+                toast.error(
+                  err instanceof Error
+                    ? err.message
+                    : "Couldn't save the transaction.",
+                );
+              }
             })
           }
           className="space-y-4"

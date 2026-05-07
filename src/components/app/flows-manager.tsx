@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import {
   Plus,
@@ -60,6 +61,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/app/empty-state";
 import { AddTransactionDialog } from "@/components/app/add-transaction-dialog";
+import { TransactionItem } from "@/components/app/transactions-list";
 import type { TransactionAccountOption } from "@/components/app/transaction-form-fields";
 import {
   createFlow,
@@ -524,12 +526,18 @@ export function FlowsManager({
   monthlyIncomeInBase,
   monthlyExpensesInBase,
   accountOptions,
+  recentTransactions = [],
 }: {
   flows: FlowRow[];
   baseCurrency: string;
   monthlyIncomeInBase: number;
   monthlyExpensesInBase: number;
   accountOptions: TransactionAccountOption[];
+  /**
+   * Recent transactions used to render the "Recent one-time" list under
+   * the recurring flows. Optional — page can omit and the list is hidden.
+   */
+  recentTransactions?: import("@/components/app/transactions-list").TransactionRow[];
 }) {
   const [tab, setTab] = useState<"all" | "expense" | "income">("all");
   const filtered = useMemo(
@@ -661,6 +669,57 @@ export function FlowsManager({
           ) : null}
         </div>
       )}
+
+      {/*
+        Recent one-time transactions. Closes the loop on "I clicked
+        One-time and the dialog vanished — did anything happen?". We
+        show up to 8 of the most recent and link out to the full
+        transactions page for everything else. The same `tab` filter
+        applies (Expenses / Income) so the section follows what the user
+        is currently looking at.
+      */}
+      {recentTransactions.length > 0 ? (
+        <div className="space-y-3 pt-2">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Recent one-time
+              <span className="ml-2 text-[10px] font-mono normal-case text-muted-foreground/70">
+                last 30 days
+              </span>
+            </h3>
+            <Link
+              href="/transactions"
+              className="text-xs text-muted-foreground hover:text-foreground underline-offset-3 hover:underline"
+            >
+              View all
+            </Link>
+          </div>
+          <div className="space-y-2">
+            {recentTransactions
+              .filter((t) => {
+                if (t.kind === "transfer") return false;
+                if (tab === "expense") return t.kind === "expense";
+                if (tab === "income") return t.kind === "income";
+                return true;
+              })
+              .slice(0, 8)
+              .map((t) => (
+                <TransactionItem
+                  key={t.id}
+                  transaction={t}
+                  accounts={accountOptions}
+                />
+              ))}
+            {recentTransactions.filter((t) => t.kind !== "transfer").length ===
+            0 ? (
+              <p className="text-xs text-muted-foreground italic px-1">
+                No one-time transactions yet. Click{" "}
+                <span className="font-mono">One-time</span> above to log one.
+              </p>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

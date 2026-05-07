@@ -5,15 +5,21 @@ import {
   getBaseCurrency,
   listAccounts,
   listFlows,
+  listRecentTransactions,
 } from "@/lib/db/queries";
 import { computeMonthlyCashFlow } from "@/lib/aggregation";
 
 export default async function CashFlowPage() {
   const baseCurrency = await getBaseCurrency();
-  const [flows, summary, accounts] = await Promise.all([
+  // Pull recent transactions too so the manager can show a "Recent
+  // one-time" list. Without it, clicking the "One-time" button saves the
+  // transaction but the user sees nothing change on this page and assumes
+  // the action didn't take.
+  const [flows, summary, accounts, recentTxs] = await Promise.all([
     listFlows({ includeArchived: true }),
     computeMonthlyCashFlow(baseCurrency),
     listAccounts(),
+    listRecentTransactions(30),
   ]);
 
   const accountOptions = accounts.map((a) => ({
@@ -37,6 +43,7 @@ export default async function CashFlowPage() {
         monthlyIncomeInBase={summary.income}
         monthlyExpensesInBase={summary.expenses}
         accountOptions={accountOptions}
+        recentTransactions={recentTxs}
       />
     </>
   );
