@@ -49,3 +49,7 @@ next-env.d.ts
 
 # drizzle migrations metadata (regenerable)
 /drizzle/meta/
+
+# superpowers — local brainstorm/plan workspace, not meant for commit
+.superpowers/
+/docs/superpowers/
