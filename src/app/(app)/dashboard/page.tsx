@@ -76,7 +76,7 @@ export default async function DashboardPage({
       <PageHeader
         size="lg"
         title="Home"
-        description={`Where your money is going in ${month.monthLabel}. Add transactions, watch budgets, work toward goals. Each month resets — recurring flows + budget caps carry over as a skeleton, but spend starts fresh. Use the month filter in the sidebar to scrub backward.`}
+        description={`Where your money's going in ${month.monthLabel}.`}
       />
 
       {!summary.hasData ? (
