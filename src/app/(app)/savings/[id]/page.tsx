@@ -2,7 +2,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Archive, ArchiveRestore, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -46,7 +45,6 @@ import {
   addMonths,
 } from "@/lib/savings";
 import { projectNetWorth } from "@/lib/projections";
-import { SCENARIOS, SCENARIO_LABEL } from "@/lib/scenarios";
 
 export default async function SavingsGoalDetailPage({
   params,
