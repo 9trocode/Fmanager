@@ -1,5 +1,8 @@
 FROM node:24-alpine AS base
-RUN apk add --no-cache libc6-compat
+# `su-exec` is alpine's tiny equivalent of `gosu` — lets the entrypoint run
+# as root (to fix volume permissions) then drop privileges to the nextjs
+# user before exec'ing migrations and the server.
+RUN apk add --no-cache libc6-compat su-exec
 RUN corepack enable
 
 # --- deps: install all (compiles better-sqlite3 native binding)
@@ -60,7 +63,10 @@ COPY --from=deps --chown=nextjs:nodejs \
   /app/node_modules/.pnpm/file-uri-to-path@1.0.0/node_modules/file-uri-to-path \
   /app/node_modules/file-uri-to-path
 
-USER nextjs
+# NOTE: container starts as root so the entrypoint can `chown /data` after
+# the persistent volume mount lands on top of it. The entrypoint then drops
+# privileges to `nextjs` (UID 1001) via su-exec before running migrations
+# and the server.
 EXPOSE 3000
 VOLUME ["/data"]
 
