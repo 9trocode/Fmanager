@@ -19,6 +19,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ThemeToggle } from "@/components/app/theme-toggle";
 import { useRole } from "@/components/app/role-context";
 
 type NavItem = {
@@ -45,7 +46,7 @@ const SECTIONS: NavSection[] = [
   {
     label: "Goals",
     items: [
-      { href: "/savings", label: "Savings", icon: PiggyBank },
+      { href: "/savings", label: "Goals", icon: PiggyBank },
       { href: "/projections", label: "Projections", icon: LineChart },
     ],
   },
@@ -77,7 +78,7 @@ export function Sidebar() {
   const role = useRole();
 
   return (
-    <aside className="sticky top-0 self-start h-screen w-72 shrink-0 border-r border-border bg-card/30 flex flex-col">
+    <aside className="sticky top-0 self-start h-screen w-72 shrink-0 border-r border-border bg-card/40 backdrop-blur-md flex flex-col">
       {/* Brand */}
       <div className="px-5 py-6">
         <Link href="/dashboard" className="flex items-center gap-3 group">
@@ -147,15 +148,18 @@ export function Sidebar() {
               </span>
             )}
           </div>
-          <form action="/api/auth/logout" method="post">
-            <button
-              type="submit"
-              title="Sign out"
-              className="size-8 grid place-items-center rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
-            >
-              <LogOut className="size-4" />
-            </button>
-          </form>
+          <div className="flex items-center gap-1">
+            <ThemeToggle />
+            <form action="/api/auth/logout" method="post">
+              <button
+                type="submit"
+                title="Sign out"
+                className="size-8 grid place-items-center rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
+              >
+                <LogOut className="size-4" />
+              </button>
+            </form>
+          </div>
         </div>
         <div className="mt-1.5 px-2 text-[10px] font-mono text-muted-foreground/60">
           v0.1.0
