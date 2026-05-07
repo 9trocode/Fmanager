@@ -42,7 +42,7 @@ export function RunwayCard({ runway }: { runway: RunwaySummary }) {
               no expenses
             </Badge>
           </div>
-          <CardTitle className="text-3xl font-semibold tabular-nums mt-1 text-muted-foreground">
+          <CardTitle className="text-3xl font-mono tracking-tight mt-1 text-muted-foreground">
             —
           </CardTitle>
         </CardHeader>
@@ -82,7 +82,7 @@ export function RunwayCard({ runway }: { runway: RunwaySummary }) {
           </Badge>
         </div>
         <CardTitle
-          className={`text-3xl font-semibold tabular-nums mt-1 ${TONE_STYLES[tone]}`}
+          className={`text-3xl font-mono tracking-tight mt-1 ${TONE_STYLES[tone]}`}
         >
           {monthsText}
         </CardTitle>
