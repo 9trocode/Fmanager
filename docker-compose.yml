@@ -1,0 +1,23 @@
+services:
+  app:
+    build: .
+    image: founder-finance:latest
+    container_name: founder-finance
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # Required in any non-trivial deployment. Without this, auth is disabled.
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      # Used to sign session cookies. Defaults to ADMIN_PASSWORD; set explicitly in prod.
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      # Optional fallback Anthropic key. Can also be set in Settings → Advisor.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # SQLite location inside the container. The volume below persists it.
+      DATABASE_URL: /data/app.db
+      APP_URL: ${APP_URL:-http://localhost:3000}
+    volumes:
+      - founder-finance-data:/data
+
+volumes:
+  founder-finance-data:

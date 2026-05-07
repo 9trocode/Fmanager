@@ -1,0 +1,15 @@
+node_modules
+.next
+.git
+data
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+.env
+.env.local
+README.md
+ONE-PAGER.md
+.DS_Store
+coverage
+drizzle
