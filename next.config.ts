@@ -6,10 +6,17 @@ const nextConfig: NextConfig = {
     root: path.join(__dirname),
   },
   output: "standalone",
+  // Force the full better-sqlite3 + drizzle-orm packages into the standalone
+  // output's node_modules. The runtime migrate script (scripts/migrate.mjs)
+  // is a separate Node process — Next doesn't bundle it — so it needs the
+  // real package wrappers (index.js, lib/) on disk, not just the .node
+  // binary. The previous narrower glob only included the binary, leaving
+  // /app/node_modules/better-sqlite3/index.js missing in the runner image.
   outputFileTracingIncludes: {
-    "/api/chat": ["./node_modules/better-sqlite3/build/Release/*.node"],
-    "/api/auth/**": ["./node_modules/better-sqlite3/build/Release/*.node"],
-    "/**": ["./node_modules/better-sqlite3/build/Release/*.node"],
+    "/**": [
+      "./node_modules/better-sqlite3/**/*",
+      "./node_modules/drizzle-orm/**/*",
+    ],
   },
 };
 
