@@ -309,68 +309,83 @@ export default async function SavingsGoalDetailPage({
               </span>
             </CardTitle>
             <CardDescription>
-              Total personal net worth, assuming your company equity is worth
-              nothing (the safest plan). Today: {formatMoney(summary.totals.floor, baseCurrency)}.
+              {grants.length > 0
+                ? `Total personal net worth, assuming your company equity is worth nothing (the safest plan). Today: ${formatMoney(summary.totals.floor, baseCurrency)}.`
+                : `Total personal net worth at the goal horizon. Today: ${formatMoney(summary.totals.floor, baseCurrency)}.`}
             </CardDescription>
           </CardHeader>
-          <CardContent className="border-t border-border pt-4">
-            <details className="group text-sm">
-              <summary className="cursor-pointer text-muted-foreground hover:text-foreground select-none">
-                Show with company equity included
-              </summary>
-              <div className="mt-3 grid grid-cols-2 gap-4">
-                <div className="space-y-0.5">
-                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                    With equity at today&apos;s value
+          {/*
+            Equity-included disclosure is only useful when there's
+            actually equity to add — otherwise the three scenarios all
+            equal the floor and the section just adds noise. Hide it
+            entirely when no grants exist; show it when at least one
+            grant is tracked.
+          */}
+          {grants.length > 0 ? (
+            <CardContent className="border-t border-border pt-4">
+              <details className="group text-sm">
+                <summary className="cursor-pointer text-muted-foreground hover:text-foreground select-none">
+                  Show with company equity included
+                </summary>
+                <div className="mt-3 grid grid-cols-2 gap-4">
+                  <div className="space-y-0.5">
+                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                      With equity at today&apos;s value
+                    </div>
+                    <div className="font-mono tabular-nums">
+                      {formatMoney(nwAtEnd.liquid, baseCurrency, {
+                        compact: true,
+                      })}
+                    </div>
+                    <div
+                      className={
+                        "text-[11px] font-mono tabular-nums " +
+                        (nwAtEnd.liquid - summary.totals.liquid >= 0
+                          ? "text-emerald-300"
+                          : "text-destructive")
+                      }
+                    >
+                      {formatMoney(
+                        nwAtEnd.liquid - summary.totals.liquid,
+                        baseCurrency,
+                        { compact: true, signed: true },
+                      )}
+                    </div>
                   </div>
-                  <div className="font-mono tabular-nums">
-                    {formatMoney(nwAtEnd.liquid, baseCurrency, { compact: true })}
-                  </div>
-                  <div
-                    className={
-                      "text-[11px] font-mono tabular-nums " +
-                      (nwAtEnd.liquid - summary.totals.liquid >= 0
-                        ? "text-emerald-300"
-                        : "text-destructive")
-                    }
-                  >
-                    {formatMoney(
-                      nwAtEnd.liquid - summary.totals.liquid,
-                      baseCurrency,
-                      { compact: true, signed: true },
-                    )}
+                  <div className="space-y-0.5">
+                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                      If equity hits target exit
+                    </div>
+                    <div className="font-mono tabular-nums">
+                      {formatMoney(nwAtEnd.expected, baseCurrency, {
+                        compact: true,
+                      })}
+                    </div>
+                    <div
+                      className={
+                        "text-[11px] font-mono tabular-nums " +
+                        (nwAtEnd.expected - summary.totals.expected >= 0
+                          ? "text-emerald-300"
+                          : "text-destructive")
+                      }
+                    >
+                      {formatMoney(
+                        nwAtEnd.expected - summary.totals.expected,
+                        baseCurrency,
+                        { compact: true, signed: true },
+                      )}
+                    </div>
                   </div>
                 </div>
-                <div className="space-y-0.5">
-                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                    If equity hits target exit
-                  </div>
-                  <div className="font-mono tabular-nums">
-                    {formatMoney(nwAtEnd.expected, baseCurrency, { compact: true })}
-                  </div>
-                  <div
-                    className={
-                      "text-[11px] font-mono tabular-nums " +
-                      (nwAtEnd.expected - summary.totals.expected >= 0
-                        ? "text-emerald-300"
-                        : "text-destructive")
-                    }
-                  >
-                    {formatMoney(
-                      nwAtEnd.expected - summary.totals.expected,
-                      baseCurrency,
-                      { compact: true, signed: true },
-                    )}
-                  </div>
-                </div>
-              </div>
-              <p className="text-[11px] text-muted-foreground mt-3 leading-relaxed">
-                These two numbers depend on outcomes you don&apos;t fully control —
-                equity is paper until it&apos;s liquid, and could end up worth zero.
-                Plan against the big number above; treat these as upside.
-              </p>
-            </details>
-          </CardContent>
+                <p className="text-[11px] text-muted-foreground mt-3 leading-relaxed">
+                  These two numbers depend on outcomes you don&apos;t fully
+                  control — equity is paper until it&apos;s liquid, and could
+                  end up worth zero. Plan against the big number above; treat
+                  these as upside.
+                </p>
+              </details>
+            </CardContent>
+          ) : null}
         </Card>
       ) : null}
 
