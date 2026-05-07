@@ -1,43 +1,56 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { Wallet } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
 import { HeroBackground } from "@/components/app/hero-background";
 import { resolveMonthKey } from "@/lib/month-filter";
+import { EmptyState } from "@/components/app/empty-state";
+import { AddAccountDialog } from "@/components/app/add-account-dialog";
+import { AddGrantDialog } from "@/components/app/add-grant-dialog";
+import { getBaseCurrency, getSetting } from "@/lib/db/queries";
+import {
+  computeNetWorth,
+  computeThisMonthActuals,
+} from "@/lib/aggregation";
+import {
+  BudgetsSummaryLoader,
+  CardSkeleton,
+  ListCardSkeleton,
+  MonthStatsRowLoader,
+  NetWorthMiniLoader,
+  RecentTransactionsLoader,
+  RunwayCardLoader,
+  SavingsSummaryLoader,
+  StatsRowSkeleton,
+} from "./cards";
 
 // Reads onboarding state + auth cookie + DB live every request.
 // Must NOT be statically prerendered, or the build-time snapshot
 // (no onboarding_complete) gets cached and always redirects.
 export const dynamic = "force-dynamic";
-import { EmptyState } from "@/components/app/empty-state";
-import { AddAccountDialog } from "@/components/app/add-account-dialog";
-import { AddGrantDialog } from "@/components/app/add-grant-dialog";
-import { RunwayCard } from "@/components/app/runway-card";
-import { BudgetsSummaryCard } from "@/components/app/budgets-summary-card";
-import { MonthStatsRow } from "@/components/app/month-stats-row";
-import { RecentTransactionsCard } from "@/components/app/recent-transactions-card";
-import { SavingsSummaryCard } from "@/components/app/savings-summary-card";
-import { NetWorthMiniCard } from "@/components/app/networth-mini-card";
-import {
-  getBaseCurrency,
-  getSetting,
-  listAccounts,
-  listLatestTransactions,
-  listSavingsGoals,
-} from "@/lib/db/queries";
-import {
-  computeNetWorth,
-  computeCashRunway,
-  computeBudgetStatus,
-  computeMonthlyCashFlow,
-  computeThisMonthActuals,
-} from "@/lib/aggregation";
 
+/**
+ * Streaming dashboard.
+ *
+ * The shell (header + hero) renders instantly. Each card is a
+ * separate <Suspense> boundary that streams in as its data resolves.
+ * The page itself only awaits two things up front:
+ *
+ *   1. The onboarding flag (so we can redirect to /welcome).
+ *   2. `computeNetWorth` for the empty-state gate (so a brand-new
+ *      user sees "Empty house" without flashing skeletons first).
+ *      It's `react/cache`-memoised — when card loaders later call it
+ *      they share this result.
+ *
+ * The PageHeader description also reads `computeThisMonthActuals` so
+ * the monthLabel string can render with the shell. That call is
+ * memoised and shared with `MonthStatsRowLoader`.
+ */
 export default async function DashboardPage({
   searchParams,
 }: {
   searchParams: Promise<{ m?: string }>;
 }) {
-  // Send first-time users into onboarding instead of an empty dashboard.
   const onboardingComplete =
     (await getSetting("onboarding_complete")) === "true";
   if (!onboardingComplete) {
@@ -46,29 +59,14 @@ export default async function DashboardPage({
 
   const params = await searchParams;
   const monthKey = await resolveMonthKey(params.m);
-
   const baseCurrency = await getBaseCurrency();
-  const [
-    summary,
-    runway,
-    budgets,
-    month,
-    flows,
-    accounts,
-    recentTxs,
-    savings,
-  ] = await Promise.all([
-    computeNetWorth(baseCurrency),
-    computeCashRunway(baseCurrency),
-    computeBudgetStatus(baseCurrency, monthKey),
-    computeThisMonthActuals(baseCurrency, monthKey),
-    computeMonthlyCashFlow(baseCurrency),
-    listAccounts({ includeArchived: true }),
-    listLatestTransactions(8),
-    listSavingsGoals(),
-  ]);
 
-  const accountNameById = new Map(accounts.map((a) => [a.id, a.name]));
+  // Two cheap-but-shared awaits up front: net worth (for empty-state)
+  // and this-month label (for the header). Both memoised.
+  const [summary, month] = await Promise.all([
+    computeNetWorth(baseCurrency),
+    computeThisMonthActuals(baseCurrency, monthKey),
+  ]);
 
   return (
     <>
@@ -93,22 +91,37 @@ export default async function DashboardPage({
         />
       ) : (
         <div className="space-y-6">
-          <MonthStatsRow month={month} budgets={budgets} flows={flows} />
-
-          <div className="grid lg:grid-cols-2 gap-6">
-            <RunwayCard runway={runway} />
-            <BudgetsSummaryCard summary={budgets} />
-          </div>
-
-          <div className="grid lg:grid-cols-2 gap-6">
-            <SavingsSummaryCard goals={savings} />
-            <RecentTransactionsCard
-              txs={recentTxs}
-              accountNameById={accountNameById}
+          <Suspense fallback={<StatsRowSkeleton />}>
+            <MonthStatsRowLoader
+              baseCurrency={baseCurrency}
+              monthKey={monthKey}
             />
+          </Suspense>
+
+          <div className="grid lg:grid-cols-2 gap-6">
+            <Suspense fallback={<CardSkeleton tall />}>
+              <RunwayCardLoader baseCurrency={baseCurrency} />
+            </Suspense>
+            <Suspense fallback={<CardSkeleton tall />}>
+              <BudgetsSummaryLoader
+                baseCurrency={baseCurrency}
+                monthKey={monthKey}
+              />
+            </Suspense>
           </div>
 
-          <NetWorthMiniCard summary={summary} />
+          <div className="grid lg:grid-cols-2 gap-6">
+            <Suspense fallback={<CardSkeleton />}>
+              <SavingsSummaryLoader />
+            </Suspense>
+            <Suspense fallback={<ListCardSkeleton />}>
+              <RecentTransactionsLoader />
+            </Suspense>
+          </div>
+
+          <Suspense fallback={<CardSkeleton tall />}>
+            <NetWorthMiniLoader baseCurrency={baseCurrency} />
+          </Suspense>
         </div>
       )}
     </>

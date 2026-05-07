@@ -1,11 +1,14 @@
 import Link from "next/link";
 import {
+  ArrowDownRight,
   ArrowRight,
   ArrowUpRight,
   Briefcase,
+  Calendar,
   Camera,
   Coins,
   DollarSign,
+  Equal,
   Globe2,
   LayoutGrid,
   Mic,
@@ -17,6 +20,8 @@ import {
   TrendingUp,
   Users2,
   Wallet,
+  Wrench,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -39,7 +44,9 @@ export default async function LandingPage() {
       <Header authed={authed} />
       <main className="flex-1">
         <Hero primaryCta={primaryCta} authed={authed} />
+        <DashboardPreview />
         <FeatureGrid />
+        <BudgetsPreview />
         <ScenarioDeepDive />
         <SmartCapture />
         <AdvisorPitch />
@@ -222,6 +229,290 @@ function ScenarioPreview() {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Realistic Home-page snapshot. Mirrors the actual /dashboard surface
+ * — month filter chip, three stats cards (Spent / Income / Net),
+ * income progress bar — so visitors see the product, not a stock
+ * mockup. Numbers are illustrative; the structure is real.
+ */
+function DashboardPreview() {
+  return (
+    <section className="py-20 border-t border-border/60">
+      <div className="max-w-5xl mx-auto px-6 space-y-10">
+        <div className="text-center space-y-3 max-w-2xl mx-auto">
+          <Badge variant="secondary" className="font-mono text-[10px] gap-1.5">
+            <LayoutGrid className="size-3" /> Home
+          </Badge>
+          <h2 className="text-3xl md:text-4xl font-semibold tracking-tight text-balance">
+            Every month resets.{" "}
+            <span className="text-muted-foreground">
+              Caps and recurring flows carry over as the skeleton.
+            </span>
+          </h2>
+          <p className="text-muted-foreground leading-relaxed">
+            One sidebar dropdown scrubs every page back through the last
+            two years. Spend starts fresh on the 1st; the structure
+            you&apos;ve built doesn&apos;t.
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-border bg-card/60 backdrop-blur p-5 md:p-7 space-y-5 shadow-sm">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <div className="text-xl font-semibold tracking-tight">Home</div>
+              <div className="text-xs text-muted-foreground">
+                Where your money&apos;s going in May 2026.
+              </div>
+            </div>
+            <div className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background/60 px-2.5 py-1 text-[11px] font-mono text-muted-foreground">
+              <Calendar className="size-3" />
+              May 2026 (this month)
+            </div>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-3">
+            <PreviewStat
+              label="Spent this month"
+              icon={<ArrowDownRight className="size-3.5 text-destructive" />}
+              value="NGN 700K"
+              valueClass="text-destructive"
+              footnote="700K of 1.2M budgeted (58%)"
+              progress={58}
+              progressClass="bg-emerald-500/80"
+            />
+            <PreviewStat
+              label="Income this month"
+              icon={<ArrowUpRight className="size-3.5 text-emerald-300" />}
+              value="NGN 2.18M"
+              valueClass="text-emerald-300"
+              footnote="Received so far: 0 · 0%"
+              progress={0}
+              progressClass="bg-emerald-500/70"
+              progressLabel
+            />
+            <PreviewStat
+              label="Net this month"
+              icon={<Equal className="size-3.5 text-muted-foreground" />}
+              value="+NGN 1.48M"
+              valueClass="text-emerald-300"
+              footnote="MTD actual: −NGN 700K (logged − spend so far)"
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-3 text-[11px] text-muted-foreground font-mono pt-1">
+            <span>· Sidebar month filter persists across every page</span>
+            <span>· Auto-accrual posts paychecks and rent on schedule</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PreviewStat({
+  label,
+  icon,
+  value,
+  valueClass,
+  footnote,
+  progress,
+  progressClass,
+  progressLabel,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  value: string;
+  valueClass: string;
+  footnote: string;
+  progress?: number;
+  progressClass?: string;
+  progressLabel?: boolean;
+}) {
+  return (
+    <div className="rounded-xl border border-border bg-background/40 p-4 space-y-2">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        {icon}
+        <span>{label}</span>
+      </div>
+      <div className={`text-2xl font-mono tabular-nums tracking-tight ${valueClass}`}>
+        {value}
+      </div>
+      <div className="text-[11px] font-mono text-muted-foreground leading-snug">
+        {footnote}
+      </div>
+      {progress != null ? (
+        <div className="space-y-1 pt-1">
+          {progressLabel ? (
+            <div className="flex justify-end text-[10px] font-mono text-muted-foreground">
+              {progress}%
+            </div>
+          ) : null}
+          <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
+            <div
+              className={`h-full ${progressClass ?? "bg-foreground/40"}`}
+              style={{ width: `${Math.min(100, progress)}%` }}
+            />
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Real-shape mock of the "Budgets vs cash flow" panel on /budgets.
+ * A stacked four-bucket bar (budgeted, recurring, one-time, free)
+ * plus a legend — exactly what users see in-app. Drives home that
+ * the product knows the difference between planned vs actual.
+ */
+function BudgetsPreview() {
+  return (
+    <section className="py-24 border-t border-border/60 bg-muted/20">
+      <div className="max-w-5xl mx-auto px-6">
+        <div className="grid md:grid-cols-2 gap-12 items-center">
+          <div className="space-y-5">
+            <Badge variant="secondary" className="font-mono text-[10px] gap-1.5">
+              <Target className="size-3" /> Budgets vs cash flow
+            </Badge>
+            <h2 className="text-3xl md:text-4xl font-semibold tracking-tight text-balance">
+              Stop planning against income that&apos;s already spent.
+            </h2>
+            <p className="text-muted-foreground leading-relaxed">
+              A stacked allocation bar splits your monthly income four
+              ways: budget caps, recurring flows that aren&apos;t in a
+              budget, one-time expenses you&apos;ve already logged this
+              month, and what&apos;s actually free.
+            </p>
+            <p className="text-muted-foreground leading-relaxed">
+              Recurring flows tied to a budget auto-accrue into it — no
+              double-count, no manual logging — and the bar lights up
+              red the moment your commitments cross your income.
+            </p>
+            <ul className="space-y-2 text-sm">
+              {[
+                "Auto-accrual posts paychecks + rent on schedule",
+                "Budgets can scope to a single account or all of them",
+                "One-time expenses tie to a budget at log time",
+                "Switch months in the sidebar to compare past periods",
+              ].map((b) => (
+                <li
+                  key={b}
+                  className="flex items-start gap-2 text-muted-foreground"
+                >
+                  <span className="size-1.5 rounded-full bg-emerald-400 mt-2 shrink-0" />
+                  {b}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="rounded-2xl border border-border bg-card/60 backdrop-blur p-5 md:p-6 space-y-5 shadow-sm">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <Wallet className="size-4 text-muted-foreground" />
+                  Budgets vs cash flow
+                </div>
+                <div className="text-[11px] text-muted-foreground mt-0.5">
+                  Where your monthly income is going.
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  Monthly income
+                </div>
+                <div className="font-mono tabular-nums text-base text-emerald-300">
+                  $5,000
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="h-3 rounded-full bg-secondary overflow-hidden flex">
+                <div className="h-full bg-blue-500/80" style={{ width: "30%" }} />
+                <div className="h-full bg-amber-500/80" style={{ width: "26%" }} />
+                <div className="h-full bg-orange-500/80" style={{ width: "14%" }} />
+                <div className="h-full bg-emerald-500/70" style={{ width: "30%" }} />
+              </div>
+              <div className="grid grid-cols-2 gap-3 text-[11px]">
+                <PreviewLegend
+                  swatch="bg-blue-500/80"
+                  label="Budgeted"
+                  amount="$1,500"
+                  share="30%"
+                />
+                <PreviewLegend
+                  swatch="bg-amber-500/80"
+                  label="Recurring"
+                  amount="$1,300"
+                  share="26%"
+                  hint="not in a budget"
+                />
+                <PreviewLegend
+                  swatch="bg-orange-500/80"
+                  label="One-time"
+                  amount="$700"
+                  share="14%"
+                  hint="MTD unbudgeted"
+                />
+                <PreviewLegend
+                  swatch="bg-emerald-500/70"
+                  label="Free"
+                  amount="$1,500"
+                  share="30%"
+                  hint="point a savings goal at it"
+                />
+              </div>
+            </div>
+
+            <div className="rounded-md border border-blue-500/25 bg-blue-500/5 px-3 py-2.5 text-[11px] leading-relaxed">
+              <div className="font-medium text-blue-200 mb-0.5">
+                Recurring Internet auto-fills its budget.
+              </div>
+              <div className="text-muted-foreground">
+                Tied flows accrue straight into the matching cap — no
+                double-count.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PreviewLegend({
+  swatch,
+  label,
+  amount,
+  share,
+  hint,
+}: {
+  swatch: string;
+  label: string;
+  amount: string;
+  share: string;
+  hint?: string;
+}) {
+  return (
+    <div className="space-y-0.5">
+      <div className="flex items-center gap-2">
+        <span className={`size-2 rounded-sm ${swatch}`} />
+        <span className="font-medium text-muted-foreground">{label}</span>
+      </div>
+      <div className="font-mono tabular-nums">
+        {amount}
+        <span className="text-muted-foreground text-[10px] ml-1">
+          ({share})
+        </span>
+      </div>
+      {hint ? (
+        <div className="text-[10px] text-muted-foreground">{hint}</div>
+      ) : null}
     </div>
   );
 }
@@ -609,9 +900,46 @@ function AdvisorPitch() {
                 </p>
               </div>
             </div>
-            <div className="text-[11px] text-muted-foreground font-mono pt-3 border-t border-border">
-              system prompt sees: 8 accounts · 3 grants · 10 recurring flows ·
-              5 budgets · 3 active decisions · 28 transactions in last 30d
+
+            {/* Agent action — shows the advisor isn't just talking. */}
+            <div className="flex items-start gap-3">
+              <div className="size-8 rounded-full bg-secondary text-foreground/80 grid place-items-center text-xs font-semibold shrink-0">
+                You
+              </div>
+              <div className="rounded-2xl rounded-tl-sm bg-secondary/60 px-4 py-3 text-sm leading-relaxed">
+                OK, log a $13,250 expense to Capital Reserve and tag it
+                ISO exercise.
+              </div>
+            </div>
+            <div className="flex items-start gap-3">
+              <div className="size-8 rounded-full bg-primary/15 text-primary grid place-items-center shrink-0">
+                <Sparkles className="size-4" />
+              </div>
+              <div className="space-y-2 flex-1">
+                <div className="rounded-md border border-border/80 bg-background/60 px-2.5 py-1.5 text-[11px] font-mono inline-flex items-center gap-1.5 text-muted-foreground">
+                  <Wrench className="size-3" />
+                  <span className="text-foreground">listAccounts</span>
+                  <span className="text-[10px]">✓ done</span>
+                </div>
+                <div className="rounded-md border border-border/80 bg-background/60 px-2.5 py-1.5 text-[11px] font-mono inline-flex items-center gap-1.5 text-muted-foreground ml-2">
+                  <Wrench className="size-3" />
+                  <span className="text-foreground">createTransaction</span>
+                  <span className="text-[10px]">✓ done</span>
+                </div>
+                <div className="rounded-2xl rounded-tl-sm bg-primary/5 border border-primary/15 px-4 py-3 text-sm leading-relaxed">
+                  Logged −$13,250 to Capital Reserve on 2026-05-07,
+                  category &ldquo;ISO exercise.&rdquo; Net worth dropped to
+                  $168K floor; runway is now 5.2 months — flagged in your
+                  decision context for the next time we look.
+                </div>
+              </div>
+            </div>
+
+            <div className="text-[11px] text-muted-foreground font-mono pt-3 border-t border-border flex items-center gap-2 flex-wrap">
+              <span>system prompt sees:</span>
+              <span>8 accounts · 3 grants · 10 recurring flows · 5 budgets · 3 active decisions · 28 transactions / 30d</span>
+              <Zap className="size-3 text-amber-300/80 ml-auto" />
+              <span className="text-amber-300/80">8 tools to act on your behalf</span>
             </div>
           </Card>
         </div>
