@@ -22,6 +22,8 @@ import {
   listTransactions,
   type TransactionFilter,
 } from "@/lib/db/queries";
+import { resolveMonthKey } from "@/lib/month-filter";
+import { localYmd } from "@/lib/dates";
 import { convert } from "@/lib/fx";
 import { formatMoney } from "@/lib/format";
 import type { TransactionKind } from "@/lib/db/schema";
@@ -47,13 +49,33 @@ function monthKey(iso: string): string {
   return iso.slice(0, 7); // YYYY-MM
 }
 
-function currentMonthBounds(): { start: string; end: string; label: string } {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = now.getMonth();
-  const start = new Date(y, m, 1).toISOString().slice(0, 10);
-  const end = new Date(y, m + 1, 0).toISOString().slice(0, 10);
-  const label = now.toLocaleString("en-US", { month: "long", year: "numeric" });
+/**
+ * Returns the local-time start/end YYYY-MM-DD bounds for a calendar
+ * month plus a human label. `monthKey` is a global-filter `YYYY-MM`
+ * string; when missing or malformed we fall back to today's month.
+ *
+ * Local time, not UTC, so a Lagos user logging an 11:30 PM transaction
+ * on Jan 31 lands in January's bucket — same convention used by the
+ * aggregation helpers and by `<input type="date">` itself.
+ */
+function monthBounds(monthKey?: string): {
+  start: string;
+  end: string;
+  label: string;
+} {
+  let target = new Date();
+  if (monthKey && /^(\d{4})-(\d{2})$/.test(monthKey)) {
+    const [y, m] = monthKey.split("-").map(Number);
+    target = new Date(y, m - 1, 1);
+  }
+  const y = target.getFullYear();
+  const m = target.getMonth();
+  const start = localYmd(new Date(y, m, 1));
+  const end = localYmd(new Date(y, m + 1, 0));
+  const label = target.toLocaleString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
   return { start, end, label };
 }
 
@@ -85,10 +107,13 @@ export default async function TransactionsPage({
   }>;
 }) {
   const sp = await searchParams;
-  const month = currentMonthBounds();
+  // Honor the global month filter (sidebar) so picking October 2024
+  // there scopes this page too. URL-explicit `from/to` and an
+  // explicit `scope=all` still win — those are the user's per-page
+  // overrides.
+  const globalMonthKey = await resolveMonthKey(undefined);
+  const month = monthBounds(globalMonthKey);
 
-  // Default scope is "this month" so the totals reconcile with the home page.
-  // Users can switch to All time (or set custom dates) explicitly.
   const userSetDates = Boolean(sp.from || sp.to);
   const scope = sp.scope === "all" ? "all" : userSetDates ? "custom" : "month";
   const effectiveFrom =

@@ -6,21 +6,47 @@ import {
   listAccounts,
   listFlows,
   listRecentTransactions,
+  listTransactions,
   listBudgets,
 } from "@/lib/db/queries";
 import { computeMonthlyCashFlow } from "@/lib/aggregation";
+import { resolveMonthKey } from "@/lib/month-filter";
+import { localYmd } from "@/lib/dates";
 
 export default async function CashFlowPage() {
   const baseCurrency = await getBaseCurrency();
-  // Pull recent transactions too so the manager can show a "Recent
-  // one-time" list. Without it, clicking the "One-time" button saves the
-  // transaction but the user sees nothing change on this page and assumes
-  // the action didn't take.
+
+  // If the global month filter is set (sidebar), narrow the "Recent
+  // one-time" list to that calendar month. Otherwise fall back to the
+  // last 30 days, which is what this page has always shown.
+  const monthKey = await resolveMonthKey(undefined);
+  let monthLabel: string | null = null;
+  let recentTxsPromise: Promise<
+    Awaited<ReturnType<typeof listRecentTransactions>>
+  >;
+  if (monthKey) {
+    const [yStr, mStr] = monthKey.split("-");
+    const y = Number(yStr);
+    const m = Number(mStr);
+    const start = localYmd(new Date(y, m - 1, 1));
+    const end = localYmd(new Date(y, m, 0));
+    monthLabel = new Date(y, m - 1, 1).toLocaleString("en-US", {
+      month: "long",
+      year: "numeric",
+    });
+    recentTxsPromise = listTransactions({
+      dateFrom: start,
+      dateTo: end,
+    }) as Promise<Awaited<ReturnType<typeof listRecentTransactions>>>;
+  } else {
+    recentTxsPromise = listRecentTransactions(30);
+  }
+
   const [flows, summary, accounts, recentTxs, budgets] = await Promise.all([
     listFlows({ includeArchived: true }),
     computeMonthlyCashFlow(baseCurrency),
     listAccounts(),
-    listRecentTransactions(30),
+    recentTxsPromise,
     listBudgets(),
   ]);
 
@@ -48,14 +74,14 @@ export default async function CashFlowPage() {
     type: a.type,
   }));
 
+  const description = monthLabel
+    ? `Recurring inflows and outflows shape your monthly take. One-time expenses (a vacation, a tax bill) live in transactions and still affect your runway — log them from here too. Recent one-time list scoped to ${monthLabel} via the sidebar's month filter.`
+    : "Recurring inflows and outflows shape your monthly take. One-time expenses (a vacation, a tax bill) live in transactions and still affect your runway — log them from here too.";
+
   return (
     <>
       <HeroBackground />
-      <PageHeader
-        size="lg"
-        title="Cash flow"
-        description="Recurring inflows and outflows shape your monthly take. One-time expenses (a vacation, a tax bill) live in transactions and still affect your runway — log them from here too."
-      />
+      <PageHeader size="lg" title="Cash flow" description={description} />
       <FlowsManager
         flows={flows}
         baseCurrency={baseCurrency}
