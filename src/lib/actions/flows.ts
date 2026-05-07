@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { flowCadences, flowKinds } from "@/lib/db/schema";
 import { assertAdmin } from "@/lib/auth/session";
@@ -60,13 +60,34 @@ export async function createFlow(formData: FormData) {
   await assertAdmin();
   const fields = commonFields(formData);
   if (!fields.name) throw new Error("Name is required.");
-  // Seed `lastPostedAt` to today so the first auto-accrual fires after
-  // ONE full cadence has passed (a monthly salary added Feb 15 generates
-  // its first transaction Mar 15, not Feb 15). Avoids surprise back-dated
-  // posts at creation.
-  await db
+
+  // Insert the flow itself.
+  const today = localToday();
+  const [flow] = await db
     .insert(schema.recurringFlows)
-    .values({ ...fields, lastPostedAt: localToday() });
+    .values({ ...fields, lastPostedAt: today })
+    .returning();
+
+  // Post the first transaction immediately so the user sees the flow
+  // affect their balances and budgets right away — it matches the user's
+  // mental model ("I'm getting paid this month / paying rent this
+  // month"). Subsequent accruals fire one full cadence later via
+  // `accrueDueFlows()`.
+  //
+  // Skipped if no account is linked (the transaction would have nowhere
+  // to land) — the auto-accruer also requires an account.
+  if (flow.accountId != null) {
+    await db.insert(schema.transactions).values({
+      kind: flow.kind,
+      amount: flow.amount,
+      currency: flow.currency,
+      accountId: flow.accountId,
+      occurredAt: today,
+      category: flow.category,
+      flowId: flow.id,
+      notes: flow.notes ?? `Auto-posted from ${flow.name}`,
+    });
+  }
   revalidate();
 }
 
@@ -88,6 +109,67 @@ export async function deleteFlow(formData: FormData) {
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
   await db.delete(schema.recurringFlows).where(eq(schema.recurringFlows.id, id));
+  revalidate();
+}
+
+/**
+ * Manually post a transaction for THIS period right now, without waiting
+ * for the cadence to elapse. Used by the "Apply now" affordance on a
+ * flow row — useful for existing flows that were created before the
+ * auto-accrual feature shipped, or any time the user wants the current
+ * period's transaction in their books immediately.
+ *
+ * Idempotent against same-day double-posts: if a transaction with this
+ * flowId is already dated today, we no-op.
+ */
+export async function applyFlowNow(formData: FormData) {
+  await assertAdmin();
+  const id = Number(formData.get("id"));
+  if (!Number.isFinite(id)) throw new Error("Invalid id.");
+
+  const [flow] = await db
+    .select()
+    .from(schema.recurringFlows)
+    .where(eq(schema.recurringFlows.id, id))
+    .limit(1);
+  if (!flow) throw new Error("Flow not found.");
+  if (flow.accountId == null) {
+    throw new Error("Link this flow to an account before applying it.");
+  }
+
+  const today = localToday();
+
+  // Same-day idempotency: if the user clicks "Apply now" twice in a
+  // row, only post once.
+  const existing = await db
+    .select()
+    .from(schema.transactions)
+    .where(
+      and(
+        eq(schema.transactions.flowId, flow.id),
+        eq(schema.transactions.occurredAt, today),
+      ),
+    )
+    .limit(1);
+  if (existing.length > 0) {
+    revalidate();
+    return;
+  }
+
+  await db.insert(schema.transactions).values({
+    kind: flow.kind,
+    amount: flow.amount,
+    currency: flow.currency,
+    accountId: flow.accountId,
+    occurredAt: today,
+    category: flow.category,
+    flowId: flow.id,
+    notes: flow.notes ?? `Manually applied from ${flow.name}`,
+  });
+  await db
+    .update(schema.recurringFlows)
+    .set({ lastPostedAt: today, updatedAt: new Date().toISOString() })
+    .where(eq(schema.recurringFlows.id, flow.id));
   revalidate();
 }
 

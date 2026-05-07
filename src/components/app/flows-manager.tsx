@@ -12,6 +12,7 @@ import {
   Archive,
   ArchiveRestore,
   Target,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -65,11 +66,13 @@ import { AddTransactionDialog } from "@/components/app/add-transaction-dialog";
 import { TransactionItem } from "@/components/app/transactions-list";
 import type { TransactionAccountOption } from "@/components/app/transaction-form-fields";
 import {
+  applyFlowNow,
   createFlow,
   deleteFlow,
   toggleFlowArchived,
   updateFlow,
 } from "@/lib/actions/flows";
+import { toast } from "sonner";
 import {
   FLOW_CADENCE_LABEL,
   SUGGESTED_EXPENSE_CATEGORIES,
@@ -369,6 +372,28 @@ function FlowRow({
     });
   }
 
+  function handleApplyNow() {
+    if (flow.accountId == null) {
+      toast.error("Link this flow to an account before applying it.");
+      return;
+    }
+    const fd = new FormData();
+    fd.set("id", String(flow.id));
+    startTransition(async () => {
+      try {
+        await applyFlowNow(fd);
+        toast.success(
+          `Posted ${flow.kind === "income" ? "income" : "expense"} for ${flow.name}`,
+          { description: "Visible in Transactions and the runway widget." },
+        );
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Couldn't apply the flow.",
+        );
+      }
+    });
+  }
+
   const isIncome = flow.kind === "income";
 
   const clickable = !readOnly;
@@ -477,6 +502,12 @@ function FlowRow({
                 <Pencil className="size-4" />
                 Edit
               </DropdownMenuItem>
+              {!flow.archived ? (
+                <DropdownMenuItem onSelect={handleApplyNow}>
+                  <Zap className="size-4" />
+                  Apply now
+                </DropdownMenuItem>
+              ) : null}
               <DropdownMenuItem onSelect={handleArchive}>
                 {flow.archived ? (
                   <>
