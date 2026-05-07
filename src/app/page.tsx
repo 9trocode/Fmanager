@@ -23,6 +23,11 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { isAuthenticated } from "@/lib/auth/session";
 
+// `isAuthenticated()` reads cookies (request-scoped) and indirectly hits
+// the SQLite settings table — both forbid prerender. Force dynamic so the
+// build doesn't try to evaluate this page against an empty Docker DB.
+export const dynamic = "force-dynamic";
+
 export default async function LandingPage() {
   const authed = await isAuthenticated();
   const primaryCta = authed

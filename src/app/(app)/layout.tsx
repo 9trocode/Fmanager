@@ -7,6 +7,15 @@ import {
 } from "@/lib/auth/session";
 import { RoleProvider } from "@/components/app/role-context";
 
+// Every page in the (app) segment reads from the SQLite DB (accounts, flows,
+// budgets, etc.). Forcing dynamic rendering on the layout prevents Next from
+// trying to prerender any of them at build time — which would fail in the
+// Docker builder stage where ./data/app.db has no schema yet.
+//
+// This inherits to all child route segments, so individual page files don't
+// need to repeat the export.
+export const dynamic = "force-dynamic";
+
 export default async function AppLayout({
   children,
 }: {
