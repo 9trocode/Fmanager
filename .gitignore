@@ -47,8 +47,9 @@ next-env.d.ts
 *.db-wal
 *.db-shm
 
-# drizzle migrations metadata (regenerable)
-/drizzle/meta/
+# NOTE: drizzle/ MUST be tracked. The runtime migrate script
+# (scripts/migrate.mjs) reads ./drizzle/*.sql and ./drizzle/meta/_journal.json
+# at container start to apply schema changes against /data/app.db.
 
 # superpowers — local brainstorm/plan workspace, not meant for commit
 .superpowers/
