@@ -46,6 +46,14 @@ export type TransactionRow = {
   category: string | null;
   occurredAt: string;
   notes: string | null;
+  /**
+   * If non-null, this transaction was auto-posted from a recurring flow
+   * (either at flow-create time or by the cadence-based accruer).
+   * Surface this so consumers can distinguish "truly one-off" from
+   * "flow accrual" — e.g. the cash-flow page hides flow-linked
+   * transactions from its "Recent one-time" section.
+   */
+  flowId?: number | null;
 };
 
 function KindIcon({ kind }: { kind: TransactionKind }) {

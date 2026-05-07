@@ -260,6 +260,8 @@ export type BudgetStatus = {
   percentUsed: number;
   /** Currency the budget is tracked in (typically the user's base currency). */
   baseCurrency: string;
+  /** Account this budget scopes to. Null means "any account". */
+  accountId: number | null;
   notes: string | null;
 };
 
@@ -337,6 +339,10 @@ export async function computeBudgetStatus(
     for (const t of monthTxs) {
       if (t.kind !== "expense") continue;
       if (!t.category || t.category !== b.category) continue;
+      // If the budget is scoped to a specific account, only count
+      // transactions on that account. Null accountId means
+      // "any account" (the original default behavior).
+      if (b.accountId != null && t.accountId !== b.accountId) continue;
       const inBudgetCcy = await convert(t.amount, t.currency, b.currency);
       spent += inBudgetCcy;
     }
@@ -351,6 +357,7 @@ export async function computeBudgetStatus(
       remaining,
       percentUsed,
       baseCurrency: b.currency,
+      accountId: b.accountId ?? null,
       notes: b.notes ?? null,
     };
     rows.push(status);

@@ -117,11 +117,19 @@ const createTransactionTool = tool({
 
 const createBudgetTool = tool({
   description:
-    "Create a monthly budget for a spending category. The category string MUST match the `category` field on the transactions you want it to track.",
+    "Create a monthly budget for a spending category. The category string MUST match the `category` field on the transactions you want it to track. Optional `accountId` scopes the budget to spending on one account only — leave it off to track across every account.",
   inputSchema: z.object({
     category: z.string().min(1),
     monthlyLimit: z.number().positive(),
     currency: z.string().min(3).max(3),
+    accountId: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe(
+        "Optional. Restrict counting to transactions on this account. Useful for per-card budgets.",
+      ),
     notes: z.string().optional(),
   }),
   execute: async (input) => {
@@ -131,13 +139,14 @@ const createBudgetTool = tool({
         category: input.category,
         monthlyLimit: input.monthlyLimit,
         currency: input.currency.toUpperCase(),
+        accountId: input.accountId ?? null,
         notes: input.notes ?? null,
       })
       .returning();
     return {
       ok: true,
       budgetId: row.id,
-      summary: `Budget '${input.category}': ${input.monthlyLimit} ${input.currency.toUpperCase()}/mo`,
+      summary: `Budget '${input.category}': ${input.monthlyLimit} ${input.currency.toUpperCase()}/mo${input.accountId ? ` (account ${input.accountId})` : ""}`,
     };
   },
 });

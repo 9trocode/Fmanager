@@ -29,6 +29,7 @@ export type BudgetEditRow = {
   category: string;
   monthlyLimit: number;
   currency: string;
+  accountId: number | null;
   notes: string | null;
 };
 
@@ -36,10 +37,12 @@ export function EditBudgetDialog({
   budget,
   open,
   onOpenChange,
+  accountOptions = [],
 }: {
   budget: BudgetEditRow;
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  accountOptions?: Array<{ id: number; name: string; currency: string }>;
 }) {
   const role = useRole();
   const [pending, startTransition] = useTransition();
@@ -102,6 +105,33 @@ export function EditBudgetDialog({
               </Select>
             </div>
           </div>
+          {accountOptions.length > 0 ? (
+            <div className="space-y-1.5">
+              <Label htmlFor="account_id">Scope to account (optional)</Label>
+              <Select
+                name="account_id"
+                defaultValue={
+                  budget.accountId != null ? String(budget.accountId) : "any"
+                }
+              >
+                <SelectTrigger id="account_id">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="any">
+                    <span className="text-muted-foreground">
+                      — any account —
+                    </span>
+                  </SelectItem>
+                  {accountOptions.map((a) => (
+                    <SelectItem key={a.id} value={String(a.id)}>
+                      {a.name} ({a.currency})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
           <div className="space-y-1.5">
             <Label htmlFor="notes">Notes (optional)</Label>
             <textarea

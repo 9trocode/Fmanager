@@ -214,6 +214,16 @@ export const budgets = sqliteTable(
     category: text("category").notNull(),
     monthlyLimit: real("monthly_limit").notNull(),
     currency: text("currency").notNull(),
+    /**
+     * Optional. When set, the budget only counts transactions on THIS
+     * account (handy when one category — say "Food" — is split across
+     * multiple accounts and you only want to budget the Naira side, or
+     * when you want a per-card cap). When null, the budget counts every
+     * transaction in its category across all accounts.
+     */
+    accountId: integer("account_id").references(() => accounts.id, {
+      onDelete: "set null",
+    }),
     notes: text("notes"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

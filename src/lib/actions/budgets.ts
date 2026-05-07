@@ -18,6 +18,13 @@ function parseAmount(value: FormDataEntryValue | null): number {
   return n;
 }
 
+function parseAccountId(value: FormDataEntryValue | null): number | null {
+  const raw = String(value ?? "").trim();
+  if (!raw || raw === "any") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 function commonFields(formData: FormData) {
   const category = String(formData.get("category") ?? "").trim();
   if (!category) throw new Error("Category is required.");
@@ -27,6 +34,7 @@ function commonFields(formData: FormData) {
     currency: String(formData.get("currency") ?? "USD")
       .trim()
       .toUpperCase(),
+    accountId: parseAccountId(formData.get("account_id")),
     notes: String(formData.get("notes") ?? "").trim() || null,
   };
 }

@@ -30,9 +30,17 @@ import { useRole } from "@/components/app/role-context";
 export function AddBudgetDialog({
   baseCurrency,
   trigger,
+  accountOptions = [],
 }: {
   baseCurrency: string;
   trigger?: React.ReactNode;
+  /**
+   * When provided, the form lets the user scope the budget to a single
+   * account. Default is "any account" (the original whole-category
+   * behaviour). Useful for budgets like "NGN Food" where you want to
+   * cap spending only on the Naira card.
+   */
+  accountOptions?: Array<{ id: number; name: string; currency: string }>;
 }) {
   const role = useRole();
   const [open, setOpen] = useState(false);
@@ -109,6 +117,33 @@ export function AddBudgetDialog({
               </Select>
             </div>
           </div>
+          {accountOptions.length > 0 ? (
+            <div className="space-y-1.5">
+              <Label htmlFor="account_id">Scope to account (optional)</Label>
+              <Select name="account_id" defaultValue="any">
+                <SelectTrigger id="account_id">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="any">
+                    <span className="text-muted-foreground">
+                      — any account —
+                    </span>
+                  </SelectItem>
+                  {accountOptions.map((a) => (
+                    <SelectItem key={a.id} value={String(a.id)}>
+                      {a.name} ({a.currency})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground">
+                When set, only transactions on this account count toward
+                the budget. Leave as &ldquo;any&rdquo; to track across all
+                accounts.
+              </p>
+            </div>
+          ) : null}
           <div className="space-y-1.5">
             <Label htmlFor="notes">Notes (optional)</Label>
             <textarea

@@ -57,6 +57,12 @@ export type BudgetsManagerProps = {
   oneTimeExpensesThisMonth: number;
   liquidCash: number;
   monthsRunway: number | null;
+  /**
+   * Accounts available for the per-budget "scope to account" picker.
+   * Forwarded into AddBudgetDialog and EditBudgetDialog and used by
+   * each BudgetRow to render the linked account name (when set).
+   */
+  accountOptions?: Array<{ id: number; name: string; currency: string }>;
 };
 
 function barClass(percentUsed: number): string {
@@ -71,11 +77,18 @@ function pctLabelClass(percentUsed: number): string {
   return "text-muted-foreground";
 }
 
-function BudgetRow({ row }: { row: BudgetStatus }) {
+function BudgetRow({
+  row,
+  accountOptions = [],
+}: {
+  row: BudgetStatus;
+  accountOptions?: Array<{ id: number; name: string; currency: string }>;
+}) {
   const role = useRole();
   const [editOpen, setEditOpen] = useState(false);
   const [, startTransition] = useTransition();
   const readOnly = role === "viewer";
+  const linkedAccount = accountOptions.find((a) => a.id === row.accountId);
 
   function handleDelete() {
     const fd = new FormData();
@@ -90,6 +103,7 @@ function BudgetRow({ row }: { row: BudgetStatus }) {
     category: row.category,
     monthlyLimit: row.monthlyLimit,
     currency: row.baseCurrency,
+    accountId: row.accountId,
     notes: row.notes,
   };
 
@@ -102,7 +116,7 @@ function BudgetRow({ row }: { row: BudgetStatus }) {
         className="min-w-0 flex-1 space-y-2 block"
       >
         <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center gap-2 min-w-0 flex-wrap">
             <span className="font-medium truncate">{row.category}</span>
             <span
               className={
@@ -111,6 +125,14 @@ function BudgetRow({ row }: { row: BudgetStatus }) {
             >
               {row.percentUsed.toFixed(0)}%
             </span>
+            {linkedAccount ? (
+              <span
+                className="text-[10px] font-mono text-muted-foreground"
+                title="This budget only counts spending on this account"
+              >
+                · {linkedAccount.name}
+              </span>
+            ) : null}
             <ChevronRight className="size-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>
           <div className="text-right shrink-0">
@@ -191,6 +213,7 @@ function BudgetRow({ row }: { row: BudgetStatus }) {
         budget={editable}
         open={editOpen}
         onOpenChange={setEditOpen}
+        accountOptions={accountOptions}
       />
     </div>
   );
@@ -206,6 +229,7 @@ export function BudgetsManager({
   oneTimeExpensesThisMonth,
   liquidCash,
   monthsRunway,
+  accountOptions = [],
 }: BudgetsManagerProps) {
   const overallPct =
     totalLimit > 0 ? (totalSpent / totalLimit) * 100 : 0;
@@ -280,7 +304,10 @@ export function BudgetsManager({
         <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
           By category
         </h2>
-        <AddBudgetDialog baseCurrency={baseCurrency} />
+        <AddBudgetDialog
+          baseCurrency={baseCurrency}
+          accountOptions={accountOptions}
+        />
       </div>
 
       {rows.length === 0 ? (
@@ -293,7 +320,11 @@ export function BudgetsManager({
       ) : (
         <div className="space-y-2">
           {rows.map((r) => (
-            <BudgetRow key={r.id} row={r} />
+            <BudgetRow
+              key={r.id}
+              row={r}
+              accountOptions={accountOptions}
+            />
           ))}
         </div>
       )}

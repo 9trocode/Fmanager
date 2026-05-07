@@ -870,28 +870,36 @@ export function FlowsManager({
             </Link>
           </div>
           <div className="space-y-2">
-            {recentTransactions
-              .filter((t) => {
-                if (t.kind === "transfer") return false;
+            {(() => {
+              // Truly one-off transactions: not a transfer, not auto-posted
+              // from a recurring flow (flowId == null). Without the flowId
+              // filter, every monthly auto-accrual would clutter this list
+              // with its own row even though it's already represented by
+              // its parent flow up above.
+              const truly = recentTransactions.filter(
+                (t) => t.kind !== "transfer" && t.flowId == null,
+              );
+              const visible = truly.filter((t) => {
                 if (tab === "expense") return t.kind === "expense";
                 if (tab === "income") return t.kind === "income";
                 return true;
-              })
-              .slice(0, 8)
-              .map((t) => (
+              });
+              if (truly.length === 0) {
+                return (
+                  <p className="text-xs text-muted-foreground italic px-1">
+                    No one-time transactions yet. Click{" "}
+                    <span className="font-mono">One-time</span> above to log one.
+                  </p>
+                );
+              }
+              return visible.slice(0, 8).map((t) => (
                 <TransactionItem
                   key={t.id}
                   transaction={t}
                   accounts={accountOptions}
                 />
-              ))}
-            {recentTransactions.filter((t) => t.kind !== "transfer").length ===
-            0 ? (
-              <p className="text-xs text-muted-foreground italic px-1">
-                No one-time transactions yet. Click{" "}
-                <span className="font-mono">One-time</span> above to log one.
-              </p>
-            ) : null}
+              ));
+            })()}
           </div>
         </div>
       ) : null}

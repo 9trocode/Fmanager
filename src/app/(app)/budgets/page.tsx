@@ -1,6 +1,10 @@
 import { PageHeader } from "@/components/app/page-header";
 import { BudgetsManager } from "@/components/app/budgets-manager";
-import { getBaseCurrency, listTransactions } from "@/lib/db/queries";
+import {
+  getBaseCurrency,
+  listAccounts,
+  listTransactions,
+} from "@/lib/db/queries";
 import {
   computeBudgetStatus,
   computeCashRunway,
@@ -21,16 +25,23 @@ export default async function BudgetsPage() {
   const lastDay = new Date(y, m, 0).getDate();
   const monthTo = `${y}-${String(m).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
 
-  const [summary, cashFlow, runway, monthExpenses] = await Promise.all([
-    computeBudgetStatus(baseCurrency),
-    computeMonthlyCashFlow(baseCurrency),
-    computeCashRunway(baseCurrency),
-    listTransactions({
-      kind: "expense",
-      dateFrom: monthFrom,
-      dateTo: monthTo,
-    }),
-  ]);
+  const [summary, cashFlow, runway, monthExpenses, accounts] =
+    await Promise.all([
+      computeBudgetStatus(baseCurrency),
+      computeMonthlyCashFlow(baseCurrency),
+      computeCashRunway(baseCurrency),
+      listTransactions({
+        kind: "expense",
+        dateFrom: monthFrom,
+        dateTo: monthTo,
+      }),
+      listAccounts(),
+    ]);
+  const accountOptions = accounts.map((a) => ({
+    id: a.id,
+    name: a.name,
+    currency: a.currency,
+  }));
 
   // Split MTD expenses into "covered by a budget" vs "one-time / unbudgeted".
   // - In-budget spend is already reflected in `summary.totalSpent`, so the
@@ -64,6 +75,7 @@ export default async function BudgetsPage() {
         oneTimeExpensesThisMonth={oneTimeExpenses}
         liquidCash={runway.liquidCash}
         monthsRunway={runway.monthsRunway}
+        accountOptions={accountOptions}
       />
     </>
   );
