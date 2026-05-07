@@ -93,7 +93,12 @@ export function AdvisorChat() {
           placeholder="Ask the advisor..."
           disabled={pending}
         />
-        <Button type="submit" size="icon" disabled={pending || !input.trim()}>
+        <Button
+          type="submit"
+          size="icon"
+          disabled={pending || !input.trim()}
+          loading={pending}
+        >
           <Send className="size-4" />
         </Button>
       </form>

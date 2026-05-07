@@ -48,7 +48,7 @@ export function AddGrantDialog() {
         >
           <GrantFields />
           <DialogFooter>
-            <Button type="submit" disabled={pending}>
+            <Button type="submit" disabled={pending} loading={pending}>
               {pending ? "Saving…" : "Add grant"}
             </Button>
           </DialogFooter>

@@ -48,7 +48,7 @@ export function AdminDataTools() {
     <div className="flex flex-wrap items-center gap-2">
       <AlertDialog>
         <AlertDialogTrigger asChild>
-          <Button variant="outline" size="sm" disabled={pending}>
+          <Button variant="outline" size="sm" disabled={pending} loading={pending}>
             <Sparkles className="size-4" />
             {pending ? "Working…" : "Seed sample data"}
           </Button>
@@ -84,7 +84,7 @@ export function AdminDataTools() {
           <Button
             variant="outline"
             size="sm"
-            disabled={pending}
+            disabled={pending} loading={pending}
             className="text-destructive"
           >
             <Trash2 className="size-4" />

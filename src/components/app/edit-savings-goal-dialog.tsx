@@ -73,7 +73,7 @@ export function EditSavingsGoalDialog({
           <input type="hidden" name="id" value={goal.id} />
           <SavingsGoalFields defaults={goal} accountOptions={accountOptions} />
           <DialogFooter>
-            <Button type="submit" disabled={pending}>
+            <Button type="submit" disabled={pending} loading={pending}>
               {pending ? "Saving…" : "Save"}
             </Button>
           </DialogFooter>

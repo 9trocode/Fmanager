@@ -280,7 +280,7 @@ function AddFlowDialog({
             accountOptions={accountOptions}
           />
           <DialogFooter>
-            <Button type="submit" disabled={pending}>
+            <Button type="submit" disabled={pending} loading={pending}>
               {pending ? "Saving…" : "Add"}
             </Button>
           </DialogFooter>
@@ -322,7 +322,7 @@ function EditFlowDialog({
           <input type="hidden" name="id" value={flow.id} />
           <FlowFields defaults={flow} accountOptions={accountOptions} />
           <DialogFooter>
-            <Button type="submit" disabled={pending}>
+            <Button type="submit" disabled={pending} loading={pending}>
               {pending ? "Saving…" : "Save"}
             </Button>
           </DialogFooter>

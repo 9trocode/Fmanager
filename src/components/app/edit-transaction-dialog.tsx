@@ -46,7 +46,7 @@ export function EditTransactionDialog({
           <input type="hidden" name="id" value={transaction.id} />
           <TransactionFields accounts={accounts} defaults={transaction} />
           <DialogFooter>
-            <Button type="submit" disabled={pending}>
+            <Button type="submit" disabled={pending} loading={pending}>
               {pending ? "Saving…" : "Save changes"}
             </Button>
           </DialogFooter>

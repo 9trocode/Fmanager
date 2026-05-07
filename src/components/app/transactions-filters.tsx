@@ -143,7 +143,7 @@ export function TransactionsFilters({
             variant="ghost"
             size="icon"
             className="size-9 shrink-0"
-            disabled={pending}
+            disabled={pending} loading={pending}
             onClick={() =>
               update({
                 account: undefined,

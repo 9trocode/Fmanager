@@ -79,7 +79,7 @@ export function AddSnapshotDialog({
             </div>
           </div>
           <DialogFooter>
-            <Button type="submit" disabled={pending}>
+            <Button type="submit" disabled={pending} loading={pending}>
               {pending ? "Saving…" : "Save snapshot"}
             </Button>
           </DialogFooter>

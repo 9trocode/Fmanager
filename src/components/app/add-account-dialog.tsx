@@ -55,7 +55,7 @@ export function AddAccountDialog({
         >
           <AccountFields showOpening />
           <DialogFooter>
-            <Button type="submit" disabled={pending}>
+            <Button type="submit" disabled={pending} loading={pending}>
               {pending ? "Creating…" : "Create account"}
             </Button>
           </DialogFooter>

@@ -63,7 +63,7 @@ export function BaseCurrencyForm({ current }: { current: string }) {
           </SelectContent>
         </Select>
       </div>
-      <Button type="submit" disabled={pending}>
+      <Button type="submit" disabled={pending} loading={pending}>
         {pending ? "Saving…" : "Save"}
       </Button>
     </form>
@@ -191,7 +191,7 @@ export function AdvisorKeyForm({
           </a>
         </p>
       </div>
-      <Button type="submit" disabled={pending}>
+      <Button type="submit" disabled={pending} loading={pending}>
         {pending ? "Saving…" : keySet ? "Replace" : "Save"}
       </Button>
     </form>

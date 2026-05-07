@@ -64,7 +64,7 @@ export function EditAccountDialog({
           <input type="hidden" name="id" value={account.id} />
           <AccountFields defaults={account} />
           <DialogFooter>
-            <Button type="submit" disabled={pending}>
+            <Button type="submit" disabled={pending} loading={pending}>
               {pending ? "Saving…" : "Save"}
             </Button>
           </DialogFooter>

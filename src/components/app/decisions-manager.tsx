@@ -123,7 +123,7 @@ function DecisionForm({
         />
       </div>
       <DialogFooter>
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" disabled={pending} loading={pending}>
           {pending ? "Saving…" : submitLabel}
         </Button>
       </DialogFooter>
@@ -233,7 +233,7 @@ function MarkDecidedDialog({
             />
           </div>
           <DialogFooter>
-            <Button type="submit" disabled={pending}>
+            <Button type="submit" disabled={pending} loading={pending}>
               <CheckCircle2 className="size-4" />
               Mark decided
             </Button>
@@ -402,7 +402,7 @@ function SeedButton() {
     <Button
       variant="outline"
       onClick={() => startTransition(() => seedStarterDecisions().then(() => {}))}
-      disabled={pending}
+      disabled={pending} loading={pending}
     >
       <Sparkles className="size-4" />
       {pending ? "Seeding…" : "Use suggested starter decisions"}

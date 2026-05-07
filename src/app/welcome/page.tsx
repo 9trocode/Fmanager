@@ -15,6 +15,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/app/submit-button";
 import { Badge } from "@/components/ui/badge";
 
 // Reads admin/auth state from DB + cookies on every request.
@@ -197,9 +198,9 @@ async function Step0Setup({ error }: { error: string | null }) {
               <ArrowLeft className="size-4" /> Back to landing
             </Link>
           </Button>
-          <Button type="submit" size="lg">
+          <SubmitButton size="lg" loadingText="Creating…">
             Create account <ArrowRight className="size-4" />
-          </Button>
+          </SubmitButton>
         </div>
       </form>
     </div>
@@ -323,14 +324,14 @@ function Step1() {
       </div>
       <div className="mt-8 flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-3">
         <form action={welcomeSeedAndComplete} className="flex-1">
-          <Button
-            type="submit"
+          <SubmitButton
             variant="outline"
             className="w-full"
             size="lg"
+            loadingText="Seeding demo…"
           >
             <Sprout className="size-4" /> Just give me a demo
-          </Button>
+          </SubmitButton>
         </form>
         <Button asChild size="lg" className="flex-1">
           <Link href="/welcome?step=2">
@@ -601,9 +602,9 @@ function Step5() {
               <ArrowLeft className="size-4" /> Back
             </Link>
           </Button>
-          <Button type="submit" size="lg">
+          <SubmitButton size="lg" loadingText="Finishing…">
             <CheckCircle2 className="size-4" /> Open dashboard
-          </Button>
+          </SubmitButton>
         </div>
       </form>
     </StepShell>
@@ -630,9 +631,9 @@ function StepNav({
       </Button>
       <div className="flex items-center gap-2">
         {extraButton}
-        <Button type="submit" size="lg" variant={submitVariant}>
+        <SubmitButton size="lg" variant={submitVariant} loadingText="Saving…">
           {submitLabel} <ArrowRight className="size-4" />
-        </Button>
+        </SubmitButton>
       </div>
     </div>
   );

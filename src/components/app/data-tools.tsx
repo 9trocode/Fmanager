@@ -72,7 +72,7 @@ function ExportButton() {
           }
         });
       }}
-      disabled={pending}
+      disabled={pending} loading={pending}
     >
       <Download className="size-4" />
       {pending ? "Preparing…" : "Export full backup (.json)"}

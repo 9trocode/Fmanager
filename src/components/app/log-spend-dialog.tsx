@@ -135,8 +135,13 @@ export function LogSpendDialog({
           </div>
 
           <DialogFooter>
-            <Button type="submit" disabled={pending || sortedAccounts.length === 0}>
-              {pending ? "Saving…" : "Log"}
+            <Button
+              type="submit"
+              disabled={pending || sortedAccounts.length === 0}
+              loading={pending}
+              loadingText="Logging…"
+            >
+              Log
             </Button>
           </DialogFooter>
         </form>

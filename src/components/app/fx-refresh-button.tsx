@@ -15,7 +15,7 @@ export function FxRefreshButton({ base }: { base: string }) {
     <Button
       variant="outline"
       size="sm"
-      disabled={pending}
+      disabled={pending} loading={pending}
       onClick={() => {
         startTransition(async () => {
           try {

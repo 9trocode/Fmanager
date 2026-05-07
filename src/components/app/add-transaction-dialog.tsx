@@ -70,7 +70,7 @@ export function AddTransactionDialog({
             defaultAccountId={defaultAccountId}
           />
           <DialogFooter>
-            <Button type="submit" disabled={pending}>
+            <Button type="submit" disabled={pending} loading={pending}>
               {pending ? "Saving…" : "Save transaction"}
             </Button>
           </DialogFooter>

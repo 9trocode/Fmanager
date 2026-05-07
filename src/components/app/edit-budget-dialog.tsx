@@ -113,7 +113,7 @@ export function EditBudgetDialog({
             />
           </div>
           <DialogFooter>
-            <Button type="submit" disabled={pending}>
+            <Button type="submit" disabled={pending} loading={pending}>
               {pending ? "Saving…" : "Save"}
             </Button>
           </DialogFooter>

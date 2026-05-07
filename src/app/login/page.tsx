@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/app/submit-button";
 import {
   Card,
   CardContent,
@@ -99,9 +100,13 @@ export default async function LoginPage({
                   </AlertDescription>
                 </Alert>
               ) : null}
-              <Button type="submit" className="w-full" size="lg">
+              <SubmitButton
+                className="w-full"
+                size="lg"
+                loadingText="Signing in…"
+              >
                 Sign in
-              </Button>
+              </SubmitButton>
             </form>
           </CardContent>
         </Card>

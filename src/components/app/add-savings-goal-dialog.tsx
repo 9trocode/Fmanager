@@ -57,7 +57,7 @@ export function AddSavingsGoalDialog({
         >
           <SavingsGoalFields accountOptions={accountOptions} />
           <DialogFooter>
-            <Button type="submit" disabled={pending}>
+            <Button type="submit" disabled={pending} loading={pending}>
               {pending ? "Saving…" : "Add goal"}
             </Button>
           </DialogFooter>
