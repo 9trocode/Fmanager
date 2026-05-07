@@ -58,3 +58,51 @@ export async function convert(
   const rate = await getRate(from, to);
   return amount * rate;
 }
+
+/**
+ * Pre-resolves a set of (from, to) currency pairs in parallel and
+ * returns a Map keyed by `${from}>${to}` so callers can do synchronous
+ * lookups inside tight loops.
+ *
+ * Why: aggregators like `computeBudgetStatus` and the chat preamble
+ * iterate hundreds of rows and call `convert()` per row. Even though
+ * `getRate` is `react/cache`-memoised, the first call for each pair
+ * still hits SQLite and every subsequent call still pays a microtask
+ * hop through React's cache wrapper. Resolving the (small) set of
+ * unique pairs once up front collapses the loop body to a synchronous
+ * `amount × rate` multiply.
+ */
+export async function prefetchRates(
+  pairs: Iterable<readonly [string, string]>,
+): Promise<RateMap> {
+  const unique = new Set<string>();
+  const list: Array<readonly [string, string]> = [];
+  for (const [from, to] of pairs) {
+    if (from === to) continue;
+    const k = `${from}>${to}`;
+    if (unique.has(k)) continue;
+    unique.add(k);
+    list.push([from, to] as const);
+  }
+  const rates = await Promise.all(list.map(([f, t]) => getRate(f, t)));
+  const map = new Map<string, number>();
+  list.forEach(([f, t], i) => map.set(`${f}>${t}`, rates[i]));
+  return new RateMap(map);
+}
+
+/**
+ * Synchronous rate lookup backed by a prefetched map. Falls back to 1
+ * for missing pairs — callers should ensure `prefetchRates` was called
+ * with every pair they'll use, otherwise an unresolved currency mismatch
+ * silently passes through unconverted.
+ */
+export class RateMap {
+  constructor(private readonly map: Map<string, number>) {}
+  rate(from: string, to: string): number {
+    if (from === to) return 1;
+    return this.map.get(`${from}>${to}`) ?? 1;
+  }
+  convert(amount: number, from: string, to: string): number {
+    return amount * this.rate(from, to);
+  }
+}

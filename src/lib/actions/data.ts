@@ -86,18 +86,6 @@ export async function importAllData(formData: FormData) {
     throw new Error("JSON must be an object.");
   }
 
-  // Wipe in dependency order (children before parents).
-  await db.delete(schema.transactions);
-  await db.delete(schema.valueSnapshots);
-  await db.delete(schema.equityGrants);
-  await db.delete(schema.accounts);
-  await db.delete(schema.decisions);
-  await db.delete(schema.recurringFlows);
-  await db.delete(schema.budgets);
-  await db.delete(schema.savingsGoals);
-  await db.delete(schema.fxRates);
-  await db.delete(schema.settings);
-
   // Insert in dependency order (parents before children).
   const counts = {
     accounts: 0,
@@ -112,66 +100,83 @@ export async function importAllData(formData: FormData) {
     fxRates: 0,
   };
 
-  if (Array.isArray(parsed.accounts) && parsed.accounts.length) {
-    await db
-      .insert(schema.accounts)
-      .values(parsed.accounts as (typeof schema.accounts.$inferInsert)[]);
-    counts.accounts = parsed.accounts.length;
-  }
-  if (Array.isArray(parsed.snapshots) && parsed.snapshots.length) {
-    await db
-      .insert(schema.valueSnapshots)
-      .values(parsed.snapshots as (typeof schema.valueSnapshots.$inferInsert)[]);
-    counts.snapshots = parsed.snapshots.length;
-  }
-  if (Array.isArray(parsed.grants) && parsed.grants.length) {
-    await db
-      .insert(schema.equityGrants)
-      .values(parsed.grants as (typeof schema.equityGrants.$inferInsert)[]);
-    counts.grants = parsed.grants.length;
-  }
-  if (Array.isArray(parsed.transactions) && parsed.transactions.length) {
-    await db
-      .insert(schema.transactions)
-      .values(parsed.transactions as (typeof schema.transactions.$inferInsert)[]);
-    counts.transactions = parsed.transactions.length;
-  }
-  if (Array.isArray(parsed.flows) && parsed.flows.length) {
-    await db
-      .insert(schema.recurringFlows)
-      .values(parsed.flows as (typeof schema.recurringFlows.$inferInsert)[]);
-    counts.flows = parsed.flows.length;
-  }
-  if (Array.isArray(parsed.budgets) && parsed.budgets.length) {
-    await db
-      .insert(schema.budgets)
-      .values(parsed.budgets as (typeof schema.budgets.$inferInsert)[]);
-    counts.budgets = parsed.budgets.length;
-  }
-  if (Array.isArray(parsed.savings) && parsed.savings.length) {
-    await db
-      .insert(schema.savingsGoals)
-      .values(parsed.savings as (typeof schema.savingsGoals.$inferInsert)[]);
-    counts.savings = parsed.savings.length;
-  }
-  if (Array.isArray(parsed.decisions) && parsed.decisions.length) {
-    await db
-      .insert(schema.decisions)
-      .values(parsed.decisions as (typeof schema.decisions.$inferInsert)[]);
-    counts.decisions = parsed.decisions.length;
-  }
-  if (Array.isArray(parsed.fxRates) && parsed.fxRates.length) {
-    await db
-      .insert(schema.fxRates)
-      .values(parsed.fxRates as (typeof schema.fxRates.$inferInsert)[]);
-    counts.fxRates = parsed.fxRates.length;
-  }
-  if (Array.isArray(parsed.settings) && parsed.settings.length) {
-    await db
-      .insert(schema.settings)
-      .values(parsed.settings as (typeof schema.settings.$inferInsert)[]);
-    counts.settings = parsed.settings.length;
-  }
+  // Wipe + reload atomically. Without the transaction, a failure midway
+  // through the inserts (FK violation, malformed row) would leave the
+  // user with a half-wiped DB. Also turns ~20 individual fsyncs into one.
+  await db.transaction(async (tx) => {
+    // Wipe in dependency order (children before parents).
+    await tx.delete(schema.transactions);
+    await tx.delete(schema.valueSnapshots);
+    await tx.delete(schema.equityGrants);
+    await tx.delete(schema.accounts);
+    await tx.delete(schema.decisions);
+    await tx.delete(schema.recurringFlows);
+    await tx.delete(schema.budgets);
+    await tx.delete(schema.savingsGoals);
+    await tx.delete(schema.fxRates);
+    await tx.delete(schema.settings);
+
+    if (Array.isArray(parsed.accounts) && parsed.accounts.length) {
+      await tx
+        .insert(schema.accounts)
+        .values(parsed.accounts as (typeof schema.accounts.$inferInsert)[]);
+      counts.accounts = parsed.accounts.length;
+    }
+    if (Array.isArray(parsed.snapshots) && parsed.snapshots.length) {
+      await tx
+        .insert(schema.valueSnapshots)
+        .values(parsed.snapshots as (typeof schema.valueSnapshots.$inferInsert)[]);
+      counts.snapshots = parsed.snapshots.length;
+    }
+    if (Array.isArray(parsed.grants) && parsed.grants.length) {
+      await tx
+        .insert(schema.equityGrants)
+        .values(parsed.grants as (typeof schema.equityGrants.$inferInsert)[]);
+      counts.grants = parsed.grants.length;
+    }
+    if (Array.isArray(parsed.transactions) && parsed.transactions.length) {
+      await tx
+        .insert(schema.transactions)
+        .values(parsed.transactions as (typeof schema.transactions.$inferInsert)[]);
+      counts.transactions = parsed.transactions.length;
+    }
+    if (Array.isArray(parsed.flows) && parsed.flows.length) {
+      await tx
+        .insert(schema.recurringFlows)
+        .values(parsed.flows as (typeof schema.recurringFlows.$inferInsert)[]);
+      counts.flows = parsed.flows.length;
+    }
+    if (Array.isArray(parsed.budgets) && parsed.budgets.length) {
+      await tx
+        .insert(schema.budgets)
+        .values(parsed.budgets as (typeof schema.budgets.$inferInsert)[]);
+      counts.budgets = parsed.budgets.length;
+    }
+    if (Array.isArray(parsed.savings) && parsed.savings.length) {
+      await tx
+        .insert(schema.savingsGoals)
+        .values(parsed.savings as (typeof schema.savingsGoals.$inferInsert)[]);
+      counts.savings = parsed.savings.length;
+    }
+    if (Array.isArray(parsed.decisions) && parsed.decisions.length) {
+      await tx
+        .insert(schema.decisions)
+        .values(parsed.decisions as (typeof schema.decisions.$inferInsert)[]);
+      counts.decisions = parsed.decisions.length;
+    }
+    if (Array.isArray(parsed.fxRates) && parsed.fxRates.length) {
+      await tx
+        .insert(schema.fxRates)
+        .values(parsed.fxRates as (typeof schema.fxRates.$inferInsert)[]);
+      counts.fxRates = parsed.fxRates.length;
+    }
+    if (Array.isArray(parsed.settings) && parsed.settings.length) {
+      await tx
+        .insert(schema.settings)
+        .values(parsed.settings as (typeof schema.settings.$inferInsert)[]);
+      counts.settings = parsed.settings.length;
+    }
+  });
 
   revalidatePath("/", "layout");
   return counts;

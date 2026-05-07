@@ -57,6 +57,13 @@
       "when": 1778144243424,
       "tag": "0007_same_iceman",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1778167064595,
+      "tag": "0008_violet_fantastic_four",
+      "breakpoints": true
     }
   ]
 }

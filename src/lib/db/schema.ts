@@ -364,6 +364,13 @@ export const transactions = sqliteTable(
       t.accountId,
       t.occurredAt,
     ),
+    // Enforces flow-accrual idempotency: at most one auto-posted tx
+    // per (flow, occurred_at) pair. Manual transactions (flow_id null)
+    // are unaffected via the partial WHERE clause. Lets the accruer
+    // crash + retry without double-posting periods that already landed.
+    flowOccurredUniq: uniqueIndex("transactions_flow_occurred_uniq")
+      .on(t.flowId, t.occurredAt)
+      .where(sql`${t.flowId} IS NOT NULL`),
   }),
 );
 

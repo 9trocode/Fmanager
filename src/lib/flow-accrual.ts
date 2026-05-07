@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { localToday, localYmd } from "@/lib/dates";
 
@@ -91,7 +91,28 @@ export async function accrueDueFlows(): Promise<{ posted: number }> {
       ),
     );
 
-  let posted = 0;
+  // Plan all the writes in pure JS first; commit them atomically below.
+  // Two reasons for the batch+transaction shape:
+  //  - Per-row INSERTs each pay a WAL fsync. A salary that's a year
+  //    late (24 catchup periods) × N flows used to be N·24 individual
+  //    commits. One bulk insert per flow + one transaction = ~one fsync.
+  //  - Atomicity. The pre-fix code could insert N period rows then
+  //    crash before the lastPostedAt UPDATE, double-posting on rerun.
+  //    The (flow_id, occurred_at) unique index now enforces idempotency
+  //    even across crash/retry, but the transaction ensures the
+  //    UPDATEs land iff the INSERTs did.
+  type Insert = typeof schema.transactions.$inferInsert;
+  type FlowUpdate = {
+    flowId: number;
+    lastPostedAt: string;
+    nextDueAt: string | null;
+  };
+  type Plan = {
+    seedLastPosted: number[]; // flow ids that just need lastPostedAt = today
+    inserts: Insert[];
+    updates: FlowUpdate[];
+  };
+  const plan: Plan = { seedLastPosted: [], inserts: [], updates: [] };
 
   for (const f of flows) {
     if (f.accountId == null) continue;
@@ -113,7 +134,7 @@ export async function accrueDueFlows(): Promise<{ posted: number }> {
       let safety = 0;
       while (safety < MAX_CATCHUP_PERIODS && dueDate <= todayDate) {
         const occurredAt = localYmd(dueDate);
-        await db.insert(schema.transactions).values({
+        plan.inserts.push({
           kind: f.kind,
           amount: f.amount,
           currency: f.currency,
@@ -123,44 +144,36 @@ export async function accrueDueFlows(): Promise<{ posted: number }> {
           flowId: f.id,
           notes: f.notes ?? `Auto-accrued from ${f.name}`,
         });
-        posted += 1;
         mostRecentPosted = occurredAt;
         dueDate = addCadence(dueDate, f.cadence);
         nextDueAfterLoop = localYmd(dueDate);
         safety += 1;
       }
       if (mostRecentPosted) {
-        await db
-          .update(schema.recurringFlows)
-          .set({
-            lastPostedAt: mostRecentPosted,
-            nextDueAt: nextDueAfterLoop,
-            updatedAt: new Date().toISOString(),
-          })
-          .where(eq(schema.recurringFlows.id, f.id));
+        plan.updates.push({
+          flowId: f.id,
+          lastPostedAt: mostRecentPosted,
+          nextDueAt: nextDueAfterLoop,
+        });
       }
       continue;
     }
 
     // Cadence-from-last fallback path.
-    let lastPosted = f.lastPostedAt ?? today;
-    let lastPostedDate = parseYmd(lastPosted);
-
     if (f.lastPostedAt == null) {
-      await db
-        .update(schema.recurringFlows)
-        .set({ lastPostedAt: today, updatedAt: new Date().toISOString() })
-        .where(eq(schema.recurringFlows.id, f.id));
+      plan.seedLastPosted.push(f.id);
       continue;
     }
 
+    let lastPosted = f.lastPostedAt;
+    let lastPostedDate = parseYmd(lastPosted);
     let safety = 0;
     while (safety < MAX_CATCHUP_PERIODS) {
       const nextDue = addCadence(lastPostedDate, f.cadence);
       if (nextDue > todayDate) break;
 
       const occurredAt = localYmd(nextDue);
-      await db.insert(schema.transactions).values({
+      plan.inserts.push({
         kind: f.kind,
         amount: f.amount,
         currency: f.currency,
@@ -170,19 +183,58 @@ export async function accrueDueFlows(): Promise<{ posted: number }> {
         flowId: f.id,
         notes: f.notes ?? `Auto-accrued from ${f.name}`,
       });
-      posted += 1;
       lastPostedDate = nextDue;
       lastPosted = occurredAt;
       safety += 1;
     }
 
     if (safety > 0) {
-      await db
-        .update(schema.recurringFlows)
-        .set({ lastPostedAt: lastPosted, updatedAt: new Date().toISOString() })
-        .where(eq(schema.recurringFlows.id, f.id));
+      plan.updates.push({
+        flowId: f.id,
+        lastPostedAt: lastPosted,
+        nextDueAt: null,
+      });
     }
   }
 
-  return { posted };
+  if (
+    plan.inserts.length === 0 &&
+    plan.updates.length === 0 &&
+    plan.seedLastPosted.length === 0
+  ) {
+    return { posted: 0 };
+  }
+
+  const nowIso = new Date().toISOString();
+
+  await db.transaction(async (tx) => {
+    if (plan.inserts.length > 0) {
+      // onConflictDoNothing leans on the partial unique index
+      // (flow_id, occurred_at) WHERE flow_id IS NOT NULL added in
+      // migration 0008. If the same period was posted by an earlier
+      // (crashed) run, this is a no-op for that row.
+      await tx
+        .insert(schema.transactions)
+        .values(plan.inserts)
+        .onConflictDoNothing();
+    }
+    for (const u of plan.updates) {
+      await tx
+        .update(schema.recurringFlows)
+        .set({
+          lastPostedAt: u.lastPostedAt,
+          ...(u.nextDueAt != null ? { nextDueAt: u.nextDueAt } : {}),
+          updatedAt: nowIso,
+        })
+        .where(eq(schema.recurringFlows.id, u.flowId));
+    }
+    if (plan.seedLastPosted.length > 0) {
+      await tx
+        .update(schema.recurringFlows)
+        .set({ lastPostedAt: today, updatedAt: nowIso })
+        .where(inArray(schema.recurringFlows.id, plan.seedLastPosted));
+    }
+  });
+
+  return { posted: plan.inserts.length };
 }

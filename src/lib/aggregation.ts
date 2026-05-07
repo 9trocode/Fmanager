@@ -8,7 +8,7 @@ import {
   listTransactions,
   listTransactionsBetween,
 } from "@/lib/db/queries";
-import { convert } from "@/lib/fx";
+import { prefetchRates } from "@/lib/fx";
 import { isLiability } from "@/lib/account-types";
 import { monthlyEquivalent } from "@/lib/flows";
 import {
@@ -91,11 +91,21 @@ export const computeNetWorth = cache(async function computeNetWorthImpl(
 
   let hasData = false;
 
+  // Prefetch every (currency → baseCurrency) rate in parallel before
+  // walking accounts/grants. Without this, each row in the loop awaits
+  // its own `getRate` call — fine when cached, but the first uncached
+  // call per pair serialises through SQLite. Multi-currency dashboards
+  // would do N round-trips back-to-back instead of all at once.
+  const rates = await prefetchRates([
+    ...accounts.map((a) => [a.currency, baseCurrency] as const),
+    ...grants.map((g) => [g.currency, baseCurrency] as const),
+  ]);
+
   for (const a of accounts) {
     if (a.effectiveValue == null) continue;
     hasData = true;
     const signed = isLiability(a.type) ? -a.effectiveValue : a.effectiveValue;
-    const inBase = await convert(signed, a.currency, baseCurrency);
+    const inBase = rates.convert(signed, a.currency, baseCurrency);
     for (const s of SCENARIOS) {
       byCategory[s][a.type] += inBase;
       addCurrency(s, a.currency, signed, inBase);
@@ -108,7 +118,7 @@ export const computeNetWorth = cache(async function computeNetWorthImpl(
     for (const s of SCENARIOS) {
       const value = equityValueForScenario(g, s);
       if (value === 0) continue;
-      const inBase = await convert(value, g.currency, baseCurrency);
+      const inBase = rates.convert(value, g.currency, baseCurrency);
       byCategory[s].grant += inBase;
       addCurrency(s, g.currency, value, inBase);
       totals[s] += inBase;
@@ -167,12 +177,16 @@ export const computeThisMonthActuals = cache(async function computeThisMonthActu
 
   const txs = await listTransactionsBetween(start, end);
 
+  const rates = await prefetchRates(
+    txs.map((t) => [t.currency, baseCurrency] as const),
+  );
+
   let income = 0;
   let expenses = 0;
   let count = 0;
   for (const t of txs) {
     if (t.kind === "transfer") continue;
-    const inBase = await convert(t.amount, t.currency, baseCurrency);
+    const inBase = rates.convert(t.amount, t.currency, baseCurrency);
     if (t.kind === "income") income += inBase;
     else expenses += inBase;
     count++;
@@ -215,9 +229,12 @@ export const computeMonthlyCashFlow = cache(async function computeMonthlyCashFlo
     net: 0,
     byCategory: { income: {}, expense: {} },
   };
+  const rates = await prefetchRates(
+    flows.map((f) => [f.currency, baseCurrency] as const),
+  );
   for (const f of flows) {
     const monthly = monthlyEquivalent(f.amount, f.cadence);
-    const inBase = await convert(monthly, f.currency, baseCurrency);
+    const inBase = rates.convert(monthly, f.currency, baseCurrency);
     const cat = f.category ?? "Other";
     if (f.kind === "income") {
       result.income += inBase;
@@ -374,6 +391,16 @@ export const computeBudgetStatus = cache(async function computeBudgetStatusImpl(
     dateTo: to,
   });
 
+  // Pre-resolve every rate the nested loop will need. Without this,
+  // the original code awaited `convert()` once per (budget × tx) pair —
+  // 50 budgets × 500 txs is 25k microtask hops even with React's cache.
+  const pairs: Array<readonly [string, string]> = [];
+  for (const b of budgets) {
+    pairs.push([b.currency, baseCurrency] as const);
+    for (const t of monthTxs) pairs.push([t.currency, b.currency] as const);
+  }
+  const rates = await prefetchRates(pairs);
+
   const rows: BudgetStatus[] = [];
   let totalLimit = 0;
   let totalSpent = 0;
@@ -387,8 +414,7 @@ export const computeBudgetStatus = cache(async function computeBudgetStatusImpl(
       // transactions on that account. Null accountId means
       // "any account" (the original default behavior).
       if (b.accountId != null && t.accountId !== b.accountId) continue;
-      const inBudgetCcy = await convert(t.amount, t.currency, b.currency);
-      spent += inBudgetCcy;
+      spent += rates.convert(t.amount, t.currency, b.currency);
     }
     const remaining = b.monthlyLimit - spent;
     const percentUsed =
@@ -406,10 +432,8 @@ export const computeBudgetStatus = cache(async function computeBudgetStatusImpl(
     };
     rows.push(status);
     // Roll up totals into the overall base currency for the summary cards.
-    const limitInBase = await convert(b.monthlyLimit, b.currency, baseCurrency);
-    const spentInBase = await convert(spent, b.currency, baseCurrency);
-    totalLimit += limitInBase;
-    totalSpent += spentInBase;
+    totalLimit += rates.convert(b.monthlyLimit, b.currency, baseCurrency);
+    totalSpent += rates.convert(spent, b.currency, baseCurrency);
   }
 
   rows.sort((a, b) => b.percentUsed - a.percentUsed);

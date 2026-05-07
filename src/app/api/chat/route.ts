@@ -16,7 +16,7 @@ import {
   computeBudgetStatus,
 } from "@/lib/aggregation";
 import { getBaseCurrency, listRecentTransactions } from "@/lib/db/queries";
-import { convert } from "@/lib/fx";
+import { prefetchRates } from "@/lib/fx";
 import { formatMoney } from "@/lib/format";
 import { monthlyEquivalent } from "@/lib/flows";
 
@@ -67,13 +67,20 @@ async function buildSystemPrompt(): Promise<string> {
       .where(eq(schema.savingsGoals.archived, false)),
   ]);
 
-  // Aggregate transactions in base currency.
+  // One pass over the txs after resolving every (currency → base)
+  // rate up front. Was: two awaited convert() calls per tx (one for
+  // the by-category aggregate, one for the top-tx sort) — both now
+  // synchronous against a prefetched rate map.
+  const rates = await prefetchRates(
+    recentTxs.map((t) => [t.currency, baseCurrency] as const),
+  );
   let txIncomeBase = 0;
   let txExpenseBase = 0;
   const byCategory: Record<string, { income: number; expense: number }> = {};
+  const txWithBase: Array<{ t: (typeof recentTxs)[number]; baseAmount: number }> = [];
   for (const t of recentTxs) {
     if (t.kind === "transfer") continue;
-    const inBase = await convert(t.amount, t.currency, baseCurrency);
+    const inBase = rates.convert(t.amount, t.currency, baseCurrency);
     const cat = t.category ?? "Uncategorized";
     if (!byCategory[cat]) byCategory[cat] = { income: 0, expense: 0 };
     if (t.kind === "income") {
@@ -83,17 +90,9 @@ async function buildSystemPrompt(): Promise<string> {
       txExpenseBase += inBase;
       byCategory[cat].expense += inBase;
     }
+    txWithBase.push({ t, baseAmount: inBase });
   }
   const txNet = txIncomeBase - txExpenseBase;
-
-  const txWithBase = await Promise.all(
-    recentTxs
-      .filter((t) => t.kind !== "transfer")
-      .map(async (t) => ({
-        t,
-        baseAmount: await convert(t.amount, t.currency, baseCurrency),
-      })),
-  );
   const accountNameById = new Map(accounts.map((a) => [a.id, a.name]));
   const topTxs = txWithBase
     .sort((a, b) => Math.abs(b.baseAmount) - Math.abs(a.baseAmount))
