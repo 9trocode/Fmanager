@@ -28,6 +28,18 @@ function parseAmount(value: FormDataEntryValue | null): number {
   return n;
 }
 
+function parseOptionalNumber(value: FormDataEntryValue | null): number | null {
+  const raw = String(value ?? "").trim().replace(/,/g, "");
+  if (!raw) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+function parseOptionalInt(value: FormDataEntryValue | null): number | null {
+  const n = parseOptionalNumber(value);
+  return n != null ? Math.round(n) : null;
+}
+
 function parseDetailFields(formData: FormData) {
   return {
     accountNumber:
@@ -41,6 +53,15 @@ function parseDetailFields(formData: FormData) {
     contactPhone: String(formData.get("contact_phone") ?? "").trim() || null,
     statementsUrl:
       String(formData.get("statements_url") ?? "").trim() || null,
+    // Loan-only — null on every other account type. Form should only
+    // submit these when the type is "loan", but we accept them
+    // unconditionally; they're harmless for non-loans.
+    interestRatePct: parseOptionalNumber(formData.get("interest_rate_pct")),
+    originalPrincipal: parseOptionalNumber(
+      formData.get("original_principal"),
+    ),
+    loanTermMonths: parseOptionalInt(formData.get("loan_term_months")),
+    paymentDayOfMonth: parseOptionalInt(formData.get("payment_day_of_month")),
   };
 }
 

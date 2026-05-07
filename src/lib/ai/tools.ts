@@ -26,7 +26,7 @@ import { eq } from "drizzle-orm";
 
 const listAccountsTool = tool({
   description:
-    "List the user's accounts (id, name, type, currency). Use this BEFORE any create/edit/delete that needs an accountId, so you pass a real id rather than guessing.",
+    "List the user's accounts (id, name, type, currency, loan terms when applicable). Use this BEFORE any create/edit/delete that needs an accountId, so you pass a real id rather than guessing. For loan-type accounts, the response also includes interestRatePct, originalPrincipal, loanTermMonths, paymentDayOfMonth — so check there before asking the user for these.",
   inputSchema: z.object({}),
   execute: async () => {
     const accounts = await listAccounts();
@@ -36,6 +36,17 @@ const listAccountsTool = tool({
         name: a.name,
         type: a.type,
         currency: a.currency,
+        institution: a.institution,
+        // Loan-specific fields surfaced so the model doesn't ask for
+        // them when they're already on file.
+        ...(a.type === "loan"
+          ? {
+              interestRatePct: a.interestRatePct,
+              originalPrincipal: a.originalPrincipal,
+              loanTermMonths: a.loanTermMonths,
+              paymentDayOfMonth: a.paymentDayOfMonth,
+            }
+          : {}),
       })),
     };
   },
@@ -289,7 +300,7 @@ const createSavingsGoalTool = tool({
 
 const createAccountTool = tool({
   description:
-    "Add a new account (cash, brokerage, crypto, retirement, real estate, loan, etc.) with an opening balance.",
+    "Add a new account (cash, brokerage, crypto, retirement, real estate, loan, etc.) with an opening balance. For `type: 'loan'`, ALSO pass interestRatePct + originalPrincipal when known — without those the advisor can't price debt vs savings tradeoffs.",
   inputSchema: z.object({
     name: z.string().min(1),
     type: z.enum(accountTypes),
@@ -297,6 +308,20 @@ const createAccountTool = tool({
     openingBalance: z.number().default(0).describe("Today's balance."),
     institution: z.string().optional(),
     notes: z.string().optional(),
+    // Loan-only fields. Ignored for non-loan types.
+    interestRatePct: z
+      .number()
+      .min(0)
+      .max(100)
+      .optional()
+      .describe("Annual percentage rate, e.g. 22.5"),
+    originalPrincipal: z
+      .number()
+      .positive()
+      .optional()
+      .describe("What the loan started at, in account currency."),
+    loanTermMonths: z.number().int().positive().optional(),
+    paymentDayOfMonth: z.number().int().min(1).max(31).optional(),
   }),
   execute: async (input) => {
     const [acct] = await db
@@ -307,6 +332,14 @@ const createAccountTool = tool({
         currency: input.currency.toUpperCase(),
         institution: input.institution ?? null,
         notes: input.notes ?? null,
+        interestRatePct:
+          input.type === "loan" ? (input.interestRatePct ?? null) : null,
+        originalPrincipal:
+          input.type === "loan" ? (input.originalPrincipal ?? null) : null,
+        loanTermMonths:
+          input.type === "loan" ? (input.loanTermMonths ?? null) : null,
+        paymentDayOfMonth:
+          input.type === "loan" ? (input.paymentDayOfMonth ?? null) : null,
       })
       .returning();
     // Seed an opening snapshot so net worth picks it up immediately.
@@ -324,6 +357,34 @@ const createAccountTool = tool({
   },
 });
 
+const updateLoanTermsTool = tool({
+  description:
+    "Update the loan-specific fields on an existing loan account: interest rate, original principal, term, payment day. Use this when the user supplies these in conversation so future advice doesn't need to ask again.",
+  inputSchema: z.object({
+    accountId: z.number().int().positive(),
+    interestRatePct: z.number().min(0).max(100).optional(),
+    originalPrincipal: z.number().positive().optional(),
+    loanTermMonths: z.number().int().positive().optional(),
+    paymentDayOfMonth: z.number().int().min(1).max(31).optional(),
+  }),
+  execute: async (input) => {
+    const set: Record<string, unknown> = {
+      updatedAt: new Date().toISOString(),
+    };
+    if (input.interestRatePct != null) set.interestRatePct = input.interestRatePct;
+    if (input.originalPrincipal != null)
+      set.originalPrincipal = input.originalPrincipal;
+    if (input.loanTermMonths != null) set.loanTermMonths = input.loanTermMonths;
+    if (input.paymentDayOfMonth != null)
+      set.paymentDayOfMonth = input.paymentDayOfMonth;
+    await db
+      .update(schema.accounts)
+      .set(set)
+      .where(eq(schema.accounts.id, input.accountId));
+    return { ok: true };
+  },
+});
+
 export const advisorTools = {
   listAccounts: listAccountsTool,
   listBudgets: listBudgetsTool,
@@ -333,4 +394,5 @@ export const advisorTools = {
   createFlow: createFlowTool,
   createSavingsGoal: createSavingsGoalTool,
   createAccount: createAccountTool,
+  updateLoanTerms: updateLoanTermsTool,
 };

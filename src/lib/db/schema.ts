@@ -50,6 +50,19 @@ export const accounts = sqliteTable(
     loginUrl: text("login_url"),
     contactPhone: text("contact_phone"),
     statementsUrl: text("statements_url"),
+    /**
+     * Loan-only fields — populated when `type = "loan"`. Optional even
+     * for loans (the user might not know the rate yet) but the advisor
+     * needs them to give meaningful debt-vs-emergency-fund advice.
+     *
+     * Without these, the advisor can see "you have a NGN 700k loan" but
+     * can't price its cost of capital, so it asks the user for them
+     * conversationally — fine for a one-off, painful for a recurring chat.
+     */
+    interestRatePct: real("interest_rate_pct"),
+    originalPrincipal: real("original_principal"),
+    loanTermMonths: integer("loan_term_months"),
+    paymentDayOfMonth: integer("payment_day_of_month"),
     archived: integer("archived", { mode: "boolean" }).notNull().default(false),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

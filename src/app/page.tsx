@@ -43,12 +43,23 @@ export default async function LandingPage() {
     <div className="min-h-screen flex flex-col bg-background text-foreground">
       <Header authed={authed} />
       <main className="flex-1">
+        {/*
+          Section order, after a tightening pass:
+          - Hero (with three-scenario preview)
+          - DashboardPreview
+          - BudgetsPreview
+          - FeatureGrid (compressed)
+          - AdvisorPitch (chat + tool-call snapshot)
+          - SelfHostedPitch
+          - FinalCta
+          ScenarioDeepDive was redundant with the Hero scenario preview;
+          SmartCapture's content lives inline as a feature pill in
+          FeatureGrid now. Cuts ~600px of vertical scroll.
+        */}
         <Hero primaryCta={primaryCta} authed={authed} />
         <DashboardPreview />
-        <FeatureGrid />
         <BudgetsPreview />
-        <ScenarioDeepDive />
-        <SmartCapture />
+        <FeatureGrid />
         <AdvisorPitch />
         <SelfHostedPitch />
         <FinalCta primaryCta={primaryCta} />
@@ -371,7 +382,7 @@ function PreviewStat({
  */
 function BudgetsPreview() {
   return (
-    <section className="py-24 border-t border-border/60 bg-muted/20">
+    <section className="py-16 border-t border-border/60 bg-muted/20">
       <div className="max-w-5xl mx-auto px-6">
         <div className="grid md:grid-cols-2 gap-12 items-center">
           <div className="space-y-5">
@@ -652,7 +663,7 @@ function FeatureGrid() {
   return (
     <section
       id="features"
-      className="border-t border-border/60 bg-muted/20 py-24"
+      className="border-t border-border/60 bg-muted/20 py-16"
     >
       <div className="max-w-6xl mx-auto px-6 space-y-20">
         <div className="text-center max-w-2xl mx-auto space-y-3">
@@ -708,7 +719,7 @@ function FeatureGrid() {
 
 function ScenarioDeepDive() {
   return (
-    <section className="py-24 border-t border-border/60">
+    <section className="py-16 border-t border-border/60">
       <div className="max-w-5xl mx-auto px-6">
         <div className="grid md:grid-cols-2 gap-12 items-start">
           <div className="space-y-5">
@@ -780,7 +791,7 @@ function ScenarioDeepDive() {
 
 function SmartCapture() {
   return (
-    <section className="py-24 border-t border-border/60 bg-muted/20">
+    <section className="py-16 border-t border-border/60 bg-muted/20">
       <div className="max-w-5xl mx-auto px-6">
         <div className="grid md:grid-cols-2 gap-12 items-center">
           <div className="space-y-5 order-2 md:order-1">
@@ -852,7 +863,7 @@ function SmartCapture() {
 
 function AdvisorPitch() {
   return (
-    <section className="py-24 border-t border-border/60">
+    <section className="py-16 border-t border-border/60">
       <div className="max-w-5xl mx-auto px-6">
         <div className="space-y-12">
           <div className="text-center space-y-3 max-w-2xl mx-auto">
@@ -952,7 +963,7 @@ function SelfHostedPitch() {
   return (
     <section
       id="self-hosted"
-      className="py-24 border-t border-border/60 bg-muted/20"
+      className="py-16 border-t border-border/60 bg-muted/20"
     >
       <div className="max-w-5xl mx-auto px-6">
         <div className="grid md:grid-cols-2 gap-12 items-start">
@@ -1030,7 +1041,7 @@ function FinalCta({
   primaryCta: { href: string; label: string };
 }) {
   return (
-    <section className="py-24 border-t border-border/60">
+    <section className="py-16 border-t border-border/60">
       <div className="max-w-3xl mx-auto px-6 text-center space-y-6">
         <Briefcase className="size-10 mx-auto text-muted-foreground" />
         <h2 className="text-3xl md:text-4xl font-semibold tracking-tight text-balance">

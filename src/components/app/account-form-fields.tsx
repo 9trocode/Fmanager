@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
@@ -30,6 +31,11 @@ export type AccountFieldsValue = {
   loginUrl?: string | null;
   contactPhone?: string | null;
   statementsUrl?: string | null;
+  // Loan terms (only meaningful when type === "loan")
+  interestRatePct?: number | null;
+  originalPrincipal?: number | null;
+  loanTermMonths?: number | null;
+  paymentDayOfMonth?: number | null;
 };
 
 export function AccountFields({
@@ -39,6 +45,10 @@ export function AccountFields({
   defaults?: AccountFieldsValue;
   showOpening?: boolean;
 }) {
+  const [accountType, setAccountType] = useState<AccountType>(
+    defaults?.type ?? "cash",
+  );
+  const isLoan = accountType === "loan";
   return (
     <div className="space-y-4">
       <div className="space-y-1.5">
@@ -54,7 +64,16 @@ export function AccountFields({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="type">Type</Label>
-          <Select name="type" defaultValue={defaults?.type ?? "cash"}>
+          {/*
+            Hidden mirror so server actions get the value via FormData
+            even though Radix Select's `name` integration isn't always
+            reliable. Same pattern as the flow form.
+          */}
+          <input type="hidden" name="type" value={accountType} />
+          <Select
+            value={accountType}
+            onValueChange={(v) => setAccountType(v as AccountType)}
+          >
             <SelectTrigger id="type">
               <SelectValue />
             </SelectTrigger>
@@ -126,6 +145,82 @@ export function AccountFields({
           className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring resize-y"
         />
       </div>
+
+      {/*
+        Loan-only terms section. Only meaningful when type === "loan".
+        These power the advisor's debt-vs-emergency-fund recommendations
+        — without them the model has to ask conversationally for rate +
+        balance every time.
+      */}
+      {isLoan ? (
+        <>
+          <Separator className="my-2" />
+          <div className="space-y-3">
+            <div className="text-sm font-medium">Loan terms</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="interest_rate_pct">
+                  Interest rate (% APR)
+                </Label>
+                <Input
+                  id="interest_rate_pct"
+                  name="interest_rate_pct"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="100"
+                  defaultValue={defaults?.interestRatePct ?? ""}
+                  placeholder="e.g. 22.5"
+                  inputMode="decimal"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="original_principal">Original principal</Label>
+                <MoneyInput
+                  id="original_principal"
+                  name="original_principal"
+                  defaultValue={defaults?.originalPrincipal ?? null}
+                  placeholder="What the loan started at"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="loan_term_months">Term (months)</Label>
+                <Input
+                  id="loan_term_months"
+                  name="loan_term_months"
+                  type="number"
+                  step="1"
+                  min="1"
+                  defaultValue={defaults?.loanTermMonths ?? ""}
+                  placeholder="e.g. 24"
+                  inputMode="numeric"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="payment_day_of_month">
+                  Payment day (1–31)
+                </Label>
+                <Input
+                  id="payment_day_of_month"
+                  name="payment_day_of_month"
+                  type="number"
+                  step="1"
+                  min="1"
+                  max="31"
+                  defaultValue={defaults?.paymentDayOfMonth ?? ""}
+                  placeholder="Day of the month payment lands"
+                  inputMode="numeric"
+                />
+              </div>
+            </div>
+            <p className="text-[10px] text-muted-foreground leading-relaxed">
+              The advisor uses these to weigh paying the loan down vs.
+              building your emergency fund. All optional, but supplying
+              them means it can answer without asking you each time.
+            </p>
+          </div>
+        </>
+      ) : null}
 
       <Separator className="my-2" />
 

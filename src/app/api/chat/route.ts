@@ -146,7 +146,27 @@ async function buildSystemPrompt(): Promise<string> {
     "## Accounts",
     accounts.length
       ? accounts
-          .map((a) => `- #${a.id} ${a.name} (${a.type}, ${a.currency})`)
+          .map((a) => {
+            // For loan accounts, include the terms so the advisor can
+            // actually answer "should I pay this down vs. save?" without
+            // round-tripping the user. Fields are nullable; the prompt
+            // omits ones that aren't filled in so the model can ask
+            // only for what's genuinely missing.
+            const base = `- #${a.id} ${a.name} (${a.type}, ${a.currency})`;
+            if (a.type !== "loan") return base;
+            const bits: string[] = [];
+            if (a.interestRatePct != null)
+              bits.push(`${a.interestRatePct}% APR`);
+            if (a.originalPrincipal != null)
+              bits.push(
+                `original ${fmt(a.originalPrincipal, a.currency)}`,
+              );
+            if (a.loanTermMonths != null)
+              bits.push(`${a.loanTermMonths}-month term`);
+            if (a.paymentDayOfMonth != null)
+              bits.push(`pays day ${a.paymentDayOfMonth}`);
+            return bits.length ? `${base} · ${bits.join(", ")}` : base;
+          })
           .join("\n")
       : "(no accounts yet)",
     "",
