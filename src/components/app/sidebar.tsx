@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/app/theme-toggle";
+import { MonthFilter } from "@/components/app/month-filter";
 import { useRole } from "@/components/app/role-context";
 import {
   Sheet,
@@ -156,9 +157,18 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         ))}
       </nav>
 
-      {/* Footer: role + sign out */}
-      <div className="px-3 py-3 border-t border-border">
-        <div className="flex items-center justify-between gap-2 px-2">
+      {/* Footer: month filter + role + sign out */}
+      <div className="px-3 py-3 border-t border-border space-y-2">
+        {/*
+          Global month-scope picker. Lives in the sidebar so the choice
+          persists across page navigations — pick October 2024 once,
+          every page that respects it (Home, Budgets, …) re-renders
+          for that month until you reset.
+        */}
+        <div className="px-1">
+          <MonthFilter variant="compact" />
+        </div>
+        <div className="flex items-center justify-between gap-2 px-2 pt-1">
           <div className="flex items-center gap-2 min-w-0">
             {role === "viewer" ? (
               <span className="flex items-center gap-1.5 text-xs font-mono text-amber-300/90">

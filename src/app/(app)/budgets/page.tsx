@@ -1,6 +1,5 @@
 import { PageHeader } from "@/components/app/page-header";
 import { BudgetsManager } from "@/components/app/budgets-manager";
-import { MonthFilter } from "@/components/app/month-filter";
 import {
   getBaseCurrency,
   listAccounts,
@@ -13,6 +12,7 @@ import {
 } from "@/lib/aggregation";
 import { convert } from "@/lib/fx";
 import { localToday } from "@/lib/dates";
+import { resolveMonthKey } from "@/lib/month-filter";
 
 export default async function BudgetsPage({
   searchParams,
@@ -20,7 +20,7 @@ export default async function BudgetsPage({
   searchParams: Promise<{ m?: string }>;
 }) {
   const params = await searchParams;
-  const monthKey = params.m;
+  const monthKey = await resolveMonthKey(params.m);
   const baseCurrency = await getBaseCurrency();
 
   // Resolve the month boundaries from the query param if present, else
@@ -78,8 +78,7 @@ export default async function BudgetsPage({
     <>
       <PageHeader
         title="Budgets"
-        description="Per-category monthly spending limits. Spend resets each month — caps carry over as the skeleton."
-        actions={<MonthFilter />}
+        description="Per-category monthly spending limits. Spend resets each month — caps carry over as the skeleton. Use the month filter in the sidebar to scrub backward."
       />
       <BudgetsManager
         baseCurrency={baseCurrency}
