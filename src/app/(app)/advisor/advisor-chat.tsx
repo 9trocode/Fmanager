@@ -3,7 +3,9 @@
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import {
+  History,
   Loader2,
+  MessageSquarePlus,
   Paperclip,
   Send,
   Sparkles,
@@ -11,67 +13,87 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState, useTransition } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-
-const STORAGE_KEY = "advisor-chat-history";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  createChatSession,
+  deleteChatSession,
+  type ChatSessionRow,
+} from "@/lib/actions/chat";
 
 /**
- * The advisor chat is a streaming agent. The model sees the user's full
- * balance sheet in its system prompt and can call tools to actually
- * create transactions, budgets, savings goals, accounts, and recurring
- * flows on behalf of the user. It can also accept image uploads
- * (receipts, statements) and extract numbers from them.
+ * Streaming agent UI with persisted multi-session history.
  *
- * UI features:
- *   - Streaming text from the model (incremental render).
- *   - Multimodal input: images alongside text.
- *   - Tool-call rendering — when the model calls a tool, we show what
- *     it ran and the result inline so the user sees exactly what
- *     changed.
- *   - Markdown rendering with remark-gfm (tables, lists, code).
- *   - Conversation persistence via localStorage so refreshing the page
- *     doesn't wipe the thread.
- *   - "Clear" button to start a fresh conversation.
+ * Sessions live in the DB. The active one is keyed by ?s=<id> in the
+ * URL — the server component reads that, hydrates `initialMessages` from
+ * SQLite, and we feed them into useChat. On first send (when there's no
+ * session yet), we lazily create one via a server action and replace
+ * the URL so subsequent sends persist into the same thread.
+ *
+ * "Resumable" in this app means: refresh the page mid-conversation and
+ * everything you've sent + every assistant turn that completed comes
+ * back. The current in-flight stream itself isn't piped across requests
+ * (that needs a stream-store like Redis); if you refresh while the
+ * model is still typing, you can ask it to continue.
  */
-export function AdvisorChat() {
+export function AdvisorChat({
+  sessionId: initialSessionId,
+  initialMessages,
+  sessions,
+}: {
+  sessionId: number | null;
+  initialMessages: UIMessage[];
+  sessions: ChatSessionRow[];
+}) {
+  const router = useRouter();
   const [text, setText] = useState("");
   const [files, setFiles] = useState<FileList | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
+  const [, startTransition] = useTransition();
 
-  // Hydrate prior conversation from localStorage on mount.
-  const [initialMessages, setInitialMessages] = useState<
-    UIMessage[] | undefined
-  >(undefined);
-  const [hydrated, setHydrated] = useState(false);
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) setInitialMessages(JSON.parse(raw));
-    } catch {
-      /* ignore */
-    }
-    setHydrated(true);
-  }, []);
+  // Live session id (mutable when we lazily create a session on first
+  // send). Mirrors `?s=<id>` in the URL.
+  const [sessionId, setSessionId] = useState<number | null>(initialSessionId);
 
   const { messages, status, error, sendMessage, setMessages, stop } = useChat({
     messages: initialMessages,
-    transport: new DefaultChatTransport({ api: "/api/chat" }),
+    // `id` keys the chat — switching it makes useChat treat it as a new
+    // thread (clears in-memory state). We pass our DB session id so
+    // navigating between threads via the history menu is clean.
+    id: sessionId ? `session-${sessionId}` : undefined,
+    transport: new DefaultChatTransport({
+      api: "/api/chat",
+      // Forward the active sessionId on every request so the API route
+      // can persist messages to the right thread.
+      body: () => ({ sessionId }),
+    }),
   });
-
-  // Persist on every message change.
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
-    } catch {
-      /* ignore */
-    }
-  }, [messages, hydrated]);
 
   // Auto-scroll to the bottom whenever messages stream in.
   useEffect(() => {
@@ -83,25 +105,70 @@ export function AdvisorChat() {
   const isStreaming = status === "streaming" || status === "submitted";
   const canSend = !isStreaming && (text.trim().length > 0 || (files?.length ?? 0) > 0);
 
-  function clearChat() {
-    setMessages([]);
-    try {
-      localStorage.removeItem(STORAGE_KEY);
-    } catch {
-      /* ignore */
-    }
+  function startNewChat() {
+    startTransition(async () => {
+      const id = await createChatSession();
+      setSessionId(id);
+      setMessages([]);
+      router.replace(`/advisor?s=${id}`);
+      router.refresh();
+    });
+  }
+
+  function switchSession(id: number) {
+    if (id === sessionId) return;
+    router.push(`/advisor?s=${id}`);
+  }
+
+  function deleteSession(id: number) {
+    startTransition(async () => {
+      try {
+        await deleteChatSession(id);
+        toast.success("Conversation deleted");
+        // If we deleted the active one, fall back to the next available
+        // or to a brand-new empty state.
+        if (id === sessionId) {
+          const next = sessions.find((s) => s.id !== id);
+          if (next) {
+            router.push(`/advisor?s=${next.id}`);
+          } else {
+            setSessionId(null);
+            setMessages([]);
+            router.replace("/advisor");
+            router.refresh();
+          }
+        } else {
+          router.refresh();
+        }
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Couldn't delete conversation.",
+        );
+      } finally {
+        setConfirmDelete(null);
+      }
+    });
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!canSend) return;
 
+    // Lazy-create a session on first send so empty threads don't clutter
+    // the history.
+    let activeId = sessionId;
+    if (activeId == null) {
+      activeId = await createChatSession();
+      setSessionId(activeId);
+      // Replace the URL silently — no full navigation, no flash.
+      window.history.replaceState({}, "", `/advisor?s=${activeId}`);
+    }
+
     // Build message parts: optional file attachments + user text.
     const parts: Array<
       | { type: "text"; text: string }
       | { type: "file"; mediaType: string; url: string }
     > = [];
-
     if (files && files.length > 0) {
       for (const f of Array.from(files)) {
         const url = await fileToDataUrl(f);
@@ -114,32 +181,97 @@ export function AdvisorChat() {
     setText("");
     setFiles(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
+    // Refresh the server-rendered sessions list so the new title shows
+    // in the history menu after the assistant turn finishes.
+    setTimeout(() => router.refresh(), 1500);
   }
+
+  const activeSession = sessions.find((s) => s.id === sessionId);
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-card/40 backdrop-blur-md">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Sparkles className="size-3.5" />
-          Advisor
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-card/40 backdrop-blur-md gap-2">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground min-w-0">
+          <Sparkles className="size-3.5 shrink-0" />
+          <span className="truncate">
+            {activeSession?.title ?? "New conversation"}
+          </span>
           {isStreaming ? (
-            <span className="inline-flex items-center gap-1 text-[10px] font-mono">
+            <span className="inline-flex items-center gap-1 text-[10px] font-mono shrink-0">
               <Loader2 className="size-3 animate-spin" />
               thinking…
             </span>
           ) : null}
         </div>
-        {messages.length > 0 ? (
+        <div className="flex items-center gap-1 shrink-0">
+          <DropdownMenu open={historyOpen} onOpenChange={setHistoryOpen}>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="xs" className="text-muted-foreground">
+                <History className="size-3.5" />
+                History
+                <span className="text-[10px] font-mono opacity-70 ml-1">
+                  {sessions.length}
+                </span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-72 max-h-[60vh] overflow-y-auto">
+              <DropdownMenuLabel>Conversations</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {sessions.length === 0 ? (
+                <div className="px-3 py-4 text-xs text-muted-foreground text-center">
+                  No past conversations yet.
+                </div>
+              ) : (
+                sessions.map((s) => (
+                  <DropdownMenuItem
+                    key={s.id}
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      switchSession(s.id);
+                      setHistoryOpen(false);
+                    }}
+                    className="group flex items-start justify-between gap-2 cursor-pointer"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div
+                        className={
+                          "text-sm truncate " +
+                          (s.id === sessionId ? "font-medium" : "")
+                        }
+                      >
+                        {s.title}
+                      </div>
+                      <div className="text-[10px] font-mono text-muted-foreground truncate">
+                        {new Date(s.updatedAt).toLocaleString()}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        setConfirmDelete(s.id);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity shrink-0 mt-0.5"
+                      aria-label="Delete conversation"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </DropdownMenuItem>
+                ))
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button
             variant="ghost"
             size="xs"
-            onClick={clearChat}
+            onClick={startNewChat}
             className="text-muted-foreground"
           >
-            <Trash2 className="size-3.5" />
-            Clear
+            <MessageSquarePlus className="size-3.5" />
+            New
           </Button>
-        ) : null}
+        </div>
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-5 space-y-4">
@@ -234,6 +366,35 @@ export function AdvisorChat() {
           )}
         </div>
       </form>
+
+      <AlertDialog
+        open={confirmDelete != null}
+        onOpenChange={(v) => {
+          if (!v) setConfirmDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this conversation?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The thread and all of its messages are gone permanently. This
+              doesn&apos;t affect any data the advisor created on your behalf
+              (transactions, budgets, accounts) — those stay in your books.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (confirmDelete != null) deleteSession(confirmDelete);
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -314,7 +475,6 @@ function MessageBubble({ message }: { message: ChatMessage }) {
               </div>
             );
           }
-          // Tool calls in v6 come as parts named "tool-<toolName>".
           if (part.type.startsWith("tool-")) {
             return <ToolPart key={i} part={part} />;
           }

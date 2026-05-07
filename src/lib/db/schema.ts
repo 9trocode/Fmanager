@@ -247,3 +247,30 @@ export const transactions = sqliteTable("transactions", {
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
+
+/**
+ * Advisor chat history. Sessions are independent threads; messages are
+ * the full UIMessage v6 shape persisted as JSON so we round-trip text,
+ * file attachments, and tool-call parts without a column-per-part-type
+ * schema. Messages cascade on session delete.
+ */
+export const chatSessions = sqliteTable("chat_sessions", {
+  id: id(),
+  title: text("title").notNull().default("New conversation"),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+export const chatMessages = sqliteTable("chat_messages", {
+  id: id(),
+  sessionId: integer("session_id")
+    .notNull()
+    .references(() => chatSessions.id, { onDelete: "cascade" }),
+  // Stable client id (UIMessage.id) so re-sends from useChat dedupe
+  // against existing rows instead of inserting duplicates.
+  clientId: text("client_id").notNull(),
+  role: text("role").notNull(),
+  /** JSON-serialised full UIMessage (text/file/tool parts). */
+  uiJson: text("ui_json").notNull(),
+  createdAt: createdAt(),
+});

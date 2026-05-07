@@ -6,6 +6,10 @@ import { isAuthenticated, getRole } from "@/lib/auth/session";
 import { buildAdvisorClient } from "@/lib/ai/provider";
 import { advisorTools } from "@/lib/ai/tools";
 import {
+  maybeAutoTitle,
+  upsertChatMessage,
+} from "@/lib/actions/chat";
+import {
   computeNetWorth,
   computeMonthlyCashFlow,
   computeCashRunway,
@@ -260,11 +264,33 @@ export async function POST(req: Request) {
       : { listAccounts: advisorTools.listAccounts, listBudgets: advisorTools.listBudgets };
 
   const body = (await req.json().catch(() => null)) as
-    | { messages?: UIMessage[] }
+    | { messages?: UIMessage[]; sessionId?: number }
     | null;
   const messages = body?.messages ?? [];
+  const sessionId =
+    typeof body?.sessionId === "number" && Number.isFinite(body.sessionId)
+      ? body.sessionId
+      : null;
   if (!messages.length) {
     return new NextResponse("messages required", { status: 400 });
+  }
+
+  // Persist the latest user message + auto-title the session on first
+  // user turn. Done before kicking off the stream so a refresh during
+  // generation finds the user's message already on the timeline.
+  if (sessionId != null) {
+    const lastUser = [...messages].reverse().find((m) => m.role === "user");
+    if (lastUser) {
+      try {
+        await upsertChatMessage(sessionId, lastUser);
+        const firstText = lastUser.parts.find(
+          (p): p is { type: "text"; text: string } => p.type === "text",
+        )?.text;
+        if (firstText) await maybeAutoTitle(sessionId, firstText);
+      } catch (err) {
+        console.error("[chat] failed to persist user message:", err);
+      }
+    }
   }
 
   let client;
@@ -291,7 +317,25 @@ export async function POST(req: Request) {
       // → summarise".
       stopWhen: ({ steps }) => steps.length >= 5,
     });
-    return result.toUIMessageStreamResponse();
+    // `onFinish` on the UI message stream gives us the final assembled
+    // assistant UIMessage(s) — exactly what we need to persist so the
+    // page reload restores the conversation. Errors are swallowed so a
+    // DB hiccup never breaks the stream the user is reading.
+    return result.toUIMessageStreamResponse({
+      onFinish:
+        sessionId == null
+          ? undefined
+          : async ({ messages: finalMessages }) => {
+              try {
+                for (const m of finalMessages) {
+                  if (m.role === "user") continue; // already persisted above
+                  await upsertChatMessage(sessionId, m);
+                }
+              } catch (err) {
+                console.error("[chat] failed to persist assistant turn:", err);
+              }
+            },
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Advisor request failed.";
     return new NextResponse(message, { status: 502 });

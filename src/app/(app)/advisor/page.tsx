@@ -16,17 +16,35 @@ import {
   isAdvisorConfigured,
   PROVIDER_LABEL,
 } from "@/lib/ai/provider";
+import { getChatSession, listChatSessions } from "@/lib/actions/chat";
 import { AdvisorChat } from "./advisor-chat";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdvisorPage() {
-  const [decisions, provider, configured] = await Promise.all([
+export default async function AdvisorPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ s?: string }>;
+}) {
+  const params = await searchParams;
+  const requestedSessionId = Number(params.s);
+  const validRequested = Number.isFinite(requestedSessionId)
+    ? requestedSessionId
+    : null;
+
+  const [decisions, provider, configured, sessions] = await Promise.all([
     listDecisions({ onlyOpen: true }),
     getAdvisorProvider(),
     isAdvisorConfigured(),
+    listChatSessions(),
   ]);
   const providerName = PROVIDER_LABEL[provider].split(" ")[0];
+
+  // Pick the session: explicit query param, else the most-recent, else
+  // null (a fresh session is auto-created on first user send).
+  const activeSessionId = validRequested ?? sessions[0]?.id ?? null;
+  const activeSession =
+    activeSessionId != null ? await getChatSession(activeSessionId) : null;
 
   return (
     <>
@@ -55,7 +73,11 @@ export default async function AdvisorPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex-1 min-h-0 p-0">
-            <AdvisorChat />
+            <AdvisorChat
+              sessionId={activeSessionId}
+              initialMessages={activeSession?.messages ?? []}
+              sessions={sessions}
+            />
           </CardContent>
         </Card>
 

@@ -15,6 +15,13 @@
       "when": 1778134684633,
       "tag": "0001_polite_albert_cleary",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1778137172192,
+      "tag": "0002_many_wallflower",
+      "breakpoints": true
     }
   ]
 }
