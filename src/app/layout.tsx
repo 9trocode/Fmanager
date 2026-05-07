@@ -34,16 +34,15 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <head>
+      <body className="min-h-full flex flex-col bg-background text-foreground">
         {/*
-          Synchronous FOUC-prevention script. Server-Component emits it once
-          into the SSR'd HTML. Lives in <head> so it runs before paint;
-          never re-renders on the client, so React 19's "scripts inside
-          React components" warning doesn't fire.
+          FOUC-prevention script. Uses next/script with `beforeInteractive`
+          (inside <body>) so Next hoists it into the document <head> via
+          imperative DOM injection instead of through React's render tree —
+          this is what avoids React 19's "scripts inside React components"
+          warning. Runs synchronously before any other code.
         */}
         <ThemeInitScript defaultTheme="dark" />
-      </head>
-      <body className="min-h-full flex flex-col bg-background text-foreground">
         <ThemeProvider defaultTheme="dark">
           <TooltipProvider>{children}</TooltipProvider>
           <Toaster richColors position="top-right" />
