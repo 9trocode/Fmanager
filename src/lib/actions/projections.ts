@@ -8,6 +8,7 @@ import { buildAdvisorClient } from "@/lib/ai/provider";
 import { computeMonthlyCashFlow, computeNetWorth } from "@/lib/aggregation";
 import { listSavingsGoals, getBaseCurrency } from "@/lib/db/queries";
 import { computeGoalState } from "@/lib/goals";
+import type { ScenarioEvent } from "@/lib/projections";
 
 /**
  * Server-side AI scenario generator.
@@ -18,70 +19,90 @@ import { computeGoalState } from "@/lib/goals";
  * full balance-sheet context without shipping it to the client first.
  */
 
-const ScenarioEventSchema = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("raise"),
-    atMonth: z.number().int().nonnegative(),
-    newMonthly: z.number(),
-    label: z.string().optional(),
-  }),
-  z.object({
-    kind: z.literal("expense_shock"),
-    atMonth: z.number().int().nonnegative(),
-    newMonthly: z.number(),
-    label: z.string().optional(),
-  }),
-  z.object({
-    kind: z.literal("lump_sum"),
-    atMonth: z.number().int().nonnegative(),
-    amount: z.number(),
-    label: z.string().optional(),
-  }),
-]);
-
-const SuggestedScenarioSchema = z.object({
-  name: z
-    .string()
-    .min(2)
-    .max(48)
-    .describe("Short distinctive name e.g. 'Raise in 6mo' or 'Tighten food/dining'."),
-  rationale: z
-    .string()
-    .min(8)
-    .describe(
-      "One-to-two sentence explanation of WHY this scenario is worth modeling against the user's actual data. No fluff.",
-    ),
-  monthlyContribution: z
-    .number()
-    .describe(
-      "Steady monthly net contribution at the start of the run, in the user's base currency. Positive saves, negative draws down.",
-    ),
-  annualReturnPct: z
-    .number()
-    .min(0)
-    .max(20)
-    .describe("Blended annual return assumption on the non-grant principal."),
-  horizonMonths: z
-    .number()
-    .int()
-    .min(6)
-    .max(360)
-    .describe("How many months forward to project."),
-  events: z
-    .array(ScenarioEventSchema)
-    .max(6)
-    .describe("Mid-stream changes — raises, expense shocks, lump sums."),
+/**
+ * Flat event schema. Gemini's structured-output mode rejects JSON Schema
+ * `oneOf` (which is what `z.discriminatedUnion` produces), so the wire
+ * shape is a single object with `kind` + every possible field optional.
+ * The client narrows it back into the proper `ScenarioEvent` discriminated
+ * union via `flatEventToScenarioEvent` below.
+ *
+ * Don't ratchet this back to a discriminated union without re-checking
+ * Gemini compatibility — it'll start throwing
+ * "No object generated: response did not match schema" again.
+ */
+/**
+ * Wire-format event schema. Gemini's structured-output mode rejects
+ * JSON Schema `oneOf` (which is what `z.discriminatedUnion` produces),
+ * so the wire shape is a single object with `kind` + every possible
+ * field optional. We narrow it back to the strict ScenarioEvent below.
+ *
+ * Don't ratchet this back to a discriminated union without re-checking
+ * Gemini compatibility — it'll start throwing
+ * "No object generated: response did not match schema" again.
+ */
+const FlatEventSchema = z.object({
+  kind: z.enum(["raise", "expense_shock", "lump_sum"]),
+  atMonth: z.number().int().nonnegative(),
+  /** For raise / expense_shock: the new monthly contribution from atMonth onward. */
+  newMonthly: z.number().optional(),
+  /** For lump_sum: the one-time amount injected (or withdrawn if negative). */
+  amount: z.number().optional(),
+  label: z.string().optional(),
 });
 
-export type SuggestedScenario = z.infer<typeof SuggestedScenarioSchema>;
+const RawSuggestedScenarioSchema = z.object({
+  name: z.string(),
+  rationale: z.string(),
+  monthlyContribution: z.number(),
+  annualReturnPct: z.number(),
+  horizonMonths: z.number().int(),
+  events: z.array(FlatEventSchema),
+});
 
 const ResponseSchema = z.object({
-  scenarios: z
-    .array(SuggestedScenarioSchema)
-    .min(1)
-    .max(5)
-    .describe("Distinct scenarios to compare. Each must differ meaningfully from the others."),
+  scenarios: z.array(RawSuggestedScenarioSchema),
 });
+
+/**
+ * Public client-facing shape — the events array is narrowed to the
+ * strict ScenarioEvent discriminated union the engine expects.
+ */
+export type SuggestedScenario = {
+  name: string;
+  rationale: string;
+  monthlyContribution: number;
+  annualReturnPct: number;
+  horizonMonths: number;
+  events: ScenarioEvent[];
+};
+
+/**
+ * Narrow a flat AI-returned event into the strict ScenarioEvent shape.
+ * Drops events missing their required field (e.g. a lump_sum without
+ * an `amount`) — better to silently skip than poison the projection.
+ */
+function flatToScenarioEvent(
+  e: z.infer<typeof FlatEventSchema>,
+): ScenarioEvent | null {
+  if (e.kind === "lump_sum") {
+    if (typeof e.amount !== "number" || !Number.isFinite(e.amount)) return null;
+    return {
+      kind: "lump_sum",
+      atMonth: e.atMonth,
+      amount: e.amount,
+      label: e.label,
+    };
+  }
+  if (typeof e.newMonthly !== "number" || !Number.isFinite(e.newMonthly)) {
+    return null;
+  }
+  return {
+    kind: e.kind,
+    atMonth: e.atMonth,
+    newMonthly: e.newMonthly,
+    label: e.label,
+  };
+}
 
 export type SuggestScenariosResult =
   | { ok: true; scenarios: SuggestedScenario[] }
@@ -139,10 +160,18 @@ export async function suggestScenarios(
 
   const systemPrompt = [
     "You are a personal finance scenario planner. Generate 3-5 DISTINCT, USEFUL projection scenarios for the user.",
-    "Each scenario should test a different lever — raise/income bump, expense cut, lump sum (bonus/refund), longer horizon, higher contribution, or a mix.",
+    "Each scenario tests a different lever — raise/income bump, expense cut, lump sum (bonus/refund), longer horizon, higher contribution, or a mix.",
     "Use the user's actual numbers below. Don't invent figures or pick generic placeholders.",
     "Express monthly amounts in the user's base currency. Events use atMonth offsets from today (0 = next month).",
     "Be concrete in rationales — 'lift contribution by 80k after the raise lands at month 6' beats 'save more'.",
+    "",
+    "Event shape rules:",
+    "  - For kind='raise' or kind='expense_shock': set the `newMonthly` field to the contribution AFTER the change. Do NOT set `amount`.",
+    "  - For kind='lump_sum': set the `amount` field (positive = injection, negative = withdrawal). Do NOT set `newMonthly`.",
+    "  - Always include `atMonth` (0–horizonMonths). Always include `kind`.",
+    "  - `label` is optional — short string like 'salary bump' or 'tax refund'.",
+    "horizonMonths: 6–360.  annualReturnPct: 0–20.  events: 0–6 per scenario.",
+    "If a scenario has no mid-stream changes, return `events: []`.",
   ].join("\n");
 
   const dataPrompt = [
@@ -177,7 +206,19 @@ export async function suggestScenarios(
       // a value matching ResponseSchema; result.output is fully typed.
       output: Output.object({ schema: ResponseSchema }),
     });
-    return { ok: true, scenarios: result.output.scenarios };
+    // Narrow the wire-format flat events back into the strict
+    // ScenarioEvent discriminated union the engine consumes.
+    const scenarios: SuggestedScenario[] = result.output.scenarios.map((s) => ({
+      name: s.name,
+      rationale: s.rationale,
+      monthlyContribution: s.monthlyContribution,
+      annualReturnPct: s.annualReturnPct,
+      horizonMonths: s.horizonMonths,
+      events: s.events
+        .map(flatToScenarioEvent)
+        .filter((e): e is ScenarioEvent => e != null),
+    }));
+    return { ok: true, scenarios };
   } catch (err) {
     return {
       ok: false,
