@@ -100,10 +100,19 @@ function FlowFields({
   defaults,
   defaultKind,
   accountOptions,
+  budgets = [],
 }: {
   defaults?: FlowRow;
   defaultKind?: FlowKind;
   accountOptions: Array<{ id: number; name: string; currency: string; type?: string }>;
+  /**
+   * All active budgets. When the user is creating an EXPENSE flow, we
+   * surface a "Budget" select so they can attach the flow to a budget
+   * directly — selecting one auto-fills `category` with the budget's
+   * category, which is how the auto-accruer + budget aggregation
+   * connect them. Picking "none" leaves category as plain free-text.
+   */
+  budgets?: Array<{ id: number; category: string; currency: string }>;
 }) {
   const kind = defaults?.kind ?? defaultKind ?? "expense";
   const categories =
@@ -119,6 +128,26 @@ function FlowFields({
   const [accountId, setAccountId] = useState(initialAccountId);
   const linkedAccount = accountOptions.find((a) => String(a.id) === accountId);
   const isLoanAccount = linkedAccount?.type === "loan";
+
+  // Controlled category — driven by either the user typing or by the
+  // Budget select (which sets category to the budget's category text).
+  const [category, setCategory] = useState<string>(defaults?.category ?? "");
+
+  // Derive the initial budget selection from the existing category
+  // (case-insensitive match). This way reopening the edit dialog for a
+  // flow already tied to a budget keeps the dropdown in sync.
+  const initialBudgetId = (() => {
+    if (!defaults?.category) return "none";
+    const match = budgets.find(
+      (b) =>
+        b.category.trim().toLowerCase() ===
+        defaults.category!.trim().toLowerCase(),
+    );
+    return match ? String(match.id) : "none";
+  })();
+  const [budgetId, setBudgetId] = useState(initialBudgetId);
+  const showBudgetPicker = kind === "expense" && budgets.length > 0;
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -138,7 +167,22 @@ function FlowFields({
           <Input
             id="category"
             name="category"
-            defaultValue={defaults?.category ?? ""}
+            value={category}
+            onChange={(e) => {
+              setCategory(e.target.value);
+              // If user types a value that doesn't match the picked
+              // budget anymore, clear the picker so it doesn't lie.
+              if (
+                budgetId !== "none" &&
+                e.target.value.trim().toLowerCase() !==
+                  budgets
+                    .find((b) => String(b.id) === budgetId)
+                    ?.category.trim()
+                    .toLowerCase()
+              ) {
+                setBudgetId("none");
+              }
+            }}
             placeholder={categories[0]}
             list={`${kind}-categories`}
           />
@@ -149,6 +193,41 @@ function FlowFields({
           </datalist>
         </div>
       </div>
+
+      {showBudgetPicker ? (
+        <div className="space-y-1.5">
+          <Label htmlFor="budget_id">Tie to a budget (optional)</Label>
+          <Select
+            value={budgetId}
+            onValueChange={(v) => {
+              setBudgetId(v);
+              if (v === "none") return;
+              const b = budgets.find((x) => String(x.id) === v);
+              if (b) setCategory(b.category);
+            }}
+          >
+            <SelectTrigger id="budget_id">
+              <SelectValue placeholder="No budget" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">
+                <span className="text-muted-foreground">— no budget —</span>
+              </SelectItem>
+              {budgets.map((b) => (
+                <SelectItem key={b.id} value={String(b.id)}>
+                  {b.category} ({b.currency})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-[10px] text-muted-foreground leading-relaxed">
+            Picking a budget sets this flow&apos;s category to match.
+            Auto-accrued transactions then count toward that budget
+            automatically — every paycheck-day rent post chips at the
+            limit instead of you logging each one by hand.
+          </p>
+        </div>
+      ) : null}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="amount">Amount</Label>
@@ -248,9 +327,11 @@ function FlowFields({
 function AddFlowDialog({
   defaultKind,
   accountOptions,
+  budgets,
 }: {
   defaultKind: FlowKind;
   accountOptions: Array<{ id: number; name: string; currency: string; type?: string }>;
+  budgets: Array<{ id: number; category: string; currency: string }>;
 }) {
   const role = useRole();
   const [open, setOpen] = useState(false);
@@ -284,6 +365,7 @@ function AddFlowDialog({
           <FlowFields
             defaultKind={defaultKind}
             accountOptions={accountOptions}
+            budgets={budgets}
           />
           <DialogFooter>
             <Button type="submit" disabled={pending} loading={pending}>
@@ -301,11 +383,13 @@ function EditFlowDialog({
   open,
   onOpenChange,
   accountOptions,
+  budgets,
 }: {
   flow: FlowRow;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   accountOptions: Array<{ id: number; name: string; currency: string; type?: string }>;
+  budgets: Array<{ id: number; category: string; currency: string }>;
 }) {
   const role = useRole();
   const [pending, startTransition] = useTransition();
@@ -326,7 +410,11 @@ function EditFlowDialog({
           className="space-y-4"
         >
           <input type="hidden" name="id" value={flow.id} />
-          <FlowFields defaults={flow} accountOptions={accountOptions} />
+          <FlowFields
+            defaults={flow}
+            accountOptions={accountOptions}
+            budgets={budgets}
+          />
           <DialogFooter>
             <Button type="submit" disabled={pending} loading={pending}>
               {pending ? "Saving…" : "Save"}
@@ -342,11 +430,14 @@ function FlowRow({
   flow,
   accountOptions,
   budget,
+  allBudgets,
 }: {
   flow: FlowRow;
   accountOptions: Array<{ id: number; name: string; currency: string; type?: string }>;
   /** Budget that this flow's category maps to, if any. */
   budget?: { id: number; category: string; currency: string };
+  /** Full budget list, forwarded to EditFlowDialog → FlowFields. */
+  allBudgets: Array<{ id: number; category: string; currency: string }>;
 }) {
   const role = useRole();
   const [editOpen, setEditOpen] = useState(false);
@@ -560,6 +651,7 @@ function FlowRow({
         open={editOpen}
         onOpenChange={setEditOpen}
         accountOptions={accountOptions}
+        budgets={allBudgets}
       />
     </div>
   );
@@ -602,6 +694,13 @@ export function FlowsManager({
   );
   const expenses = filtered.filter((f) => f.kind === "expense");
   const incomes = filtered.filter((f) => f.kind === "income");
+
+  // Stable array for the form's budget picker. Same data the per-row
+  // hint uses, just shaped for a Select.
+  const budgetsArray = useMemo(
+    () => Object.values(budgetByCategory),
+    [budgetByCategory],
+  );
 
   return (
     <div className="space-y-6">
@@ -668,8 +767,8 @@ export function FlowsManager({
               }
             />
           ) : null}
-          <AddFlowDialog defaultKind="income" accountOptions={accountOptions} />
-          <AddFlowDialog defaultKind="expense" accountOptions={accountOptions} />
+          <AddFlowDialog defaultKind="income" accountOptions={accountOptions} budgets={budgetsArray} />
+          <AddFlowDialog defaultKind="expense" accountOptions={accountOptions} budgets={budgetsArray} />
         </div>
       </div>
       <p className="text-[11px] text-muted-foreground -mt-2 leading-relaxed">
@@ -688,8 +787,8 @@ export function FlowsManager({
           description="Add your fixed monthly outflows and inflows. The dashboard runway widget and projections will use these immediately."
           action={
             <div className="flex gap-2">
-              <AddFlowDialog defaultKind="expense" accountOptions={accountOptions} />
-              <AddFlowDialog defaultKind="income" accountOptions={accountOptions} />
+              <AddFlowDialog defaultKind="expense" accountOptions={accountOptions} budgets={budgetsArray} />
+              <AddFlowDialog defaultKind="income" accountOptions={accountOptions} budgets={budgetsArray} />
             </div>
           }
         />
@@ -708,6 +807,7 @@ export function FlowsManager({
                     key={f.id}
                     flow={f}
                     accountOptions={accountOptions}
+                    allBudgets={budgetsArray}
                     budget={
                       f.category
                         ? budgetByCategory[f.category.trim().toLowerCase()]
@@ -731,6 +831,7 @@ export function FlowsManager({
                     key={f.id}
                     flow={f}
                     accountOptions={accountOptions}
+                    allBudgets={budgetsArray}
                     budget={
                       f.category
                         ? budgetByCategory[f.category.trim().toLowerCase()]
