@@ -560,18 +560,18 @@ function FeatureGrid() {
           body:
             "Salary, rent, contractors, SaaS, school fees. Weekly / monthly / yearly cadences in any currency. Powers cash-flow projections.",
         },
-        {
-          icon: ShieldCheck,
-          title: "Months covered",
-          body:
-            "Liquid cash divided by monthly expenses. Color-coded threshold so you always know how long your savings cover you if income paused.",
-        },
       ],
     },
     {
       title: "Plans & goals",
       description: "What you're working toward, made concrete.",
       items: [
+        {
+          icon: ShieldCheck,
+          title: "Months covered",
+          body:
+            "Liquid cash divided by monthly expenses. Color-coded threshold so you always know how long your savings cover you if income paused.",
+        },
         {
           icon: PiggyBank,
           title: "Savings goals",
@@ -712,150 +712,6 @@ function FeatureGrid() {
             </div>
           </div>
         ))}
-      </div>
-    </section>
-  );
-}
-
-function ScenarioDeepDive() {
-  return (
-    <section className="py-16 border-t border-border/60">
-      <div className="max-w-5xl mx-auto px-6">
-        <div className="grid md:grid-cols-2 gap-12 items-start">
-          <div className="space-y-5">
-            <Badge variant="secondary" className="font-mono text-[10px]">
-              The wedge
-            </Badge>
-            <h2 className="text-3xl md:text-4xl font-semibold tracking-tight text-balance">
-              One paper number is a lie.{" "}
-              <span className="text-muted-foreground">
-                Three honest ones is a balance sheet.
-              </span>
-            </h2>
-            <p className="text-muted-foreground leading-relaxed">
-              Most personal finance apps either ignore your private equity or
-              show one inflated number from the last 409A. You spend like you
-              have it. You don&apos;t.
-            </p>
-            <p className="text-muted-foreground leading-relaxed">
-              Founder Finance models every grant in three scenarios with
-              vesting curves, cliffs, exit timing, and tax rates baked in.
-              You&apos;ll see what you can plan against today, what&apos;s
-              technically on paper, and what an actual exit might net you —
-              side by side.
-            </p>
-          </div>
-          <div className="space-y-3">
-            {[
-              {
-                k: "Floor",
-                desc: "Equity zeroed out. The honest baseline you plan against.",
-                v: "$181,420",
-                color: "bg-foreground",
-              },
-              {
-                k: "Liquid",
-                desc: "Vested shares × current FMV, post-tax.",
-                v: "$1,089,200",
-                color: "bg-foreground/50",
-              },
-              {
-                k: "Expected",
-                desc: "Full grant × target exit price, post-tax, at exit month.",
-                v: "$5,412,000",
-                color: "bg-foreground/25",
-              },
-            ].map((row) => (
-              <div
-                key={row.k}
-                className="flex items-center justify-between gap-4 rounded-xl border border-border bg-card p-5"
-              >
-                <div className="flex items-center gap-3">
-                  <span className={`size-2 rounded-full ${row.color}`} />
-                  <div>
-                    <div className="text-sm font-medium">{row.k}</div>
-                    <div className="text-xs text-muted-foreground">{row.desc}</div>
-                  </div>
-                </div>
-                <div className="text-lg font-semibold tabular-nums">
-                  {row.v}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function SmartCapture() {
-  return (
-    <section className="py-16 border-t border-border/60 bg-muted/20">
-      <div className="max-w-5xl mx-auto px-6">
-        <div className="grid md:grid-cols-2 gap-12 items-center">
-          <div className="space-y-5 order-2 md:order-1">
-            <div className="flex flex-wrap gap-2">
-              <Badge variant="outline" className="font-mono text-[10px]">
-                <Camera className="size-3" /> Photo
-              </Badge>
-              <Badge variant="outline" className="font-mono text-[10px]">
-                <Mic className="size-3" /> Voice
-              </Badge>
-              <Badge variant="outline" className="font-mono text-[10px]">
-                <LayoutGrid className="size-3" /> Manual
-              </Badge>
-            </div>
-            <h2 className="text-3xl md:text-4xl font-semibold tracking-tight text-balance">
-              Logging an expense should take seconds,{" "}
-              <span className="text-muted-foreground">not five fields.</span>
-            </h2>
-            <p className="text-muted-foreground leading-relaxed">
-              Snap a receipt — Claude vision extracts vendor, amount, currency,
-              date. Or speak it: <em>&ldquo;Spent ₦12,000 on dinner with
-              Tunde&rdquo;</em>, parsed into structured fields. You always
-              review before it lands. The full manual form is one click away
-              when you want it.
-            </p>
-            <p className="text-muted-foreground leading-relaxed">
-              All three flows route through the same{" "}
-              <code className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">
-                createTransaction
-              </code>{" "}
-              path, so the data ends up clean and queryable no matter how it
-              entered.
-            </p>
-          </div>
-          <Card className="p-6 space-y-4 order-1 md:order-2">
-            <div className="flex items-center gap-2">
-              <div className="size-8 rounded-md bg-destructive/15 text-destructive grid place-items-center">
-                <Receipt className="size-4" />
-              </div>
-              <div>
-                <div className="text-sm font-medium">Restaurant Bonjour</div>
-                <div className="text-[11px] text-muted-foreground font-mono">
-                  Personal · 2026-05-04
-                </div>
-              </div>
-            </div>
-            <div className="flex items-end justify-between">
-              <span className="text-3xl font-semibold tabular-nums text-destructive">
-                −₦12,000
-              </span>
-              <Badge
-                variant="secondary"
-                className="text-[10px] font-mono gap-1"
-              >
-                <Sparkles className="size-3" /> high confidence
-              </Badge>
-            </div>
-            <div className="text-xs text-muted-foreground leading-relaxed pt-3 border-t border-border">
-              Posted to <span className="font-mono">GTBank naira</span>. Counts
-              against your <span className="font-mono">Personal</span> budget
-              for May.
-            </div>
-          </Card>
-        </div>
       </div>
     </section>
   );
