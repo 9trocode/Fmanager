@@ -11,6 +11,7 @@ import {
   ArrowUpRight,
   Archive,
   ArchiveRestore,
+  Target,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -337,9 +338,12 @@ function EditFlowDialog({
 function FlowRow({
   flow,
   accountOptions,
+  budget,
 }: {
   flow: FlowRow;
   accountOptions: Array<{ id: number; name: string; currency: string; type?: string }>;
+  /** Budget that this flow's category maps to, if any. */
+  budget?: { id: number; category: string; currency: string };
 }) {
   const role = useRole();
   const [editOpen, setEditOpen] = useState(false);
@@ -427,6 +431,16 @@ function FlowRow({
                 · no account linked
               </span>
             )}
+            {budget && !isIncome ? (
+              <Badge
+                variant="outline"
+                className="text-[10px] gap-1 border-blue-500/30 text-blue-300"
+                title={`Auto-accrued transactions tagged "${budget.category}" count toward this budget`}
+              >
+                <Target className="size-2.5" />
+                {budget.category} budget
+              </Badge>
+            ) : null}
           </div>
           {flow.notes ? (
             <div className="text-xs text-muted-foreground truncate">{flow.notes}</div>
@@ -527,6 +541,7 @@ export function FlowsManager({
   monthlyExpensesInBase,
   accountOptions,
   recentTransactions = [],
+  budgetByCategory = {},
 }: {
   flows: FlowRow[];
   baseCurrency: string;
@@ -538,6 +553,16 @@ export function FlowsManager({
    * the recurring flows. Optional — page can omit and the list is hidden.
    */
   recentTransactions?: import("@/components/app/transactions-list").TransactionRow[];
+  /**
+   * Map of lowercased category → budget. When a flow's category matches
+   * a budget, we surface a "Counts toward Groceries budget" hint so the
+   * user understands recurring expenses naturally feed into budgets via
+   * auto-accrual + category match.
+   */
+  budgetByCategory?: Record<
+    string,
+    { id: number; category: string; currency: string }
+  >;
 }) {
   const [tab, setTab] = useState<"all" | "expense" | "income">("all");
   const filtered = useMemo(
@@ -648,7 +673,16 @@ export function FlowsManager({
               ) : null}
               <div className="space-y-2">
                 {expenses.map((f) => (
-                  <FlowRow key={f.id} flow={f} accountOptions={accountOptions} />
+                  <FlowRow
+                    key={f.id}
+                    flow={f}
+                    accountOptions={accountOptions}
+                    budget={
+                      f.category
+                        ? budgetByCategory[f.category.trim().toLowerCase()]
+                        : undefined
+                    }
+                  />
                 ))}
               </div>
             </div>
@@ -662,7 +696,16 @@ export function FlowsManager({
               ) : null}
               <div className="space-y-2">
                 {incomes.map((f) => (
-                  <FlowRow key={f.id} flow={f} accountOptions={accountOptions} />
+                  <FlowRow
+                    key={f.id}
+                    flow={f}
+                    accountOptions={accountOptions}
+                    budget={
+                      f.category
+                        ? budgetByCategory[f.category.trim().toLowerCase()]
+                        : undefined
+                    }
+                  />
                 ))}
               </div>
             </div>

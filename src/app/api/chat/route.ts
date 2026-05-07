@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { generateText } from "ai";
+import { streamText, convertToModelMessages, type UIMessage } from "ai";
 import { eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
-import { isAuthenticated } from "@/lib/auth/session";
+import { isAuthenticated, getRole } from "@/lib/auth/session";
 import { buildAdvisorClient } from "@/lib/ai/provider";
+import { advisorTools } from "@/lib/ai/tools";
 import {
   computeNetWorth,
   computeMonthlyCashFlow,
@@ -16,8 +17,9 @@ import { formatMoney } from "@/lib/format";
 import { monthlyEquivalent } from "@/lib/flows";
 
 export const runtime = "nodejs";
-
-type Msg = { role: "user" | "assistant" | "system"; content: string };
+// Streamed responses can run longer than the default — give the model
+// enough headroom for tool-call chains.
+export const maxDuration = 60;
 
 function fmt(value: number, currency: string): string {
   return formatMoney(value, currency, { compact: true });
@@ -80,7 +82,6 @@ async function buildSystemPrompt(): Promise<string> {
   }
   const txNet = txIncomeBase - txExpenseBase;
 
-  // Top 3 transactions by absolute amount in base currency, excluding transfers.
   const txWithBase = await Promise.all(
     recentTxs
       .filter((t) => t.kind !== "transfer")
@@ -100,6 +101,14 @@ async function buildSystemPrompt(): Promise<string> {
     "Anchor every recommendation on the user's active personal decisions below — generic advice is a failure.",
     "When discussing net worth: always distinguish FLOOR (equity worth zero), LIQUID (current FMV, post-tax), and EXPECTED (target exit, post-tax). Equity that isn't vested or liquid is paper, not cash.",
     "Use real numbers from the data. Push back if a question is missing context. Prefer specific advice with explicit tradeoffs over hedged generalities.",
+    "",
+    "## Tool use",
+    "You have tools to read and modify the user's data: listAccounts, listBudgets, createTransaction, createBudget, updateBudget, createFlow, createSavingsGoal, createAccount.",
+    "- Always call listAccounts/listBudgets before any create/update tool that needs an id, so you reference real ids.",
+    "- Confirm with the user BEFORE making any change if the action is large, irreversible, or ambiguous (e.g. 'I'll log a NGN 700,000 expense to Salary — confirm?').",
+    "- For small, routine logs the user explicitly asks for ('log 50 USD coffee'), proceed without extra confirmation but report what you did clearly.",
+    "- After a tool runs, summarise what changed in plain English with the new numbers.",
+    "- If the user uploads a receipt or screenshot, extract: amount, date, currency, category, vendor — then call createTransaction.",
     "",
     `## Net worth (in ${baseCurrency})`,
     `- Floor:    ${fmt(summary.totals.floor, baseCurrency)}`,
@@ -133,7 +142,7 @@ async function buildSystemPrompt(): Promise<string> {
     "## Accounts",
     accounts.length
       ? accounts
-          .map((a) => `- ${a.name} (${a.type}, ${a.currency})`)
+          .map((a) => `- #${a.id} ${a.name} (${a.type}, ${a.currency})`)
           .join("\n")
       : "(no accounts yet)",
     "",
@@ -168,7 +177,7 @@ async function buildSystemPrompt(): Promise<string> {
       : [
           ...budgets.rows.map((b) => {
             const flag = b.percentUsed > 100 ? " ⚠ OVER" : "";
-            return `- ${b.category}: ${fmt(b.spentThisMonth, b.baseCurrency)} / ${fmt(b.monthlyLimit, b.baseCurrency)} (${b.percentUsed.toFixed(0)}% used)${flag}`;
+            return `- #${b.id} ${b.category}: ${fmt(b.spentThisMonth, b.baseCurrency)} / ${fmt(b.monthlyLimit, b.baseCurrency)} (${b.percentUsed.toFixed(0)}% used)${flag}`;
           }),
           budgets.overBudget.length
             ? `- Over-budget categories: ${budgets.overBudget.map((b) => `${b.category} (+${(b.percentUsed - 100).toFixed(0)}%)`).join(", ")}`
@@ -243,8 +252,16 @@ export async function POST(req: Request) {
   if (!(await isAuthenticated())) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  const role = (await getRole()) ?? "admin";
+  // Viewer role gets a read-only advisor — strip the write tools.
+  const tools =
+    role === "admin"
+      ? advisorTools
+      : { listAccounts: advisorTools.listAccounts, listBudgets: advisorTools.listBudgets };
 
-  const body = (await req.json().catch(() => null)) as { messages?: Msg[] } | null;
+  const body = (await req.json().catch(() => null)) as
+    | { messages?: UIMessage[] }
+    | null;
   const messages = body?.messages ?? [];
   if (!messages.length) {
     return new NextResponse("messages required", { status: 400 });
@@ -261,12 +278,20 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { text } = await generateText({
+    const modelMessages = await convertToModelMessages(messages);
+    const result = streamText({
       model: client.model,
       system: await buildSystemPrompt(),
-      messages: messages.filter((m) => m.role !== "system"),
+      // `useChat` sends UIMessage shapes; convert to model-format messages.
+      messages: modelMessages,
+      tools,
+      // Multi-step: let the model call a tool, see the result, then call
+      // another or write the final answer. Cap so a runaway loop can't
+      // burn tokens — 5 steps is plenty for "list accounts → create tx
+      // → summarise".
+      stopWhen: ({ steps }) => steps.length >= 5,
     });
-    return NextResponse.json({ content: text, provider: client.provider });
+    return result.toUIMessageStreamResponse();
   } catch (err) {
     const message = err instanceof Error ? err.message : "Advisor request failed.";
     return new NextResponse(message, { status: 502 });
