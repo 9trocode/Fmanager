@@ -19,7 +19,6 @@ import {
   Sparkles,
   Trash2,
   TrendingUp,
-  Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -64,16 +63,14 @@ import {
   type ProjectionGrant,
   type ScenarioEvent,
 } from "@/lib/projections";
-import {
-  suggestScenarios,
-  type SuggestedScenario,
-} from "@/lib/actions/projections";
+import { type SuggestedScenario } from "@/lib/actions/projections";
 import {
   deleteSavedScenario,
   saveScenario as saveScenarioAction,
   updateSavedScenario,
   type SavedScenarioRow,
 } from "@/lib/actions/saved-scenarios";
+import { PredictDialog } from "@/components/app/predict-dialog";
 import type { Scenario as EquityScenario } from "@/lib/scenarios";
 import { formatMoney } from "@/lib/format";
 
@@ -184,9 +181,7 @@ export function ProjectionsExplorer({
   ]);
   const [view, setView] = useState<EquityScenario>("floor");
   const [goalId, setGoalId] = useState<number | null>(null);
-  const [aiPrompt, setAiPrompt] = useState("");
-  const [aiOpen, setAiOpen] = useState(false);
-  const [aiBusy, startAi] = useTransition();
+  const [predictOpen, setPredictOpen] = useState(false);
   // Mutable client-side mirror of the server's saved-scenarios list.
   // Updated on save / delete so the dropdown stays in sync without a
   // full page reload.
@@ -435,20 +430,6 @@ export function ProjectionsExplorer({
     });
   }
 
-  function handleAiSuggest() {
-    startAi(async () => {
-      const result = await suggestScenarios(aiPrompt, goalId);
-      if (!result.ok) {
-        toast.error(result.error);
-        return;
-      }
-      applySuggestions(result.scenarios);
-      setAiOpen(false);
-      setAiPrompt("");
-      toast.success(`Added ${result.scenarios.length} scenario${result.scenarios.length === 1 ? "" : "s"}.`);
-    });
-  }
-
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -567,52 +548,29 @@ export function ProjectionsExplorer({
           <Button
             variant="default"
             size="sm"
-            onClick={() => setAiOpen((o) => !o)}
+            onClick={() => setPredictOpen(true)}
           >
-            <Sparkles className="size-4" /> AI scenarios
+            <Sparkles className="size-4" /> Predict
           </Button>
         </div>
       </div>
 
-      {aiOpen ? (
-        <Card className="border-primary/40">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Sparkles className="size-4 text-primary" />
-              Generate scenarios
-            </CardTitle>
-            <CardDescription>
-              Describe what you want to model — a raise in 6 months, cutting
-              dining 50%, a year-end bonus, the gap to a goal. The advisor
-              uses your real numbers and the selected goal as anchors.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <textarea
-              value={aiPrompt}
-              onChange={(e) => setAiPrompt(e.target.value)}
-              placeholder="e.g. I'm getting a 30% raise in 4 months and want to see how fast I can hit the emergency fund goal."
-              rows={3}
-              disabled={aiBusy}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 resize-y min-h-[80px]"
-            />
-            <div className="flex items-center justify-end gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setAiOpen(false)}
-                disabled={aiBusy}
-              >
-                Cancel
-              </Button>
-              <Button onClick={handleAiSuggest} disabled={aiBusy} size="sm">
-                <Zap className="size-4" />
-                {aiBusy ? "Generating…" : "Generate"}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
+      <PredictDialog
+        open={predictOpen}
+        onOpenChange={setPredictOpen}
+        goals={goals}
+        defaultGoalId={goalId}
+        defaultHorizonMonths={
+          // Default to the longest current horizon on the canvas so a
+          // user who set up a 10y baseline doesn't get a dialog
+          // pre-filled with 5y by accident. min: 6mo.
+          Math.max(
+            6,
+            ...scenarios.map((s) => s.inputs.horizonMonths || 60),
+          )
+        }
+        onApply={applySuggestions}
+      />
 
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-1 space-y-3">

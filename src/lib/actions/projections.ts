@@ -115,6 +115,7 @@ export type SuggestScenariosResult =
 export async function suggestScenarios(
   prompt: string,
   goalId: number | null,
+  horizonMonths: number = 60,
 ): Promise<SuggestScenariosResult> {
   await assertAdmin();
   let client;
@@ -162,11 +163,18 @@ export async function suggestScenarios(
     }
   }
 
+  // Clamp the user-chosen horizon to the engine's safe range so a typo
+  // ("1000 years") can't poison a downstream projection.
+  const safeHorizon = Math.max(1, Math.min(360, Math.round(horizonMonths) || 60));
+  const horizonYears = (safeHorizon / 12).toFixed(1);
+
   const systemPrompt = [
     "You are a personal finance scenario planner. Generate 3-5 DISTINCT, USEFUL projection scenarios for the user.",
     "Each scenario tests a different lever — raise/income bump, expense cut, lump sum (bonus/refund), longer horizon, higher contribution, or a mix.",
     "Use the user's actual numbers below. Don't invent figures or pick generic placeholders.",
     "Express monthly amounts in the user's base currency. Events use atMonth offsets from today (0 = next month).",
+    "",
+    `HORIZON: every scenario MUST set horizonMonths to exactly ${safeHorizon} (about ${horizonYears} years). The user picked this — do not override it. Tune the LEVERS (contribution, return, events) to fit the horizon, not the other way around.`,
     "",
     "For each scenario, write TWO short pieces of context:",
     "  - rationale: 1 sentence on WHY this scenario is worth running for THIS user (anchor on their numbers / goal / cash flow).",
@@ -176,9 +184,9 @@ export async function suggestScenarios(
     "Event shape rules:",
     "  - For kind='raise' or kind='expense_shock': set the `newMonthly` field to the contribution AFTER the change. Do NOT set `amount`.",
     "  - For kind='lump_sum': set the `amount` field (positive = injection, negative = withdrawal). Do NOT set `newMonthly`.",
-    "  - Always include `atMonth` (0–horizonMonths). Always include `kind`.",
+    `  - Always include 'atMonth' (0–${safeHorizon}). Always include 'kind'.`,
     "  - `label` is optional — short string like 'salary bump' or 'tax refund'.",
-    "horizonMonths: 6–360.  annualReturnPct: 0–20.  events: 0–6 per scenario.",
+    "annualReturnPct: 0–20.  events: 0–6 per scenario.",
     "If a scenario has no mid-stream changes, return `events: []`.",
   ].join("\n");
 
@@ -215,14 +223,17 @@ export async function suggestScenarios(
       output: Output.object({ schema: ResponseSchema }),
     });
     // Narrow the wire-format flat events back into the strict
-    // ScenarioEvent discriminated union the engine consumes.
+    // ScenarioEvent discriminated union the engine consumes. Force the
+    // horizon back to the user's chosen value — the model is told to
+    // honor it via the system prompt, but we don't trust that with
+    // money math, so the action layer is the enforcement point.
     const scenarios: SuggestedScenario[] = result.output.scenarios.map((s) => ({
       name: s.name,
       rationale: s.rationale,
       summary: s.summary,
       monthlyContribution: s.monthlyContribution,
       annualReturnPct: s.annualReturnPct,
-      horizonMonths: s.horizonMonths,
+      horizonMonths: safeHorizon,
       events: s.events
         .map(flatToScenarioEvent)
         .filter((e): e is ScenarioEvent => e != null),
