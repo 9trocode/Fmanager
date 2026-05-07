@@ -96,8 +96,53 @@ export async function accrueDueFlows(): Promise<{ posted: number }> {
   for (const f of flows) {
     if (f.accountId == null) continue;
 
-    // Seed first-time accrual to today so we don't retroactively post
-    // months of history on the very first run after this feature lands.
+    // Two scheduling models:
+    //
+    //  A. Anchored (`nextDueAt` is set): the flow has an explicit next
+    //     date — e.g. "salary lands on the 25th". The accruer posts on
+    //     that exact date, then advances `nextDueAt` by one cadence so
+    //     the day-of-month sticks across cycles.
+    //
+    //  B. Cadence-from-last (no `nextDueAt`): legacy path. The next
+    //     post happens one cadence after `lastPostedAt`. First-run
+    //     seeds `lastPostedAt = today` so we don't backfill.
+    if (f.nextDueAt) {
+      let dueDate = parseYmd(f.nextDueAt);
+      let mostRecentPosted: string | null = null;
+      let nextDueAfterLoop = f.nextDueAt;
+      let safety = 0;
+      while (safety < MAX_CATCHUP_PERIODS && dueDate <= todayDate) {
+        const occurredAt = localYmd(dueDate);
+        await db.insert(schema.transactions).values({
+          kind: f.kind,
+          amount: f.amount,
+          currency: f.currency,
+          accountId: f.accountId,
+          occurredAt,
+          category: f.category,
+          flowId: f.id,
+          notes: f.notes ?? `Auto-accrued from ${f.name}`,
+        });
+        posted += 1;
+        mostRecentPosted = occurredAt;
+        dueDate = addCadence(dueDate, f.cadence);
+        nextDueAfterLoop = localYmd(dueDate);
+        safety += 1;
+      }
+      if (mostRecentPosted) {
+        await db
+          .update(schema.recurringFlows)
+          .set({
+            lastPostedAt: mostRecentPosted,
+            nextDueAt: nextDueAfterLoop,
+            updatedAt: new Date().toISOString(),
+          })
+          .where(eq(schema.recurringFlows.id, f.id));
+      }
+      continue;
+    }
+
+    // Cadence-from-last fallback path.
     let lastPosted = f.lastPostedAt ?? today;
     let lastPostedDate = parseYmd(lastPosted);
 
@@ -106,7 +151,6 @@ export async function accrueDueFlows(): Promise<{ posted: number }> {
         .update(schema.recurringFlows)
         .set({ lastPostedAt: today, updatedAt: new Date().toISOString() })
         .where(eq(schema.recurringFlows.id, f.id));
-      // Skip immediate posting for the first cadence.
       continue;
     }
 

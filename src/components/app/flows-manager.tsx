@@ -92,6 +92,8 @@ export type FlowRow = {
   currency: string;
   cadence: FlowCadence;
   accountId: number | null;
+  /** Optional explicit next-due date (YYYY-MM-DD). */
+  nextDueAt?: string | null;
   archived: boolean;
   notes: string | null;
 };
@@ -270,6 +272,31 @@ function FlowFields({
         </div>
       </div>
       <input type="hidden" name="kind" value={kind} />
+
+      {/*
+        Optional anchor date — when set, the accruer posts ON THIS DATE
+        (then advances by one cadence). Lets the user say "salary
+        lands on the 25th" or "rent's due on the 1st" rather than
+        having posts drift relative to creation date.
+      */}
+      <div className="space-y-1.5">
+        <Label htmlFor="next_due_at">
+          {kind === "income" ? "Next paid on" : "Next due on"}{" "}
+          <span className="text-muted-foreground font-normal">(optional)</span>
+        </Label>
+        <Input
+          id="next_due_at"
+          name="next_due_at"
+          type="date"
+          defaultValue={defaults?.nextDueAt ?? ""}
+          className="dark:[color-scheme:dark]"
+        />
+        <p className="text-[10px] text-muted-foreground leading-relaxed">
+          Pin the day this {kind === "income" ? "income" : "expense"} should
+          land. Future date defers the first post until then; past or empty
+          posts immediately and uses cadence from there.
+        </p>
+      </div>
 
       <div className="space-y-1.5">
         <Label htmlFor="account_id">
@@ -535,6 +562,14 @@ function FlowRow({
             <span className="text-[10px] font-mono text-muted-foreground">
               {FLOW_CADENCE_LABEL[flow.cadence].toLowerCase()}
             </span>
+            {flow.nextDueAt ? (
+              <span
+                className="text-[10px] font-mono text-muted-foreground"
+                title={`Next ${isIncome ? "paid" : "due"} on ${flow.nextDueAt}`}
+              >
+                · next {flow.nextDueAt}
+              </span>
+            ) : null}
             {linked ? (
               <span className="text-[10px] font-mono text-muted-foreground">
                 · {isIncome ? "→" : "←"} {linked.name}

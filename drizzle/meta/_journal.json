@@ -43,6 +43,13 @@
       "when": 1778143271546,
       "tag": "0005_nebulous_midnight",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1778143850240,
+      "tag": "0006_medical_wrecker",
+      "breakpoints": true
     }
   ]
 }

@@ -176,7 +176,7 @@ const updateBudgetTool = tool({
 
 const createFlowTool = tool({
   description:
-    "Create a recurring cash flow (a fixed inflow like salary, or outflow like rent). The flow auto-accrues into transactions on the linked account at each cadence boundary, so net worth and the runway widget actually reflect it.",
+    "Create a recurring cash flow (a fixed inflow like salary, or outflow like rent). The flow auto-accrues into transactions on the linked account at each cadence boundary, so net worth and the runway widget actually reflect it. Pass `nextDueAt` (YYYY-MM-DD) to anchor the schedule to a specific day — e.g. salary on the 25th of every month — instead of letting it drift relative to creation date.",
   inputSchema: z.object({
     name: z.string().min(1),
     kind: z.enum(flowKinds),
@@ -191,9 +191,19 @@ const createFlowTool = tool({
         "Account that receives the income or pays the expense. Required for the auto-accrual to work.",
       ),
     category: z.string().optional(),
+    nextDueAt: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional()
+      .describe(
+        "Next date the flow should post (YYYY-MM-DD). If in the future, the first post is deferred until then.",
+      ),
     notes: z.string().optional(),
   }),
   execute: async (input) => {
+    const today = localToday();
+    const deferToFuture =
+      input.nextDueAt != null && input.nextDueAt > today;
     const [row] = await db
       .insert(schema.recurringFlows)
       .values({
@@ -205,13 +215,28 @@ const createFlowTool = tool({
         accountId: input.accountId,
         category: input.category ?? null,
         notes: input.notes ?? null,
-        lastPostedAt: localToday(),
+        lastPostedAt: today,
+        nextDueAt: input.nextDueAt ?? null,
       })
       .returning();
+    // Mirror createFlow's behaviour: post immediately unless the
+    // explicit nextDueAt is in the future.
+    if (!deferToFuture) {
+      await db.insert(schema.transactions).values({
+        kind: row.kind,
+        amount: row.amount,
+        currency: row.currency,
+        accountId: row.accountId!,
+        occurredAt: input.nextDueAt ?? today,
+        category: row.category,
+        flowId: row.id,
+        notes: row.notes ?? `Auto-posted from ${row.name}`,
+      });
+    }
     return {
       ok: true,
       flowId: row.id,
-      summary: `${input.kind} flow '${input.name}': ${input.amount} ${input.currency.toUpperCase()} ${input.cadence}`,
+      summary: `${input.kind} flow '${input.name}': ${input.amount} ${input.currency.toUpperCase()} ${input.cadence}${input.nextDueAt ? ` (next ${input.nextDueAt})` : ""}`,
     };
   },
 });

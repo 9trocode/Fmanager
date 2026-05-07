@@ -1,0 +1,1 @@
+ALTER TABLE `recurring_flows` ADD `next_due_at` text;

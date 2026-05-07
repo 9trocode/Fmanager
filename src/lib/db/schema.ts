@@ -197,6 +197,19 @@ export const recurringFlows = sqliteTable(
    * one full cadence has passed (no surprise back-dated transactions).
    */
   lastPostedAt: text("last_posted_at"),
+  /**
+   * Optional explicit next-due date (`YYYY-MM-DD`). When set, the
+   * accruer posts the next transaction ON THIS DATE (rather than
+   * `lastPostedAt + cadence`). On each post the date is advanced by
+   * one cadence, so a monthly salary anchored to the 25th keeps
+   * landing on the 25th forever — even if the user opens the app
+   * weeks late.
+   *
+   * When null, falls back to the original "since lastPostedAt"
+   * behavior. Editable from the flow form so the user can retarget
+   * payday ("starting next month it's the 30th").
+   */
+  nextDueAt: text("next_due_at"),
   archived: integer("archived", { mode: "boolean" }).notNull().default(false),
   notes: text("notes"),
   createdAt: createdAt(),
