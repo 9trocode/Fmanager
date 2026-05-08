@@ -13,6 +13,7 @@ import {
   listAccounts,
   listAccountTransactions,
 } from "@/lib/db/queries";
+import { convert } from "@/lib/fx";
 import { formatMoney } from "@/lib/format";
 import { isLiability } from "@/lib/account-types";
 
@@ -53,13 +54,28 @@ export async function NetWorthBreakdown() {
         ? txs.filter((t) => t.occurredAt > latest.asOf)
         : txs;
       let delta = 0;
+      let crossCurrencyCount = 0;
       for (const t of sinceTxs) {
-        if (t.accountId === a.id) {
-          if (t.kind === "expense" || t.kind === "transfer") delta -= t.amount;
-          else if (t.kind === "income") delta += t.amount;
+        const isSource = t.accountId === a.id;
+        const isDest = t.destAccountId === a.id && t.kind === "transfer";
+        if (!isSource && !isDest) continue;
+        // FX-convert into the account's currency. If the tx was
+        // posted in a different currency (often a flow misconfigured
+        // to the wrong account), surface a cross-currency count so
+        // the user knows their balance includes a conversion.
+        if (t.currency !== a.currency) crossCurrencyCount += 1;
+        const amountInAccountCcy = await convert(
+          t.amount,
+          t.currency,
+          a.currency,
+        );
+        if (isSource) {
+          if (t.kind === "expense" || t.kind === "transfer")
+            delta -= amountInAccountCcy;
+          else if (t.kind === "income") delta += amountInAccountCcy;
         }
-        if (t.destAccountId === a.id && t.kind === "transfer") {
-          delta += t.amount;
+        if (isDest) {
+          delta += amountInAccountCcy;
         }
       }
       const latestValue = latest?.value ?? null;
@@ -69,6 +85,7 @@ export async function NetWorthBreakdown() {
         latest,
         delta,
         sinceCount: sinceTxs.length,
+        crossCurrencyCount,
         effective,
       };
     }),
@@ -146,6 +163,13 @@ export async function NetWorthBreakdown() {
                             </span>{" "}
                             from {r.sinceCount}{" "}
                             {r.sinceCount === 1 ? "tx" : "txs"} since
+                            {r.crossCurrencyCount > 0 ? (
+                              <span className="text-amber-500 ml-1">
+                                ·{" "}
+                                {r.crossCurrencyCount} converted from another
+                                currency
+                              </span>
+                            ) : null}
                           </>
                         ) : (
                           <>{"  "}·{"  "}no txs since</>

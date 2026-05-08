@@ -2,6 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { and, asc, desc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
+import { convert } from "@/lib/fx";
 import type { AccountType, TransactionKind } from "@/lib/db/schema";
 
 export type SettingKey =
@@ -143,6 +144,12 @@ export async function getEffectiveBalance(accountId: number): Promise<{
   if (!latest) {
     return { effectiveValue: null, latestValue: null, latestAsOf: null };
   }
+  // The snapshot's currency is the account's currency for balance
+  // purposes. Transactions in OTHER currencies (e.g. an NGN flow
+  // mistakenly linked to a USD account) need to be FX-converted
+  // before they can be summed into the same number.
+  const account = await getAccount(accountId);
+  const accountCurrency = account?.currency ?? latest.currency;
 
   // One query covers both directions: source-on-account OR
   // destination-on-account-for-transfers, after the snapshot. Halves
@@ -167,12 +174,19 @@ export async function getEffectiveBalance(accountId: number): Promise<{
   for (const t of txs) {
     // Skip transactions on the snapshot date itself; snapshot wins.
     if (t.occurredAt === latest.asOf) continue;
+    // FX-convert into the account's currency. No-op if currencies
+    // already match (convert short-circuits on from === to).
+    const amountInAccountCcy = await convert(
+      t.amount,
+      t.currency,
+      accountCurrency,
+    );
     if (t.accountId === accountId) {
-      if (t.kind === "expense" || t.kind === "transfer") delta -= t.amount;
-      else if (t.kind === "income") delta += t.amount;
+      if (t.kind === "expense" || t.kind === "transfer") delta -= amountInAccountCcy;
+      else if (t.kind === "income") delta += amountInAccountCcy;
     }
     if (t.destAccountId === accountId && t.kind === "transfer") {
-      delta += t.amount;
+      delta += amountInAccountCcy;
     }
   }
 
@@ -248,36 +262,53 @@ export async function listAccountsWithEffective(
         )
     : [];
 
-  return accounts.map((a) => {
-    const latest = latestByAccount.get(a.id);
-    if (!latest) {
+  // Build the per-account result. Cross-currency transactions
+  // (e.g. an NGN flow linked to a USD account) get FX-converted
+  // into the account's currency before summing — without this,
+  // a -₦70k transaction on a USD account naively subtracted
+  // 70,000 from the USD balance, producing -$70,000.
+  const result = await Promise.all(
+    accounts.map(async (a) => {
+      const latest = latestByAccount.get(a.id);
+      if (!latest) {
+        return {
+          ...a,
+          effectiveValue: null as number | null,
+          latestValue: null as number | null,
+          latestAsOf: null as string | null,
+        };
+      }
+      let delta = 0;
+      for (const t of txs) {
+        // Skip transactions on the snapshot date itself; snapshot wins.
+        if (t.occurredAt === latest.asOf) continue;
+        if (t.occurredAt < latest.asOf) continue;
+        const isSource = t.accountId === a.id;
+        const isDest = t.destAccountId === a.id && t.kind === "transfer";
+        if (!isSource && !isDest) continue;
+        const amountInAccountCcy = await convert(
+          t.amount,
+          t.currency,
+          a.currency,
+        );
+        if (isSource) {
+          if (t.kind === "expense" || t.kind === "transfer")
+            delta -= amountInAccountCcy;
+          else if (t.kind === "income") delta += amountInAccountCcy;
+        }
+        if (isDest) {
+          delta += amountInAccountCcy;
+        }
+      }
       return {
         ...a,
-        effectiveValue: null as number | null,
-        latestValue: null as number | null,
-        latestAsOf: null as string | null,
+        effectiveValue: latest.value + delta,
+        latestValue: latest.value,
+        latestAsOf: latest.asOf,
       };
-    }
-    let delta = 0;
-    for (const t of txs) {
-      // Skip transactions on the snapshot date itself; snapshot wins.
-      if (t.occurredAt === latest.asOf) continue;
-      if (t.occurredAt < latest.asOf) continue;
-      if (t.accountId === a.id) {
-        if (t.kind === "expense" || t.kind === "transfer") delta -= t.amount;
-        else if (t.kind === "income") delta += t.amount;
-      }
-      if (t.destAccountId === a.id && t.kind === "transfer") {
-        delta += t.amount;
-      }
-    }
-    return {
-      ...a,
-      effectiveValue: latest.value + delta,
-      latestValue: latest.value,
-      latestAsOf: latest.asOf,
-    };
-  });
+    }),
+  );
+  return result;
 }
 
 export async function listGrants() {
