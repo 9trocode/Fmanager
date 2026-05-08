@@ -21,10 +21,12 @@ import {
 import { getBaseCurrency, listAccounts } from "@/lib/db/queries";
 import {
   computeNetWorth,
+  computeNetWorthAsOf,
   CATEGORY_LABEL,
   CATEGORY_DISPLAY_ORDER,
   type CategoryKey,
 } from "@/lib/aggregation";
+import { resolveMonthKey } from "@/lib/month-filter";
 import {
   SCENARIOS,
   SCENARIO_LABEL,
@@ -33,8 +35,128 @@ import {
 } from "@/lib/scenarios";
 import { formatMoney } from "@/lib/format";
 
-export default async function NetWorthPage() {
+function currentMonthKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function endOfMonthYmd(monthKey: string): string {
+  const [y, m] = monthKey.split("-").map(Number);
+  // Day 0 of next month = last day of current month, in local time.
+  const d = new Date(y, m, 0);
+  const yy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
+function monthLabel(monthKey: string): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(monthKey);
+  if (!m) return monthKey;
+  const date = new Date(Number(m[1]), Number(m[2]) - 1, 1);
+  return date.toLocaleString("en-US", { month: "long", year: "numeric" });
+}
+
+export default async function NetWorthPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ m?: string }>;
+}) {
+  const params = await searchParams;
+  const selectedMonth = await resolveMonthKey(params.m);
+  const today = currentMonthKey();
+  const isPastMonth = selectedMonth != null && selectedMonth !== today;
+
   const baseCurrency = await getBaseCurrency();
+
+  // Past month → as-of-date snapshot view (cash side only). Current
+  // month → live multi-scenario view (existing behavior).
+  if (isPastMonth) {
+    const asOfDate = endOfMonthYmd(selectedMonth!);
+    const asOf = await computeNetWorthAsOf(asOfDate, baseCurrency);
+    return (
+      <>
+        <HeroBackground />
+        <PageHeader
+          size="lg"
+          title="Net worth"
+          description={`Snapshot as of ${asOfDate} (end of ${monthLabel(selectedMonth!)}). Cash side only — equity grants are evaluated at current rates and not shown here. Switch back to the current month in the sidebar for the live multi-scenario view.`}
+          actions={
+            <Badge variant="secondary" className="font-mono text-[11px]">
+              as of {asOfDate}
+            </Badge>
+          }
+        />
+        <Card>
+          <CardHeader>
+            <CardDescription>
+              Net worth at end of {monthLabel(selectedMonth!)}
+            </CardDescription>
+            <CardTitle
+              className={
+                "text-5xl font-semibold tracking-tight tabular-nums mt-2 " +
+                (asOf.total < 0 ? "text-destructive" : "")
+              }
+            >
+              {formatMoney(asOf.total, baseCurrency)}
+            </CardTitle>
+          </CardHeader>
+        </Card>
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle className="text-base">Per-account breakdown</CardTitle>
+            <CardDescription>
+              Latest snapshot at or before {asOfDate}, plus signed
+              transactions through that date. Same FX rule as the live
+              calc — cross-currency rows convert into the account&apos;s
+              currency before summing.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <ul className="divide-y divide-border">
+              {asOf.perAccount.map((r) => {
+                const liability =
+                  r.type === "loan" || r.type === "other"
+                    ? r.type === "loan"
+                    : false;
+                const display =
+                  r.effective != null
+                    ? liability
+                      ? -r.effective
+                      : r.effective
+                    : null;
+                return (
+                  <li key={r.id} className="px-4 py-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-medium">{r.name}</span>
+                      <Badge variant="secondary" className="text-[10px]">
+                        {r.type}
+                      </Badge>
+                      <Badge variant="outline" className="text-[10px] font-mono">
+                        {r.currency}
+                      </Badge>
+                      <span className="ml-auto font-mono tabular-nums text-sm">
+                        {display != null
+                          ? `${display < 0 ? "−" : ""}${formatMoney(Math.abs(r.effective ?? 0), r.currency, { compact: true })}`
+                          : "—"}
+                      </span>
+                    </div>
+                    <div className="text-[11px] font-mono text-muted-foreground mt-0.5">
+                      {r.snapshotAsOf
+                        ? `snapshot ${r.snapshotAsOf}: ${formatMoney(r.snapshotValue ?? 0, r.currency, { compact: true })} · ${r.delta >= 0 ? "+" : ""}${formatMoney(r.delta, r.currency, { compact: true })} from txs through ${asOfDate}`
+                        : `no snapshot at or before ${asOfDate}`}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </CardContent>
+        </Card>
+      </>
+    );
+  }
+
+  // Current month → existing live multi-scenario view.
   const [summary, accounts] = await Promise.all([
     computeNetWorth(baseCurrency),
     listAccounts(),

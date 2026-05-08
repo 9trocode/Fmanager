@@ -1,6 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import {
+  listAccounts,
   listAccountsWithEffective,
   listBudgets,
   listFlows,
@@ -8,7 +9,9 @@ import {
   listTransactions,
   listTransactionsBetween,
 } from "@/lib/db/queries";
-import { prefetchRates } from "@/lib/fx";
+import { db, schema } from "@/lib/db";
+import { and, desc, eq, gt, lte } from "drizzle-orm";
+import { convert, prefetchRates } from "@/lib/fx";
 import { isLiability } from "@/lib/account-types";
 import { monthlyEquivalent } from "@/lib/flows";
 import {
@@ -19,6 +22,124 @@ import {
 import type { AccountType } from "@/lib/db/schema";
 
 export type CategoryKey = AccountType | "grant";
+
+export type AsOfNetWorth = {
+  asOf: string;
+  baseCurrency: string;
+  total: number;
+  perAccount: Array<{
+    id: number;
+    name: string;
+    type: AccountType;
+    currency: string;
+    snapshotAsOf: string | null;
+    snapshotValue: number | null;
+    /** Signed contribution from transactions between snapshot and asOf, in account currency. */
+    delta: number;
+    /** Effective balance at asOf in account currency (snapshotValue + delta). */
+    effective: number | null;
+    /** Same effective value converted into baseCurrency (signed for liabilities). */
+    inBase: number;
+  }>;
+};
+
+/**
+ * Net worth at the end of an arbitrary date — i.e. "what was I worth
+ * as of YYYY-MM-DD". For each account, pick the latest snapshot at
+ * or before the date, then sum signed transactions in (snapshot, asOf]
+ * using the same FX-aware rule as the live computation. Only the
+ * cash side: equity grants are out of scope here because their
+ * value is a current-rate / current-vested computation that isn't
+ * meaningfully time-travel-able with the data we keep.
+ */
+export async function computeNetWorthAsOf(
+  asOfDate: string,
+  baseCurrency: string,
+): Promise<AsOfNetWorth> {
+  const accounts = await listAccounts();
+  // Pre-resolve every (account ccy → base) rate so the per-account
+  // FX conversions don't fan out into N awaited calls in a tight
+  // loop. (Same trick as the live aggregators.)
+  const rates = await prefetchRates(
+    accounts.map((a) => [a.currency, baseCurrency] as const),
+  );
+
+  const perAccount: AsOfNetWorth["perAccount"] = await Promise.all(
+    accounts.map(async (a) => {
+      // Latest snapshot at or before asOfDate.
+      const snap = await db
+        .select()
+        .from(schema.valueSnapshots)
+        .where(
+          and(
+            eq(schema.valueSnapshots.accountId, a.id),
+            lte(schema.valueSnapshots.asOf, asOfDate),
+          ),
+        )
+        .orderBy(
+          desc(schema.valueSnapshots.asOf),
+          desc(schema.valueSnapshots.id),
+        )
+        .limit(1);
+      const latest = snap[0] ?? null;
+      if (!latest) {
+        return {
+          id: a.id,
+          name: a.name,
+          type: a.type,
+          currency: a.currency,
+          snapshotAsOf: null,
+          snapshotValue: null,
+          delta: 0,
+          effective: null,
+          inBase: 0,
+        };
+      }
+      // Transactions strictly after snapshot, on or before asOfDate.
+      const txs = await db
+        .select()
+        .from(schema.transactions)
+        .where(
+          and(
+            gt(schema.transactions.occurredAt, latest.asOf),
+            lte(schema.transactions.occurredAt, asOfDate),
+          ),
+        );
+      let delta = 0;
+      for (const t of txs) {
+        const isSource = t.accountId === a.id;
+        const isDest =
+          t.destAccountId === a.id && t.kind === "transfer";
+        if (!isSource && !isDest) continue;
+        const inAccountCcy =
+          t.currency === a.currency
+            ? t.amount
+            : await convert(t.amount, t.currency, a.currency);
+        if (isSource) {
+          if (t.kind === "expense" || t.kind === "transfer") delta -= inAccountCcy;
+          else if (t.kind === "income") delta += inAccountCcy;
+        }
+        if (isDest) delta += inAccountCcy;
+      }
+      const effective = latest.value + delta;
+      const signed = isLiability(a.type) ? -effective : effective;
+      const inBase = rates.convert(signed, a.currency, baseCurrency);
+      return {
+        id: a.id,
+        name: a.name,
+        type: a.type,
+        currency: a.currency,
+        snapshotAsOf: latest.asOf,
+        snapshotValue: latest.value,
+        delta,
+        effective,
+        inBase,
+      };
+    }),
+  );
+  const total = perAccount.reduce((acc, r) => acc + r.inBase, 0);
+  return { asOf: asOfDate, baseCurrency, total, perAccount };
+}
 
 export type CurrencyBucket = {
   /** Sum of values in their native currency (no FX applied). */

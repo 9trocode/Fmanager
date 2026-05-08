@@ -8,12 +8,92 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { SubmitButton } from "@/components/app/submit-button";
-import { listActiveAlerts, listRecentAlerts } from "@/lib/advisor-alerts";
+import {
+  listActiveAlerts,
+  listAlertsInMonth,
+  listRecentAlerts,
+} from "@/lib/advisor-alerts";
 import { dismissAlert, dismissAllAlerts } from "@/lib/actions/alerts";
+import { resolveMonthKey } from "@/lib/month-filter";
 import type { AlertSeverity } from "@/lib/db/schema";
 
-export default async function AlertsPage() {
+function currentMonthKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthLabel(monthKey: string): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(monthKey);
+  if (!m) return monthKey;
+  const date = new Date(Number(m[1]), Number(m[2]) - 1, 1);
+  return date.toLocaleString("en-US", { month: "long", year: "numeric" });
+}
+
+export default async function AlertsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ m?: string }>;
+}) {
+  const params = await searchParams;
+  const selectedMonth = await resolveMonthKey(params.m);
+  const today = currentMonthKey();
+  const isPastMonth = selectedMonth != null && selectedMonth !== today;
+
+  // Branch: past-month view shows EVERY alert that fired in that
+  // month (regardless of current dismissed/resolved state) so the
+  // user can see what happened then. Current-month view shows the
+  // live active set + recent history below — the original behavior.
+  if (isPastMonth) {
+    const monthAlerts = await listAlertsInMonth(selectedMonth!);
+    return (
+      <>
+        <PageHeader
+          title="Alerts"
+          description={`Showing alerts raised during ${monthLabel(selectedMonth!)}. Filter is set in the sidebar — pick "this month" to switch back to live alerts.`}
+          actions={
+            <Badge variant="outline" className="font-mono text-[11px]">
+              {monthLabel(selectedMonth!)}
+            </Badge>
+          }
+        />
+        {monthAlerts.length === 0 ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">
+                Nothing fired in {monthLabel(selectedMonth!)}
+              </CardTitle>
+              <CardDescription>
+                No runway / budget / goal alerts were raised during this
+                month. Switch back to the current month in the sidebar
+                to see live alerts.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {monthAlerts.map((a) => (
+              <AlertRow
+                key={a.id}
+                id={a.id}
+                severity={a.severity as AlertSeverity}
+                title={a.title}
+                body={a.body}
+                actionUrl={a.actionUrl}
+                createdAt={a.createdAt}
+                dismissedAt={a.dismissedAt}
+                resolvedAt={a.resolvedAt}
+                historical
+              />
+            ))}
+          </div>
+        )}
+      </>
+    );
+  }
+
+  // Current month: live view + recently-resolved history.
   const [active, recent] = await Promise.all([
     listActiveAlerts(),
     listRecentAlerts(50),
@@ -102,6 +182,9 @@ function AlertRow({
   body,
   actionUrl,
   createdAt,
+  dismissedAt,
+  resolvedAt,
+  historical,
 }: {
   id: number;
   severity: AlertSeverity;
@@ -109,6 +192,15 @@ function AlertRow({
   body: string;
   actionUrl: string | null;
   createdAt: string;
+  dismissedAt?: string | null;
+  resolvedAt?: string | null;
+  /**
+   * When true, render the row in a "historical" mode — no Dismiss
+   * button (already in the past), but show the eventual resolution
+   * tag (dismissed / resolved / still active) so the user can see
+   * how the situation played out.
+   */
+  historical?: boolean;
 }) {
   const tone =
     severity === "critical"
@@ -129,13 +221,25 @@ function AlertRow({
             accent: "text-muted-foreground",
           };
   const Icon = tone.icon;
+  const eventualState = dismissedAt
+    ? "dismissed"
+    : resolvedAt
+      ? "resolved"
+      : "still active";
   return (
     <div
-      className={`relative rounded-lg border ${tone.ring} px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-start`}
+      className={`relative rounded-lg border ${tone.ring} px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-start ${historical ? "opacity-90" : ""}`}
     >
       <Icon className={`size-5 shrink-0 mt-0.5 ${tone.accent}`} />
       <div className="flex-1 min-w-0 space-y-1">
-        <div className="text-sm font-medium leading-tight">{title}</div>
+        <div className="text-sm font-medium leading-tight flex items-center gap-2 flex-wrap">
+          {title}
+          {historical ? (
+            <Badge variant="outline" className="text-[10px]">
+              {eventualState}
+            </Badge>
+          ) : null}
+        </div>
         <div className="text-[13px] text-muted-foreground leading-snug">
           {body}
         </div>
@@ -152,12 +256,14 @@ function AlertRow({
             </Link>
           </Button>
         ) : null}
-        <form action={dismissAlert}>
-          <input type="hidden" name="id" value={id} />
-          <SubmitButton variant="ghost" size="sm">
-            Dismiss
-          </SubmitButton>
-        </form>
+        {!historical ? (
+          <form action={dismissAlert}>
+            <input type="hidden" name="id" value={id} />
+            <SubmitButton variant="ghost" size="sm">
+              Dismiss
+            </SubmitButton>
+          </form>
+        ) : null}
       </div>
     </div>
   );

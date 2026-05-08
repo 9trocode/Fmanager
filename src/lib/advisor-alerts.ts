@@ -224,6 +224,40 @@ export async function listRecentAlerts(limit = 50) {
     .limit(limit);
 }
 
+/**
+ * Alerts created within a calendar month (inclusive start, exclusive
+ * next-month start). Used by the alerts page when the user has
+ * scoped the global month filter to a past month — they want to see
+ * what was flagged THEN, regardless of current dismissed/resolved
+ * state.
+ *
+ * `monthKey` is the same `YYYY-MM` shape used elsewhere on the app.
+ */
+export async function listAlertsInMonth(monthKey: string) {
+  const m = /^(\d{4})-(\d{2})$/.exec(monthKey);
+  if (!m) return [];
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  if (!Number.isFinite(year) || month < 1 || month > 12) return [];
+  // Half-open interval on the createdAt timestamp. createdAt is an
+  // ISO-ish string in this schema (drizzle text column with default
+  // CURRENT_TIMESTAMP); lexicographic compare matches chronological
+  // for that format.
+  const start = `${monthKey}-01 00:00:00`;
+  const nextMonth = month === 12 ? `${year + 1}-01` : `${year}-${String(month + 1).padStart(2, "0")}`;
+  const end = `${nextMonth}-01 00:00:00`;
+  return db
+    .select()
+    .from(schema.advisorAlerts)
+    .where(
+      and(
+        sql`${schema.advisorAlerts.createdAt} >= ${start}`,
+        sql`${schema.advisorAlerts.createdAt} < ${end}`,
+      ),
+    )
+    .orderBy(desc(schema.advisorAlerts.createdAt));
+}
+
 export async function countActiveAlerts(): Promise<{
   total: number;
   critical: number;

@@ -9,7 +9,10 @@ import {
   listTransactions,
   listBudgets,
 } from "@/lib/db/queries";
-import { computeMonthlyCashFlow } from "@/lib/aggregation";
+import {
+  computeMonthlyCashFlow,
+  computeThisMonthActuals,
+} from "@/lib/aggregation";
 import { resolveMonthKey } from "@/lib/month-filter";
 import { localYmd } from "@/lib/dates";
 
@@ -42,13 +45,35 @@ export default async function CashFlowPage() {
     recentTxsPromise = listRecentTransactions(30);
   }
 
-  const [flows, summary, accounts, recentTxs, budgets] = await Promise.all([
-    listFlows({ includeArchived: true }),
-    computeMonthlyCashFlow(baseCurrency),
-    listAccounts(),
-    recentTxsPromise,
-    listBudgets(),
-  ]);
+  // Two flavors of "monthly cash flow":
+  //   - PROJECTED: sum of recurring-flow templates ("what to expect every
+  //     month given my setup"). Always relevant; computed in base currency.
+  //   - ACTUAL  : sum of real transactions in a given month, also in base.
+  //
+  // When the user filters to a past month, "actuals for that month" is
+  // what they want to see in the summary card — the projection is the
+  // same shape regardless of month, so showing it for March 2025 would
+  // be misleading. For the current month with no filter, the projection
+  // is the right starting point — it's what you SHOULD be tracking
+  // toward, even if the month isn't fully realized yet.
+  const [flows, projected, accounts, recentTxs, budgets, monthActuals] =
+    await Promise.all([
+      listFlows({ includeArchived: true }),
+      computeMonthlyCashFlow(baseCurrency),
+      listAccounts(),
+      recentTxsPromise,
+      listBudgets(),
+      monthKey ? computeThisMonthActuals(baseCurrency, monthKey) : null,
+    ]);
+  const summary = monthActuals
+    ? {
+        baseCurrency,
+        income: monthActuals.income,
+        expenses: monthActuals.expenses,
+        net: monthActuals.net,
+        byCategory: { income: {}, expense: {} },
+      }
+    : projected;
 
   // Map of category (lowercased) → matching budget. Used to surface a
   // "Maps to budget X" hint on each flow row whose category lines up
@@ -75,7 +100,7 @@ export default async function CashFlowPage() {
   }));
 
   const description = monthLabel
-    ? `Recurring inflows and outflows shape your monthly take. One-time expenses (a vacation, a tax bill) live in transactions and still affect your runway — log them from here too. Recent one-time list scoped to ${monthLabel} via the sidebar's month filter.`
+    ? `Showing ${monthLabel} actuals — income, expenses, and net come from transactions in that month. The recurring flows section below stays the same (templates aren't time-scoped). Switch back to the current month in the sidebar for projected numbers.`
     : "Recurring inflows and outflows shape your monthly take. One-time expenses (a vacation, a tax bill) live in transactions and still affect your runway — log them from here too.";
 
   return (
