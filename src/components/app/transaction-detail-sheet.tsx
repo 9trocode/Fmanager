@@ -71,6 +71,7 @@ export function TransactionDetailSheet({
   accounts,
   readOnly,
   contextAccountId,
+  flowsById,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -79,7 +80,10 @@ export function TransactionDetailSheet({
   readOnly: boolean;
   /** When opened from an account detail page, sign transfers relative to it. */
   contextAccountId?: number;
+  flowsById?: Map<number, { name: string; kind: "income" | "expense" }>;
 }) {
+  const fromFlow =
+    transaction.flowId != null ? flowsById?.get(transaction.flowId) : null;
   const [editOpen, setEditOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -160,9 +164,11 @@ export function TransactionDetailSheet({
               </SheetTitle>
               <SheetDescription className="text-xs">
                 Posted {transaction.occurredAt}
-                {transaction.flowId != null
-                  ? " · auto-posted from a recurring flow"
-                  : ""}
+                {fromFlow
+                  ? ` · auto-posted from "${fromFlow.name}" (recurring schedule)`
+                  : transaction.flowId != null
+                    ? " · auto-posted from a recurring flow"
+                    : ""}
               </SheetDescription>
             </div>
           </div>

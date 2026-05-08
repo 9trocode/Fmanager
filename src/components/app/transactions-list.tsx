@@ -7,6 +7,7 @@ import {
   ArrowUpRight,
   MoreHorizontal,
   Pencil,
+  Repeat,
   Trash2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -89,11 +90,19 @@ export function TransactionItem({
   transaction,
   accounts,
   contextAccountId,
+  flowsById,
 }: {
   transaction: TransactionRow;
   accounts: TransactionAccountOption[];
   /** When rendered on an account detail page, sign transfers relative to this account. */
   contextAccountId?: number;
+  /**
+   * Lookup of flowId → flow name. When passed, transactions whose
+   * `flowId` matches surface a "from {flow name}" badge so the user
+   * understands that this row is the auto-posted realization of a
+   * recurring flow — not a duplicate or a separate event.
+   */
+  flowsById?: Map<number, { name: string; kind: "income" | "expense" }>;
 }) {
   const role = useRole();
   const readOnly = role === "viewer";
@@ -170,6 +179,16 @@ export function TransactionItem({
             {transaction.category ? (
               <Badge variant="secondary" className="text-[10px]">
                 {transaction.category}
+              </Badge>
+            ) : null}
+            {transaction.flowId != null && flowsById?.get(transaction.flowId) ? (
+              <Badge
+                variant="outline"
+                className="text-[10px] inline-flex items-center gap-1"
+                title="Posted automatically from this recurring flow"
+              >
+                <Repeat className="size-2.5" />
+                from {flowsById.get(transaction.flowId)!.name}
               </Badge>
             ) : null}
             <span className="text-[10px] font-mono text-muted-foreground">
@@ -263,6 +282,7 @@ export function TransactionItem({
         accounts={accounts}
         readOnly={readOnly}
         contextAccountId={contextAccountId}
+        flowsById={flowsById}
       />
     </div>
   );

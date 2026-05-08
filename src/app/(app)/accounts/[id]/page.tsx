@@ -108,6 +108,17 @@ export default async function AccountDetailPage({
     currency: a.currency,
   }));
 
+  // Lookup so transaction rows can surface a "from {flow name}" badge
+  // when their flowId matches one of THIS account's recurring flows.
+  // Makes the relationship between a flow (template) and its
+  // auto-posted transactions (actual events) visually unambiguous —
+  // they're not duplicate entries, they're the realization of the
+  // same scheduled charge.
+  const flowsById = new Map<
+    number,
+    { name: string; kind: "income" | "expense" }
+  >(flows.map((f) => [f.id, { name: f.name, kind: f.kind }]));
+
   const displayValue =
     effective.effectiveValue ?? latest?.value ?? null;
 
@@ -453,7 +464,7 @@ export default async function AccountDetailPage({
             <CardDescription>
               {flows.length === 0
                 ? "No recurring flows are linked to this account yet."
-                : `${flows.length} ${flows.length === 1 ? "flow" : "flows"} pointed at this account`}
+                : `${flows.length} ${flows.length === 1 ? "schedule" : "schedules"} that auto-post transactions to this account on each cadence. Look for the “from {flow}” badge on the transactions list to see which transaction came from which schedule.`}
             </CardDescription>
           </div>
           <Button asChild variant="outline" size="sm">
@@ -514,6 +525,15 @@ export default async function AccountDetailPage({
                         <span className="text-[10px] font-mono text-muted-foreground">
                           {FLOW_CADENCE_LABEL[f.cadence].toLowerCase()}
                         </span>
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">
+                        Schedule — posts a transaction
+                        {f.nextDueAt
+                          ? ` next on ${f.nextDueAt}`
+                          : f.lastPostedAt
+                            ? ` (last posted ${f.lastPostedAt})`
+                            : " on its cadence"}
+                        .
                       </div>
                       {f.notes ? (
                         <div className="text-xs text-muted-foreground truncate">
@@ -636,6 +656,7 @@ export default async function AccountDetailPage({
                 transaction={t}
                 accounts={accountOptions}
                 contextAccountId={account.id}
+                flowsById={flowsById}
               />
             ))}
           </CardContent>
