@@ -1,12 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   ArrowUp,
   BookmarkCheck,
+  History,
   Loader2,
+  MessageSquarePlus,
   Save,
   Sparkles,
+  Trash2,
   User,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -14,6 +18,24 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
@@ -29,6 +51,14 @@ import {
   type SuggestedScenario,
 } from "@/lib/actions/projections";
 import { saveScenario as saveScenarioAction } from "@/lib/actions/saved-scenarios";
+import {
+  createPredictionSession,
+  deletePredictionSession,
+  maybeAutoTitlePredictionSession,
+  upsertPredictionMessage,
+  type PredictionSessionRow,
+  type PredictionStoredMessage,
+} from "@/lib/actions/predictions";
 import {
   projectNetWorth,
   type ProjectionGrant,
@@ -125,6 +155,9 @@ export function ProjectionChat({
   goals,
   budgetEntities: initialBudgetEntities,
   flowEntities: initialFlowEntities,
+  initialSessionId,
+  initialMessages,
+  sessions,
 }: {
   baseCurrency: string;
   startNonGrantInBase: number;
@@ -133,8 +166,18 @@ export function ProjectionChat({
   goals: ProjectionGoal[];
   budgetEntities: BudgetEntity[];
   flowEntities: FlowEntity[];
+  initialSessionId: number | null;
+  initialMessages: PredictionStoredMessage[];
+  sessions: PredictionSessionRow[];
 }) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const router = useRouter();
+  const [sessionId, setSessionId] = useState<number | null>(initialSessionId);
+  const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>(() =>
+    initialMessages
+      .map((m) => deserializeMessage(m))
+      .filter((m): m is ChatMessage => m != null),
+  );
   const [prompt, setPrompt] = useState("");
   const [horizonValue, setHorizonValue] = useState<number>(5);
   const [horizonUnit, setHorizonUnit] = useState<"months" | "years">("years");
@@ -186,9 +229,6 @@ export function ProjectionChat({
       createdAt: new Date().toISOString(),
     };
 
-    // Refinement context: the most recent advisor turn's scenarios
-    // (filtered to ones the user hasn't explicitly applied/saved
-    // away — but for simplicity we pass all of them).
     const lastAdvisor = [...messages]
       .reverse()
       .find((m) => m.role === "advisor");
@@ -208,17 +248,57 @@ export function ProjectionChat({
     setPrompt("");
 
     startSend(async () => {
+      // Lazy-create a session on first send so empty threads don't
+      // clutter the history dropdown.
+      let activeId = sessionId;
+      const isFirstUserTurn = messages.length === 0;
+      if (activeId == null) {
+        try {
+          activeId = await createPredictionSession();
+          setSessionId(activeId);
+          window.history.replaceState({}, "", `/projections?s=${activeId}`);
+        } catch (err) {
+          // If session creation fails, the chat still works in-memory
+          // — we just won't persist. Surface a soft warning.
+          console.warn("[predict] failed to create session:", err);
+        }
+      }
+
+      // Persist the user message immediately so a refresh during
+      // generation finds it on the timeline.
+      if (activeId != null) {
+        try {
+          await upsertPredictionMessage(activeId, {
+            clientId: userMsg.id,
+            role: "user",
+            payload: userMsg,
+          });
+          if (isFirstUserTurn) {
+            await maybeAutoTitlePredictionSession(activeId, text);
+          }
+        } catch (err) {
+          console.warn("[predict] failed to persist user message:", err);
+        }
+      }
+
       const result = await suggestScenarios(text, goalId, horizonMonths, drafts);
       if (!result.ok) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: uid(),
-            role: "error",
-            message: result.error,
-            createdAt: new Date().toISOString(),
-          },
-        ]);
+        const errMsg: ChatMessage = {
+          id: uid(),
+          role: "error",
+          message: result.error,
+          createdAt: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, errMsg]);
+        if (activeId != null) {
+          try {
+            await upsertPredictionMessage(activeId, {
+              clientId: errMsg.id,
+              role: "error",
+              payload: errMsg,
+            });
+          } catch {}
+        }
         return;
       }
       const blocks: ScenarioBlock[] = result.scenarios.map((s) => ({
@@ -227,30 +307,57 @@ export function ProjectionChat({
         saved: false,
         applied: false,
       }));
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: uid(),
-          role: "advisor",
-          scenarios: blocks,
-          createdAt: new Date().toISOString(),
-        },
-      ]);
+      const advisorMsg: ChatMessage = {
+        id: uid(),
+        role: "advisor",
+        scenarios: blocks,
+        createdAt: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, advisorMsg]);
+      if (activeId != null) {
+        try {
+          await upsertPredictionMessage(activeId, {
+            clientId: advisorMsg.id,
+            role: "advisor",
+            payload: advisorMsg,
+          });
+        } catch (err) {
+          console.warn("[predict] failed to persist advisor message:", err);
+        }
+      }
+      // Refresh the server-rendered sessions list (title may have just
+      // been set) so the next render of the history dropdown is fresh.
+      setTimeout(() => router.refresh(), 1500);
     });
   }
 
   function updateBlock(messageId: string, blockId: string, patch: Partial<ScenarioBlock>) {
+    let updatedMsg: ChatMessage | null = null;
     setMessages((prev) =>
       prev.map((m) => {
         if (m.role !== "advisor" || m.id !== messageId) return m;
-        return {
+        const next: ChatMessage = {
           ...m,
           scenarios: m.scenarios.map((b) =>
             b.id === blockId ? { ...b, ...patch } : b,
           ),
         };
+        updatedMsg = next;
+        return next;
       }),
     );
+    // Persist the new advisor-message payload so applied/saved
+    // flags survive a refresh.
+    if (sessionId != null && updatedMsg != null) {
+      const snap = updatedMsg as ChatMessage;
+      void upsertPredictionMessage(sessionId, {
+        clientId: snap.id,
+        role: "advisor",
+        payload: snap,
+      }).catch((err) => {
+        console.warn("[predict] failed to persist block update:", err);
+      });
+    }
   }
 
   function applyEdits(messageId: string, block: ScenarioBlock) {
@@ -313,8 +420,127 @@ export function ProjectionChat({
     });
   }
 
+  function startNewChat() {
+    setSessionId(null);
+    setMessages([]);
+    setPrompt("");
+    window.history.replaceState({}, "", `/projections`);
+  }
+
+  function switchSession(id: number) {
+    if (id === sessionId) return;
+    router.push(`/projections?s=${id}`);
+  }
+
+  function handleDelete(id: number) {
+    void (async () => {
+      try {
+        await deletePredictionSession(id);
+        toast.success("Conversation deleted");
+        if (id === sessionId) {
+          const next = sessions.find((s) => s.id !== id);
+          if (next) {
+            router.push(`/projections?s=${next.id}`);
+          } else {
+            setSessionId(null);
+            setMessages([]);
+            window.history.replaceState({}, "", `/projections`);
+            router.refresh();
+          }
+        } else {
+          router.refresh();
+        }
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Couldn't delete conversation.",
+        );
+      } finally {
+        setConfirmDelete(null);
+      }
+    })();
+  }
+
+  const activeSessionRow = sessions.find((s) => s.id === sessionId);
+
   return (
     <div className="flex flex-col h-[calc(100vh-12rem)] min-h-[560px] rounded-xl border border-border bg-card/30 overflow-hidden">
+      <div className="flex items-center justify-between gap-2 px-3 sm:px-4 py-2 border-b border-border bg-card/40 backdrop-blur-md">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground min-w-0">
+          <Sparkles className="size-3.5 shrink-0 text-primary" />
+          <span className="truncate">
+            {activeSessionRow?.title ?? (sessionId ? "Loading…" : "New prediction")}
+          </span>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="xs" className="text-muted-foreground">
+                <History className="size-3.5" />
+                History
+                <span className="text-[10px] font-mono opacity-70 ml-1">
+                  {sessions.length}
+                </span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-72 max-h-[60vh] overflow-y-auto">
+              <DropdownMenuLabel>Conversations</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {sessions.length === 0 ? (
+                <div className="px-3 py-4 text-xs text-muted-foreground text-center">
+                  No past conversations yet.
+                </div>
+              ) : (
+                sessions.map((s) => (
+                  <DropdownMenuItem
+                    key={s.id}
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      switchSession(s.id);
+                    }}
+                    className="group flex items-start justify-between gap-2 cursor-pointer"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div
+                        className={
+                          "text-sm truncate " +
+                          (s.id === sessionId ? "font-medium" : "")
+                        }
+                      >
+                        {s.title}
+                      </div>
+                      <div className="text-[10px] font-mono text-muted-foreground truncate">
+                        {new Date(s.updatedAt).toLocaleString()}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        setConfirmDelete(s.id);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity shrink-0 mt-0.5"
+                      aria-label="Delete conversation"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </DropdownMenuItem>
+                ))
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={startNewChat}
+            className="text-muted-foreground"
+          >
+            <MessageSquarePlus className="size-3.5" />
+            New
+          </Button>
+        </div>
+      </div>
+
       <div
         ref={scrollRef}
         onScroll={onScroll}
@@ -454,8 +680,55 @@ export function ProjectionChat({
           </span>
         </div>
       </form>
+
+      <AlertDialog
+        open={confirmDelete != null}
+        onOpenChange={(v) => {
+          if (!v) setConfirmDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this conversation?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The thread and all of its scenarios are gone permanently.
+              Anything you Saved or Applied stays in your books — those
+              writes are independent of this thread.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (confirmDelete != null) handleDelete(confirmDelete);
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
+}
+
+/**
+ * The stored payload IS a ChatMessage with the same shape we hold in
+ * memory. Defensive: validate the role + return null on garbage so a
+ * single bad row can't crash the whole hydration.
+ */
+function deserializeMessage(
+  stored: PredictionStoredMessage,
+): ChatMessage | null {
+  if (!stored.payload || typeof stored.payload !== "object") return null;
+  const p = stored.payload as Partial<ChatMessage> & { role?: string };
+  if (p.role === "user" || p.role === "advisor" || p.role === "error") {
+    // Use the stable client id from the row so subsequent updates
+    // upsert against the same persisted message.
+    return { ...(p as ChatMessage), id: stored.clientId };
+  }
+  return null;
 }
 
 function EmptyState({ onPick }: { onPick: (p: string) => void }) {

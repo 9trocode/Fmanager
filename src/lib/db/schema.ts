@@ -380,6 +380,50 @@ export const transactions = sqliteTable(
  * file attachments, and tool-call parts without a column-per-part-type
  * schema. Messages cascade on session delete.
  */
+/**
+ * Prediction conversations on /projections. Distinct from advisor
+ * `chatSessions` because the message payload is different — each
+ * advisor turn carries an array of scenario blocks (each with
+ * proposedEdits, per-block saved/applied flags, etc), not a v6
+ * UIMessage. JSON-blob the whole ChatMessage shape so the UI's
+ * client-side type can evolve without migrations.
+ */
+export const predictionSessions = sqliteTable("prediction_sessions", {
+  id: id(),
+  title: text("title").notNull().default("New prediction"),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+export const predictionMessageRoles = ["user", "advisor", "error"] as const;
+export type PredictionMessageRole = (typeof predictionMessageRoles)[number];
+
+export const predictionMessages = sqliteTable(
+  "prediction_messages",
+  {
+    id: id(),
+    sessionId: integer("session_id")
+      .notNull()
+      .references(() => predictionSessions.id, { onDelete: "cascade" }),
+    /** Stable client-generated id so retries / partial state updates dedupe. */
+    clientId: text("client_id").notNull(),
+    role: text("role", { enum: predictionMessageRoles }).notNull(),
+    /** Full ChatMessage JSON — text + scenarios + per-block state. */
+    payloadJson: text("payload_json").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    sessionCreatedIdx: index("prediction_messages_session_created_idx").on(
+      t.sessionId,
+      t.createdAt,
+    ),
+    sessionClientIdx: index("prediction_messages_session_client_idx").on(
+      t.sessionId,
+      t.clientId,
+    ),
+  }),
+);
+
 export const chatSessions = sqliteTable("chat_sessions", {
   id: id(),
   title: text("title").notNull().default("New conversation"),

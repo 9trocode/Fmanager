@@ -14,16 +14,35 @@ import {
 } from "@/lib/db/queries";
 import { computeNetWorth } from "@/lib/aggregation";
 import { getRate } from "@/lib/fx";
+import {
+  getPredictionSession,
+  listPredictionSessions,
+} from "@/lib/actions/predictions";
 
-export default async function ProjectionsPage() {
+export default async function ProjectionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ s?: string }>;
+}) {
+  const params = await searchParams;
+  const requestedSessionId = Number(params.s);
+  const validRequested = Number.isFinite(requestedSessionId)
+    ? requestedSessionId
+    : null;
   const baseCurrency = await getBaseCurrency();
-  const [summary, grants, goals, budgets, flows] = await Promise.all([
+  const [summary, grants, goals, budgets, flows, sessions] = await Promise.all([
     computeNetWorth(baseCurrency),
     listGrants(),
     listSavingsGoals(),
     listBudgets(),
     listFlows(),
+    listPredictionSessions(),
   ]);
+  const activeSessionId = validRequested ?? sessions[0]?.id ?? null;
+  const activeSession =
+    activeSessionId != null
+      ? await getPredictionSession(activeSessionId)
+      : null;
 
   const grantCurrencies = grants.map((g) => g.currency);
   const goalCurrencies = goals.map((g) => g.currency);
@@ -106,6 +125,9 @@ export default async function ProjectionsPage() {
             currency: f.currency,
             cadence: f.cadence,
           }))}
+          initialSessionId={activeSessionId}
+          initialMessages={activeSession?.messages ?? []}
+          sessions={sessions}
         />
       )}
     </>

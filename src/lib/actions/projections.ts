@@ -11,7 +11,9 @@ import {
   computeNetWorth,
 } from "@/lib/aggregation";
 import {
+  listAccountsWithEffective,
   listFlows,
+  listGrants,
   listSavingsGoals,
   getBaseCurrency,
 } from "@/lib/db/queries";
@@ -390,13 +392,16 @@ export async function suggestScenarios(
   }
 
   const baseCurrency = await getBaseCurrency();
-  const [summary, cashFlow, goals, flows, budgetStatus] = await Promise.all([
-    computeNetWorth(baseCurrency),
-    computeMonthlyCashFlow(baseCurrency),
-    listSavingsGoals(),
-    listFlows(),
-    computeBudgetStatus(baseCurrency),
-  ]);
+  const [summary, cashFlow, goals, flows, budgetStatus, accounts, grants] =
+    await Promise.all([
+      computeNetWorth(baseCurrency),
+      computeMonthlyCashFlow(baseCurrency),
+      listSavingsGoals(),
+      listFlows(),
+      computeBudgetStatus(baseCurrency),
+      listAccountsWithEffective(),
+      listGrants(),
+    ]);
 
   // Per-currency flow breakdown so the model can SEE the multi-currency
   // shape of the user's life — instead of just a base-currency
@@ -524,6 +529,29 @@ export async function suggestScenarios(
   const dataPrompt = [
     `## Base currency: ${baseCurrency}`,
     `## Liquid net worth (floor scenario): ${summary.totals.floor.toFixed(0)} ${baseCurrency}`,
+    "",
+    "## Accounts (effective balances; native currency)",
+    accounts.length
+      ? accounts
+          .map((a) => {
+            const bal =
+              a.effectiveValue != null
+                ? `${a.effectiveValue.toFixed(0)} ${a.currency}`
+                : "no snapshot";
+            return `- id=${a.id}  ${a.name} (${a.type}) · ${bal}`;
+          })
+          .join("\n")
+      : "(no accounts)",
+    "",
+    "## Equity grants",
+    grants.length
+      ? grants
+          .map(
+            (g) =>
+              `- ${g.company} · ${g.vestedShares}/${g.totalShares} vested · strike ${g.strikePrice ?? "n/a"} ${g.currency} · FMV ${g.fmvPerShare ?? "n/a"} · target exit ${g.exitPricePerShare ?? "n/a"}`,
+          )
+          .join("\n")
+      : "(none)",
     "",
     "## Monthly cash flow (recurring) — NATIVE currencies, with base-currency equivalent",
     perCurrencyLines.length ? perCurrencyLines.join("\n") : "(no recurring flows)",
