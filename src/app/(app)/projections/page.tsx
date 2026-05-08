@@ -2,9 +2,9 @@ import { TrendingUp } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
 import {
-  ProjectionsExplorer,
+  ProjectionChat,
   type ProjectionGoal,
-} from "@/components/app/projections-explorer";
+} from "@/components/app/projection-chat";
 import {
   getBaseCurrency,
   listBudgets,
@@ -12,26 +12,19 @@ import {
   listGrants,
   listSavingsGoals,
 } from "@/lib/db/queries";
-import { computeNetWorth, computeMonthlyCashFlow } from "@/lib/aggregation";
+import { computeNetWorth } from "@/lib/aggregation";
 import { getRate } from "@/lib/fx";
-import { listSavedScenarios } from "@/lib/actions/saved-scenarios";
 
 export default async function ProjectionsPage() {
   const baseCurrency = await getBaseCurrency();
-  const [summary, grants, cashFlow, goals, savedScenarios, budgets, flows] =
-    await Promise.all([
-      computeNetWorth(baseCurrency),
-      listGrants(),
-      computeMonthlyCashFlow(baseCurrency),
-      listSavingsGoals(),
-      listSavedScenarios(),
-      listBudgets(),
-      listFlows(),
-    ]);
+  const [summary, grants, goals, budgets, flows] = await Promise.all([
+    computeNetWorth(baseCurrency),
+    listGrants(),
+    listSavingsGoals(),
+    listBudgets(),
+    listFlows(),
+  ]);
 
-  // Pre-resolve every (currency → base) FX rate the page will need:
-  // grant currencies for the projection engine, and goal currencies for
-  // the goal-target overlay. Done up front in one batch.
   const grantCurrencies = grants.map((g) => g.currency);
   const goalCurrencies = goals.map((g) => g.currency);
   const fxToBase: Record<string, number> = {};
@@ -47,14 +40,7 @@ export default async function ProjectionsPage() {
     ? summary.totals.liquid
     : 0;
   const startNonGrant = liquidTotal - startGrantsInBase;
-  const safeDefaultContribution = Number.isFinite(cashFlow.net)
-    ? Math.round(cashFlow.net)
-    : 0;
 
-  // debt_payoff goals "succeed" by driving an account balance to zero —
-  // a horizontal target line at zero on a positive net-worth chart isn't
-  // useful, so they're filtered out of the goal selector. Savings,
-  // net_worth, and FIRE all map cleanly to a positive target line.
   const today = new Date();
   const projectionGoals: ProjectionGoal[] = goals
     .filter((g) => !g.archived && g.kind !== "debt_payoff")
@@ -70,7 +56,9 @@ export default async function ProjectionsPage() {
         if (!Number.isNaN(t.getTime())) {
           monthsToTarget = Math.max(
             0,
-            Math.round((t.getTime() - today.getTime()) / (1000 * 60 * 60 * 24 * 30)),
+            Math.round(
+              (t.getTime() - today.getTime()) / (1000 * 60 * 60 * 24 * 30),
+            ),
           );
         }
       }
@@ -87,25 +75,23 @@ export default async function ProjectionsPage() {
   return (
     <>
       <PageHeader
-        title="Projections"
-        description="Compare scenarios side-by-side. Add a raise, an expense shock, or a lump sum — see how each path lands against your goal."
+        title="Predict"
+        description="Ask anything — what-ifs, paths to a goal, scenarios with raises or expense cuts. The advisor reads your real balance sheet and proposes concrete edits you can apply."
       />
 
       {!summary.hasData ? (
         <EmptyState
           icon={TrendingUp}
           title="Add data first"
-          description="Projections start from your current net worth. Add an account or equity grant to see scenarios."
+          description="Predictions start from your current net worth. Add an account or equity grant to get started."
         />
       ) : (
-        <ProjectionsExplorer
+        <ProjectionChat
           baseCurrency={baseCurrency}
           startNonGrantInBase={startNonGrant}
           grants={grants}
           fxToBase={fxToBase}
-          defaultMonthlyContribution={safeDefaultContribution}
           goals={projectionGoals}
-          savedScenarios={savedScenarios}
           budgetEntities={budgets.map((b) => ({
             id: b.id,
             category: b.category,
