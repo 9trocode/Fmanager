@@ -130,6 +130,19 @@ function FlowFields({
   const linkedAccount = accountOptions.find((a) => String(a.id) === accountId);
   const isLoanAccount = linkedAccount?.type === "loan";
 
+  // Controlled currency so we can warn the user when it mismatches
+  // the linked account's currency. Without this, a flow's
+  // transactions would post in the flow's currency on an account
+  // that's denominated in another — and the balance math has to
+  // FX-convert every time, with stale rates skewing net worth.
+  // Default-fill from the account once one's picked so the common
+  // case (matched currencies) just works without intervention.
+  const [currency, setCurrency] = useState(
+    defaults?.currency ?? accountOptions[0]?.currency ?? "USD",
+  );
+  const currencyMismatch =
+    linkedAccount != null && linkedAccount.currency !== currency;
+
   // Controlled category — driven by either the user typing or by the
   // Budget select (which sets category to the budget's category text).
   const [category, setCategory] = useState<string>(defaults?.category ?? "");
@@ -241,7 +254,8 @@ function FlowFields({
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="currency">Currency</Label>
-          <Select name="currency" defaultValue={defaults?.currency ?? "USD"}>
+          <input type="hidden" name="currency" value={currency} />
+          <Select value={currency} onValueChange={setCurrency}>
             <SelectTrigger id="currency">
               <SelectValue />
             </SelectTrigger>
@@ -332,6 +346,28 @@ function FlowFields({
             account. The recurring flow tracks the planned amount; the
             transaction applies it.
           </p>
+        ) : null}
+        {currencyMismatch && linkedAccount ? (
+          <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-2 space-y-1.5">
+            <p className="text-[11px] text-amber-300 leading-snug">
+              <span className="font-medium">Currency mismatch.</span> This
+              flow is in <span className="font-mono">{currency}</span> but{" "}
+              <span className="font-mono">{linkedAccount.name}</span> is
+              denominated in{" "}
+              <span className="font-mono">{linkedAccount.currency}</span>.
+              Posted transactions will be FX-converted into{" "}
+              <span className="font-mono">{linkedAccount.currency}</span>{" "}
+              when summed into the account balance — that works, but uses
+              the latest cached rate each time and can drift.
+            </p>
+            <button
+              type="button"
+              onClick={() => setCurrency(linkedAccount.currency)}
+              className="text-[11px] text-amber-200 hover:text-amber-100 underline underline-offset-2"
+            >
+              Match account → use {linkedAccount.currency}
+            </button>
+          </div>
         ) : null}
       </div>
 
