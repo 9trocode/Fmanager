@@ -7,7 +7,9 @@ import {
 } from "@/lib/auth/session";
 import { RoleProvider } from "@/components/app/role-context";
 import { FloatingAdvisor } from "@/components/app/floating-advisor";
+import { ScreenLockProvider } from "@/components/app/screen-lock";
 import { accrueDueFlows } from "@/lib/flow-accrual";
+import { getSetting } from "@/lib/db/queries";
 import {
   countActiveAlerts,
   runAdvisorChecks,
@@ -69,8 +71,19 @@ export default async function AppLayout({
     // Non-fatal — render without a badge.
   }
 
+  // Screen-lock + panic settings, threaded into the client provider.
+  // Defaults: idle lock disabled, panic redirects to /login.
+  const idleMinutesRaw = await getSetting("screen_lock_timeout_minutes");
+  const idleMinutes = Number(idleMinutesRaw) || 0;
+  const panicRedirectUrl =
+    (await getSetting("panic_redirect_url")) || "/login";
+
   return (
     <RoleProvider role={role}>
+     <ScreenLockProvider
+        idleMinutes={idleMinutes}
+        panicRedirectUrl={panicRedirectUrl}
+      >
       {/*
         Layout strategy:
           * <md  — single column. <MobileTopBar> is a sticky header with
@@ -81,8 +94,16 @@ export default async function AppLayout({
         don't waste edge gutters; desktop keeps the breathable px-8 py-12.
       */}
       <div className="min-h-screen flex flex-col md:flex-row">
-        <MobileTopBar alertCount={alertCount} alertCritical={alertCritical} />
-        <Sidebar alertCount={alertCount} alertCritical={alertCritical} />
+        <MobileTopBar
+          alertCount={alertCount}
+          alertCritical={alertCritical}
+          panicRedirectUrl={panicRedirectUrl}
+        />
+        <Sidebar
+          alertCount={alertCount}
+          alertCritical={alertCritical}
+          panicRedirectUrl={panicRedirectUrl}
+        />
         <main className="flex-1 min-w-0 relative">
           <div className="max-w-6xl mx-auto px-4 sm:px-6 md:px-8 py-6 md:py-12 relative">
             {children}
@@ -92,6 +113,7 @@ export default async function AppLayout({
             data, so a chat that mostly does is useless to them. */}
         {role === "admin" ? <FloatingAdvisor /> : null}
       </div>
+      </ScreenLockProvider>
     </RoleProvider>
   );
 }

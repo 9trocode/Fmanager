@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/app/theme-toggle";
+import { LockNowButton, PanicButton } from "@/components/app/screen-lock";
 import { MonthFilter } from "@/components/app/month-filter";
 import { useRole } from "@/components/app/role-context";
 import {
@@ -98,10 +99,12 @@ function SidebarContent({
   onNavigate,
   alertCount = 0,
   alertCritical = 0,
+  panicRedirectUrl = "/login",
 }: {
   onNavigate?: () => void;
   alertCount?: number;
   alertCritical?: number;
+  panicRedirectUrl?: string;
 }) {
   const pathname = usePathname();
   const role = useRole();
@@ -205,6 +208,8 @@ function SidebarContent({
             )}
           </div>
           <div className="flex items-center gap-1">
+            <LockNowButton />
+            <PanicButton redirectUrl={panicRedirectUrl} />
             <ThemeToggle />
             <form action="/api/auth/logout" method="post">
               <button
@@ -232,13 +237,19 @@ function SidebarContent({
 export function Sidebar({
   alertCount,
   alertCritical,
+  panicRedirectUrl,
 }: {
   alertCount?: number;
   alertCritical?: number;
+  panicRedirectUrl?: string;
 }) {
   return (
     <aside className="hidden md:flex sticky top-0 self-start h-screen w-72 shrink-0 border-r border-border bg-card/40 backdrop-blur-md flex-col">
-      <SidebarContent alertCount={alertCount} alertCritical={alertCritical} />
+      <SidebarContent
+        alertCount={alertCount}
+        alertCritical={alertCritical}
+        panicRedirectUrl={panicRedirectUrl}
+      />
     </aside>
   );
 }
@@ -251,9 +262,11 @@ export function Sidebar({
 export function MobileTopBar({
   alertCount,
   alertCritical,
+  panicRedirectUrl,
 }: {
   alertCount?: number;
   alertCritical?: number;
+  panicRedirectUrl?: string;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -297,6 +310,7 @@ export function MobileTopBar({
             onNavigate={() => setOpen(false)}
             alertCount={alertCount}
             alertCritical={alertCritical}
+            panicRedirectUrl={panicRedirectUrl}
           />
         </SheetContent>
       </Sheet>

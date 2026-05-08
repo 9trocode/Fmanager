@@ -24,12 +24,19 @@ import {
 } from "@/lib/ai/provider";
 import { DecisionsManager } from "@/components/app/decisions-manager";
 import { FxRefreshButton } from "@/components/app/fx-refresh-button";
+import { SecuritySettings } from "@/components/app/security-settings";
 import { AdminDataTools } from "@/components/app/admin-data-tools";
 import { DataTools } from "@/components/app/data-tools";
 import { getSetting, getSettings, listDecisions } from "@/lib/db/queries";
 
 export default async function SettingsPage() {
-  const [settings, decisions, fxLastRefresh] = await Promise.all([
+  const [
+    settings,
+    decisions,
+    fxLastRefresh,
+    idleMinutesRaw,
+    panicUrl,
+  ] = await Promise.all([
     getSettings([
       "base_currency",
       "advisor_provider",
@@ -40,7 +47,10 @@ export default async function SettingsPage() {
     ]),
     listDecisions(),
     getSetting("fx_last_refresh"),
+    getSetting("screen_lock_timeout_minutes"),
+    getSetting("panic_redirect_url"),
   ]);
+  const idleMinutes = Number(idleMinutesRaw) || 0;
 
   const provider = ((settings.advisor_provider as string) ??
     "anthropic") as AdvisorProvider;
@@ -68,6 +78,7 @@ export default async function SettingsPage() {
               {decisions.filter((d) => d.status === "open").length}
             </span>
           </TabsTrigger>
+          <TabsTrigger value="security">Security</TabsTrigger>
           <TabsTrigger value="admin">Admin</TabsTrigger>
         </TabsList>
 
@@ -169,6 +180,13 @@ export default async function SettingsPage() {
 
         <TabsContent value="decisions" className="space-y-4">
           <DecisionsManager decisions={decisions} />
+        </TabsContent>
+
+        <TabsContent value="security" className="space-y-4">
+          <SecuritySettings
+            initialIdleMinutes={idleMinutes}
+            initialPanicUrl={panicUrl ?? ""}
+          />
         </TabsContent>
 
         <TabsContent value="admin" className="space-y-4">

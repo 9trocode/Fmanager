@@ -17,7 +17,19 @@ export type SettingKey =
   | "fx_last_refresh"
   | "admin_email"
   | "admin_name"
-  | "admin_password_hash";
+  | "admin_password_hash"
+  /**
+   * Idle minutes before the in-app screen lock kicks in. "0" or
+   * unset = disabled. Stored as a string in settings (everything
+   * else is); the client parses to a number on load.
+   */
+  | "screen_lock_timeout_minutes"
+  /**
+   * Optional URL the panic button redirects to after logging out
+   * — somewhere innocuous like google.com. Defaults to /login when
+   * unset.
+   */
+  | "panic_redirect_url";
 
 const DEFAULTS: Partial<Record<SettingKey, string>> = {
   base_currency: "USD",
