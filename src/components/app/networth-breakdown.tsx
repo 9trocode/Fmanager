@@ -14,6 +14,7 @@ import {
   listAccountTransactions,
 } from "@/lib/db/queries";
 import { convert } from "@/lib/fx";
+import { localToday } from "@/lib/dates";
 import { formatMoney } from "@/lib/format";
 import { isLiability } from "@/lib/account-types";
 
@@ -36,6 +37,7 @@ import { isLiability } from "@/lib/account-types";
 export async function NetWorthBreakdown() {
   const accounts = await listAccounts();
   if (accounts.length === 0) return null;
+  const today = localToday();
 
   // Pull each account's latest snapshot + the list of transactions
   // since that snapshot date. Both queries are already indexed; the
@@ -50,9 +52,14 @@ export async function NetWorthBreakdown() {
       const txs = latest
         ? await listAccountTransactions(a.id)
         : await listAccountTransactions(a.id);
+      // Strictly after the snapshot AND on or before today. Future-
+      // dated transactions are intent, not realized events; they don't
+      // contribute to the current balance.
       const sinceTxs = latest
-        ? txs.filter((t) => t.occurredAt > latest.asOf)
-        : txs;
+        ? txs.filter(
+            (t) => t.occurredAt > latest.asOf && t.occurredAt <= today,
+          )
+        : txs.filter((t) => t.occurredAt <= today);
       let delta = 0;
       let crossCurrencyCount = 0;
       for (const t of sinceTxs) {

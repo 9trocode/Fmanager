@@ -60,6 +60,7 @@ import { ACCOUNT_TYPE_LABEL, isLiability } from "@/lib/account-types";
 import { FLOW_CADENCE_LABEL, monthlyEquivalent } from "@/lib/flows";
 import { formatMoney } from "@/lib/format";
 import { convert } from "@/lib/fx";
+import { localToday } from "@/lib/dates";
 
 export default async function AccountDetailPage({
   params,
@@ -141,9 +142,11 @@ export default async function AccountDetailPage({
     category: string | null;
   };
   let derivationRows: DerivationRow[] = [];
+  let futureRows: DerivationRow[] = [];
+  const today = localToday();
   if (latest) {
     const sinceTxs = txs.filter((t) => t.occurredAt > latest.asOf);
-    derivationRows = await Promise.all(
+    const allRows = await Promise.all(
       sinceTxs.map(async (t) => {
         const isSource = t.accountId === id;
         const isDest = t.destAccountId === id && t.kind === "transfer";
@@ -173,6 +176,12 @@ export default async function AccountDetailPage({
         };
       }),
     );
+    // Split: anything dated on/before today contributes to the
+    // running balance. Anything in the future is intent/scheduled —
+    // shown separately so the user can see it without it dropping
+    // their balance pre-emptively.
+    derivationRows = allRows.filter((r) => r.occurredAt <= today);
+    futureRows = allRows.filter((r) => r.occurredAt > today);
   }
   // Same-day skipped count — these don't show in the running total
   // but should be flagged so the user knows their salary on the
@@ -348,7 +357,7 @@ export default async function AccountDetailPage({
         contributed and at what rate (when FX-converted), so a
         suspicious balance never has to be a mystery.
       */}
-      {latest && derivationRows.length > 0 ? (
+      {latest && (derivationRows.length > 0 || futureRows.length > 0) ? (
         <Card className="mt-6">
           <CardHeader>
             <CardTitle className="text-base">How this is computed</CardTitle>
@@ -448,6 +457,71 @@ export default async function AccountDetailPage({
                 the snapshot date ({latest.asOf}) were intentionally
                 skipped — the snapshot wins on its own date. To include
                 them, set the snapshot date one day earlier.
+              </div>
+            ) : null}
+            {futureRows.length > 0 ? (
+              <div className="border-t border-border">
+                <div className="px-4 py-2 bg-amber-500/5 text-[11px] text-amber-300 flex items-center justify-between">
+                  <span>
+                    Scheduled · dated after today, not in the running
+                    balance yet
+                  </span>
+                  <span className="font-mono">
+                    {futureRows.length}{" "}
+                    {futureRows.length === 1 ? "tx" : "txs"}
+                  </span>
+                </div>
+                <ul className="divide-y divide-border/60">
+                  {futureRows.map((r) => (
+                    <li
+                      key={r.id}
+                      className="px-4 py-2 flex items-center justify-between gap-3 text-xs opacity-70"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono text-muted-foreground">
+                            {r.occurredAt}
+                          </span>
+                          <span className="capitalize">{r.kind}</span>
+                          {r.category ? (
+                            <Badge
+                              variant="secondary"
+                              className="text-[10px]"
+                            >
+                              {r.category}
+                            </Badge>
+                          ) : null}
+                          {r.isCrossCurrency ? (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] border-amber-500/40 text-amber-300"
+                            >
+                              {r.nativeCurrency} → {account.currency}
+                            </Badge>
+                          ) : null}
+                        </div>
+                        {r.notes ? (
+                          <div className="text-[11px] text-muted-foreground truncate mt-0.5">
+                            {r.notes}
+                          </div>
+                        ) : null}
+                      </div>
+                      <div
+                        className={
+                          "font-mono tabular-nums shrink-0 " +
+                          (r.contribution > 0
+                            ? "text-emerald-400"
+                            : r.contribution < 0
+                              ? "text-destructive"
+                              : "text-muted-foreground")
+                        }
+                      >
+                        {r.contribution > 0 ? "+" : ""}
+                        {formatMoney(r.contribution, account.currency)}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
               </div>
             ) : null}
           </CardContent>

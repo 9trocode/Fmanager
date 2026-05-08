@@ -3,6 +3,7 @@ import { cache } from "react";
 import { and, asc, desc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { convert } from "@/lib/fx";
+import { localToday } from "@/lib/dates";
 import type { AccountType, TransactionKind } from "@/lib/db/schema";
 
 export type SettingKey =
@@ -154,12 +155,20 @@ export async function getEffectiveBalance(accountId: number): Promise<{
   // One query covers both directions: source-on-account OR
   // destination-on-account-for-transfers, after the snapshot. Halves
   // the round-trips vs. the previous two-query version.
+  //
+  // The upper bound (occurredAt <= today) excludes FUTURE-DATED
+  // transactions. A user might log "I'll pay off this loan on the
+  // 23rd" as a transaction dated in the future — that's intent, not
+  // a realized event, and shouldn't drop the current balance to zero
+  // before the date arrives.
+  const today = localToday();
   const txs = await db
     .select()
     .from(schema.transactions)
     .where(
       and(
         gte(schema.transactions.occurredAt, latest.asOf),
+        lte(schema.transactions.occurredAt, today),
         or(
           eq(schema.transactions.accountId, accountId),
           and(
@@ -246,7 +255,12 @@ export async function listAccountsWithEffective(
   }, "");
 
   // All transactions touching any of these accounts since the earliest
-  // relevant snapshot. One query, then bucket by account in memory.
+  // relevant snapshot AND on/before today. Future-dated rows are
+  // intent (e.g. "I'll pay off this loan on the 23rd") and shouldn't
+  // affect the CURRENT balance until the date arrives — see the
+  // matching upper-bound clause in getEffectiveBalance for the same
+  // rule applied per-account.
+  const today = localToday();
   const txs = earliestAsOf
     ? await db
         .select()
@@ -258,6 +272,7 @@ export async function listAccountsWithEffective(
               inArray(schema.transactions.destAccountId, ids),
             ),
             gte(schema.transactions.occurredAt, earliestAsOf),
+            lte(schema.transactions.occurredAt, today),
           ),
         )
     : [];
