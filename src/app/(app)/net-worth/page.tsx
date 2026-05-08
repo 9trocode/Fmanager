@@ -13,6 +13,7 @@ import { EmptyState } from "@/components/app/empty-state";
 import { AddAccountDialog } from "@/components/app/add-account-dialog";
 import { AddGrantDialog } from "@/components/app/add-grant-dialog";
 import { HeroBackground } from "@/components/app/hero-background";
+import { NetWorthBreakdown } from "@/components/app/networth-breakdown";
 import {
   ExplainPopover,
   type ExplainLine,
@@ -104,6 +105,14 @@ export default async function NetWorthPage() {
                 summary={summary}
                 baseCurrency={baseCurrency}
               />
+              {/*
+                Per-account derivation. Same shape under every
+                scenario (snapshot + transactions-since is what feeds
+                the cash side of all three); equity overlay differs
+                per scenario but is summarized in the category
+                panel above.
+              */}
+              <NetWorthBreakdown />
             </TabsContent>
           ))}
         </Tabs>

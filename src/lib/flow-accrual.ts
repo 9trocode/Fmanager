@@ -28,7 +28,32 @@ import { localToday, localYmd } from "@/lib/dates";
 
 type Cadence = "weekly" | "monthly" | "yearly";
 
-const MAX_CATCHUP_PERIODS = 24;
+/**
+ * Hard cap on auto-backfill posts per flow per accrual run.
+ *
+ * Was 24 — meant a flow with `nextDueAt` set to a date months ago
+ * would silently post up to two years of phantom transactions on
+ * the next page render, blowing up the user's effective balance
+ * (and net worth) without any user intent. A $2-3k/mo USD expense
+ * flow that was 24 months overdue produced ~$70k in phantom
+ * expenses out of thin air.
+ *
+ * Now: 1. The accruer will only ever post the SINGLE most-recent
+ * period due. If a flow is more overdue than that, the loop in
+ * `accrueDueFlows` advances the cursor without posting (see
+ * "stale-cursor catch-up" below). The user can manually backfill
+ * via "Apply now" or by editing transactions if they actually want
+ * historical entries.
+ */
+const MAX_CATCHUP_PERIODS = 1;
+/**
+ * If a flow's anchored `nextDueAt` is more than this many cadences
+ * in the past, it's almost certainly a stale cursor (e.g. user just
+ * upgraded the app, came back from a long break, or fixed the
+ * date manually) — not a real "we owe N months of posts". In that
+ * case advance the cursor forward without posting any backfill.
+ */
+const STALE_CURSOR_THRESHOLD_PERIODS = 2;
 
 function addCadence(d: Date, cadence: Cadence): Date {
   const next = new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -131,6 +156,39 @@ export async function accrueDueFlows(): Promise<{ posted: number }> {
       let dueDate = parseYmd(f.nextDueAt);
       let mostRecentPosted: string | null = null;
       let nextDueAfterLoop = f.nextDueAt;
+
+      // Stale-cursor catch-up: if the anchor is more than
+      // STALE_CURSOR_THRESHOLD_PERIODS old, advance the cursor
+      // forward without posting anything for the missed periods.
+      // The user wants the flow to RUN going forward — they don't
+      // want a wall of phantom transactions for months they never
+      // explicitly chose to backfill.
+      let advanceOnly = 0;
+      while (
+        advanceOnly < STALE_CURSOR_THRESHOLD_PERIODS + 200 &&
+        dueDate <= todayDate
+      ) {
+        const next = addCadence(dueDate, f.cadence);
+        // Stop when next would land in the future — at that point
+        // dueDate IS the soon-to-be-posted period (within
+        // threshold).
+        if (next > todayDate) break;
+        dueDate = next;
+        advanceOnly += 1;
+      }
+      if (advanceOnly > STALE_CURSOR_THRESHOLD_PERIODS) {
+        // We had to skip more than the threshold to find the
+        // current period — flow is stale. Don't post anything;
+        // just advance the cursor to the upcoming period.
+        const upcoming = addCadence(dueDate, f.cadence);
+        plan.updates.push({
+          flowId: f.id,
+          lastPostedAt: localYmd(dueDate),
+          nextDueAt: localYmd(upcoming),
+        });
+        continue;
+      }
+
       let safety = 0;
       while (safety < MAX_CATCHUP_PERIODS && dueDate <= todayDate) {
         const occurredAt = localYmd(dueDate);
