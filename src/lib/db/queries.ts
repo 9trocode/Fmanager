@@ -148,12 +148,40 @@ export async function listSnapshots(accountId: number) {
  * If no snapshot exists, the effective value is null (treated as no data).
  * If snapshot exists but no transactions, effective == latest.
  */
-export async function getEffectiveBalance(accountId: number): Promise<{
+export async function getEffectiveBalance(
+  accountId: number,
+  /**
+   * Upper bound for transaction inclusion. Defaults to today —
+   * "current effective balance". Pass a YYYY-MM-DD to compute the
+   * balance as of an arbitrary historical date (e.g. end of a past
+   * month for the global month filter). The snapshot picked is
+   * still the latest one at or before this date.
+   */
+  asOfDate?: string,
+): Promise<{
   effectiveValue: number | null;
   latestValue: number | null;
   latestAsOf: string | null;
 }> {
-  const latest = await getLatestSnapshot(accountId);
+  const upperBound = asOfDate ?? localToday();
+  // Latest snapshot AT OR BEFORE the upper bound. For asOfDate=today
+  // this is the same as getLatestSnapshot; for past dates it picks
+  // whatever snapshot was current then.
+  const snapRows = await db
+    .select()
+    .from(schema.valueSnapshots)
+    .where(
+      and(
+        eq(schema.valueSnapshots.accountId, accountId),
+        lte(schema.valueSnapshots.asOf, upperBound),
+      ),
+    )
+    .orderBy(
+      desc(schema.valueSnapshots.asOf),
+      desc(schema.valueSnapshots.id),
+    )
+    .limit(1);
+  const latest = snapRows[0] ?? null;
   if (!latest) {
     return { effectiveValue: null, latestValue: null, latestAsOf: null };
   }
@@ -168,19 +196,18 @@ export async function getEffectiveBalance(accountId: number): Promise<{
   // destination-on-account-for-transfers, after the snapshot. Halves
   // the round-trips vs. the previous two-query version.
   //
-  // The upper bound (occurredAt <= today) excludes FUTURE-DATED
-  // transactions. A user might log "I'll pay off this loan on the
-  // 23rd" as a transaction dated in the future — that's intent, not
-  // a realized event, and shouldn't drop the current balance to zero
-  // before the date arrives.
-  const today = localToday();
+  // The upper bound (occurredAt <= upperBound) excludes transactions
+  // dated AFTER the as-of date. For asOfDate=today this is the
+  // future-dated guard from before; for past dates it's the
+  // historical-cutoff that makes "balance as at end of March" mean
+  // what it should mean.
   const txs = await db
     .select()
     .from(schema.transactions)
     .where(
       and(
         gte(schema.transactions.occurredAt, latest.asOf),
-        lte(schema.transactions.occurredAt, today),
+        lte(schema.transactions.occurredAt, upperBound),
         or(
           eq(schema.transactions.accountId, accountId),
           and(
@@ -231,26 +258,31 @@ export async function getEffectiveBalance(accountId: number): Promise<{
  *   3. all post-snapshot transactions in one scan, grouped in memory
  */
 export async function listAccountsWithEffective(
-  opts: { includeArchived?: boolean } = {},
+  opts: { includeArchived?: boolean; asOfDate?: string } = {},
 ) {
   const accounts = await listAccounts(opts);
   if (accounts.length === 0) return [];
 
   const ids = accounts.map((a) => a.id);
+  const upperBound = opts.asOfDate ?? localToday();
 
-  // Latest snapshot per account via a correlated subquery — SQLite
-  // resolves this with the (account_id, as_of) composite index we
-  // added, so it's a b-tree walk per account, not a scan.
+  // Latest snapshot per account at or before upperBound. Subquery
+  // bounds asOf by upperBound so a "view as of last March" picks
+  // the snapshot that was current then, not today's. The
+  // (account_id, as_of) composite index makes this a b-tree walk
+  // per account, not a scan.
   const latestSnapshots = await db
     .select()
     .from(schema.valueSnapshots)
     .where(
       and(
         inArray(schema.valueSnapshots.accountId, ids),
+        lte(schema.valueSnapshots.asOf, upperBound),
         sql`(${schema.valueSnapshots.accountId}, ${schema.valueSnapshots.asOf}, ${schema.valueSnapshots.id}) IN (
           SELECT account_id, MAX(as_of), MAX(id)
           FROM value_snapshots
           WHERE account_id IN ${ids}
+            AND as_of <= ${upperBound}
           GROUP BY account_id, as_of
         )`,
       ),
@@ -267,12 +299,10 @@ export async function listAccountsWithEffective(
   }, "");
 
   // All transactions touching any of these accounts since the earliest
-  // relevant snapshot AND on/before today. Future-dated rows are
-  // intent (e.g. "I'll pay off this loan on the 23rd") and shouldn't
-  // affect the CURRENT balance until the date arrives — see the
-  // matching upper-bound clause in getEffectiveBalance for the same
-  // rule applied per-account.
-  const today = localToday();
+  // relevant snapshot AND on/before the as-of date. For asOfDate=today
+  // (default) this excludes future-dated intent rows; for past dates
+  // it's the historical cutoff that makes "balance as at end of March"
+  // mean what it should mean.
   const txs = earliestAsOf
     ? await db
         .select()
@@ -284,7 +314,7 @@ export async function listAccountsWithEffective(
               inArray(schema.transactions.destAccountId, ids),
             ),
             gte(schema.transactions.occurredAt, earliestAsOf),
-            lte(schema.transactions.occurredAt, today),
+            lte(schema.transactions.occurredAt, upperBound),
           ),
         )
     : [];

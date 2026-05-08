@@ -61,11 +61,28 @@ import { FLOW_CADENCE_LABEL, monthlyEquivalent } from "@/lib/flows";
 import { formatMoney } from "@/lib/format";
 import { convert } from "@/lib/fx";
 import { localToday } from "@/lib/dates";
+import { resolveMonthKey } from "@/lib/month-filter";
+
+function currentMonthKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function endOfMonthYmd(monthKey: string): string {
+  const [y, m] = monthKey.split("-").map(Number);
+  const d = new Date(y, m, 0);
+  const yy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
 
 export default async function AccountDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ m?: string }>;
 }) {
   const { id: idStr } = await params;
   const id = Number(idStr);
@@ -74,11 +91,17 @@ export default async function AccountDetailPage({
   const account = await getAccount(id);
   if (!account) notFound();
 
+  const sp = await searchParams;
+  const selectedMonth = await resolveMonthKey(sp.m);
+  const isPastMonth =
+    selectedMonth != null && selectedMonth !== currentMonthKey();
+  const asOfDate = isPastMonth ? endOfMonthYmd(selectedMonth!) : undefined;
+
   const [snapshots, txs, allAccounts, effective, flows] = await Promise.all([
     listSnapshots(id),
     listAccountTransactions(id, 50),
     listAccounts({ includeArchived: true }),
-    getEffectiveBalance(id),
+    getEffectiveBalance(id, asOfDate),
     listAccountFlows(id),
   ]);
 
@@ -143,7 +166,12 @@ export default async function AccountDetailPage({
   };
   let derivationRows: DerivationRow[] = [];
   let futureRows: DerivationRow[] = [];
-  const today = localToday();
+  // Upper bound for the derivation: usually today. When the user has
+  // scoped the global month filter to a past month, the upper bound
+  // becomes the end-of-that-month date — so the derivation card shows
+  // exactly the math that produced the as-of-month-end balance, with
+  // anything dated after that date listed in the "Scheduled" panel.
+  const today = asOfDate ?? localToday();
   if (latest) {
     const sinceTxs = txs.filter((t) => t.occurredAt > latest.asOf);
     const allRows = await Promise.all(
@@ -463,8 +491,9 @@ export default async function AccountDetailPage({
               <div className="border-t border-border">
                 <div className="px-4 py-2 bg-amber-500/5 text-[11px] text-amber-300 flex items-center justify-between">
                   <span>
-                    Scheduled · dated after today, not in the running
-                    balance yet
+                    {asOfDate
+                      ? `Dated after ${asOfDate} — outside this month's window`
+                      : "Scheduled · dated after today, not in the running balance yet"}
                   </span>
                   <span className="font-mono">
                     {futureRows.length}{" "}

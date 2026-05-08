@@ -19,6 +19,7 @@ import { listAccountsWithEffective, listFlows } from "@/lib/db/queries";
 import { ACCOUNT_TYPE_LABEL, isLiability } from "@/lib/account-types";
 import { monthlyEquivalent } from "@/lib/flows";
 import { formatMoney } from "@/lib/format";
+import { resolveMonthKey } from "@/lib/month-filter";
 
 type FlowSummary = {
   monthlyIncome: number;
@@ -27,9 +28,40 @@ type FlowSummary = {
   hasMixedCurrency: boolean;
 };
 
-export default async function AccountsPage() {
+function currentMonthKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function endOfMonthYmd(monthKey: string): string {
+  const [y, m] = monthKey.split("-").map(Number);
+  const d = new Date(y, m, 0);
+  const yy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
+function monthLabelFromKey(monthKey: string): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(monthKey);
+  if (!m) return monthKey;
+  const date = new Date(Number(m[1]), Number(m[2]) - 1, 1);
+  return date.toLocaleString("en-US", { month: "long", year: "numeric" });
+}
+
+export default async function AccountsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ m?: string }>;
+}) {
+  const params = await searchParams;
+  const selectedMonth = await resolveMonthKey(params.m);
+  const isPastMonth =
+    selectedMonth != null && selectedMonth !== currentMonthKey();
+  const asOfDate = isPastMonth ? endOfMonthYmd(selectedMonth!) : undefined;
+
   const [accounts, flows] = await Promise.all([
-    listAccountsWithEffective({ includeArchived: true }),
+    listAccountsWithEffective({ includeArchived: true, asOfDate }),
     listFlows(),
   ]);
   const active = accounts.filter((a) => !a.archived);
@@ -67,8 +99,21 @@ export default async function AccountsPage() {
     <>
       <PageHeader
         title="Accounts"
-        description="Cash, brokerage, crypto, real estate. One row per account, snapshots track changes over time."
-        actions={<AddAccountDialog />}
+        description={
+          isPastMonth
+            ? `Balances as of ${asOfDate} (end of ${monthLabelFromKey(selectedMonth!)}). Latest snapshot at or before that date plus signed transactions through it. Switch back to the current month in the sidebar for live balances.`
+            : "Cash, brokerage, crypto, real estate. One row per account, snapshots track changes over time."
+        }
+        actions={
+          <>
+            {isPastMonth ? (
+              <Badge variant="secondary" className="font-mono text-[11px]">
+                as of {asOfDate}
+              </Badge>
+            ) : null}
+            <AddAccountDialog />
+          </>
+        }
       />
 
       {active.length === 0 ? (
