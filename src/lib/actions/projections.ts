@@ -5,6 +5,7 @@ import { generateText, Output } from "ai";
 import { z } from "zod";
 import { assertAdmin } from "@/lib/auth/session";
 import { buildAdvisorClient } from "@/lib/ai/provider";
+import { advisorTools } from "@/lib/ai/tools";
 import {
   computeBudgetStatus,
   computeMonthlyCashFlow,
@@ -478,6 +479,17 @@ export async function suggestScenarios(
     "Each scenario tests a different lever — raise/income bump, expense cut, lump sum (bonus/refund), longer horizon, higher contribution, or a mix.",
     "Use the user's actual numbers below. Don't invent figures or pick generic placeholders.",
     "",
+    "## Tool use",
+    "You have READ-ONLY tools to fetch additional data on demand: listAccounts, listBudgets, listSavingsGoals, listFlows, listGrants, listTransactions, listActiveAlerts, getNetWorth, getRunwayCheck, getBudgetStatus, getCashFlow, getAccountBalances, getExchangeRate, convertCurrency.",
+    "MOST prompts are well-served by the data already in this message — use tools only when a specific lookup would meaningfully change the scenario. Examples worth tools:",
+    "  - User says 'cut dining' — call listTransactions(category='Food', dateFrom=...) to see actual recent dining spend before proposing a cut.",
+    "  - User mentions a specific account — call getAccountBalances to get the live effective balance.",
+    "  - Refining a previous scenario where a budget value matters — call getBudgetStatus.",
+    "Examples NOT worth tools:",
+    "  - 'I'm getting a 30% raise' — the data already shows their income flows.",
+    "  - 'Show me what aggressive saving looks like' — no per-row detail needed.",
+    "After at most 2-3 tool calls, produce the final structured response. Each call adds latency the user feels.",
+    "",
     `## Currency rules`,
     `- Base currency: ${baseCurrency}. ALL numbers you output (monthlyContribution, event newMonthly, event amount) MUST be in ${baseCurrency}.`,
     `- The user's flows live in their NATIVE currencies (see "Monthly cash flow (recurring)" below). When the user says "$1,600 raise" or "₦200k cut", convert to ${baseCurrency} using the implied current rates from the data — don't ask for rates.`,
@@ -582,11 +594,45 @@ export async function suggestScenarios(
     prompt.trim() || "(no specific question — propose what's most useful)",
   ].join("\n");
 
+  // Read-only subset of the chat advisor's tools. Prediction is
+  // non-destructive — it shouldn't be able to log a transaction or
+  // archive a flow mid-thought. Writes happen later via
+  // `applyProposedEdits` once the user confirms the diff.
+  const predictionTools = {
+    listAccounts: advisorTools.listAccounts,
+    listBudgets: advisorTools.listBudgets,
+    listSavingsGoals: advisorTools.listSavingsGoals,
+    listFlows: advisorTools.listFlows,
+    listGrants: advisorTools.listGrants,
+    listTransactions: advisorTools.listTransactions,
+    listActiveAlerts: advisorTools.listActiveAlerts,
+    getNetWorth: advisorTools.getNetWorth,
+    getRunwayCheck: advisorTools.getRunwayCheck,
+    getBudgetStatus: advisorTools.getBudgetStatus,
+    getCashFlow: advisorTools.getCashFlow,
+    getAccountBalances: advisorTools.getAccountBalances,
+    getExchangeRate: advisorTools.getExchangeRate,
+    convertCurrency: advisorTools.convertCurrency,
+  };
+
   try {
     const result = await generateText({
       model: client.model,
       system: systemPrompt,
       prompt: dataPrompt,
+      // The predict action used to be a one-shot generateText with
+      // every potentially-relevant data point baked into the prompt
+      // up front. That's fine for shallow scenarios but couldn't
+      // pull in things like "user's last 90 days of dining" when
+      // the prompt called for it. Now: tool loop. The model has
+      // read tools and can fetch on demand; the structured output
+      // schema is still enforced as the terminal step.
+      tools: predictionTools,
+      // 6 steps = ~3 tool calls + reasoning + final structured
+      // output. The system prompt tells the model to favor what's
+      // already in the prompt and only reach for tools when a
+      // specific lookup would change the answer.
+      stopWhen: ({ steps }) => steps.length >= 6,
       // v6 structured-output API. The model is constrained to produce
       // a value matching ResponseSchema; result.output is fully typed.
       output: Output.object({ schema: ResponseSchema }),
