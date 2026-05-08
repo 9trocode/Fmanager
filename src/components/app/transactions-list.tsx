@@ -30,6 +30,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { EditTransactionDialog } from "@/components/app/edit-transaction-dialog";
+import { TransactionDetailSheet } from "@/components/app/transaction-detail-sheet";
 import type { TransactionAccountOption } from "@/components/app/transaction-form-fields";
 import { deleteTransaction } from "@/lib/actions/transactions";
 import { formatMoney } from "@/lib/format";
@@ -96,6 +97,7 @@ export function TransactionItem({
 }) {
   const role = useRole();
   const readOnly = role === "viewer";
+  const [detailOpen, setDetailOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [, startTransition] = useTransition();
 
@@ -133,7 +135,10 @@ export function TransactionItem({
       ? `${sourceAcc?.name ?? "?"} → ${destAcc.name}`
       : (sourceAcc?.name ?? "?");
 
-  const clickable = !readOnly;
+  // Detail sheet is read-OK for everyone; viewers see the same data
+  // but with the Edit / Delete actions hidden. So the row is always
+  // clickable now.
+  const clickable = true;
 
   return (
     <div
@@ -145,12 +150,15 @@ export function TransactionItem({
       role={clickable ? "button" : undefined}
       tabIndex={clickable ? 0 : undefined}
       onClick={() => {
-        if (clickable) setEditOpen(true);
+        // Click anywhere on the row opens the read-first details sheet,
+        // NOT the edit dialog directly. Edit is one click further in.
+        // Viewer role still falls through (clickable=false).
+        if (clickable) setDetailOpen(true);
       }}
       onKeyDown={(e) => {
         if (clickable && (e.key === "Enter" || e.key === " ")) {
           e.preventDefault();
-          setEditOpen(true);
+          setDetailOpen(true);
         }
       }}
     >
@@ -246,6 +254,15 @@ export function TransactionItem({
           occurredAt: transaction.occurredAt,
           notes: transaction.notes,
         }}
+      />
+
+      <TransactionDetailSheet
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+        transaction={transaction}
+        accounts={accounts}
+        readOnly={readOnly}
+        contextAccountId={contextAccountId}
       />
     </div>
   );

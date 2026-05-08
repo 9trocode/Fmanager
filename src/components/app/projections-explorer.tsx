@@ -218,11 +218,13 @@ export function ProjectionsExplorer({
     ? (defaultMonthlyContribution as number)
     : 3000;
 
-  // Always-on baseline scenario + room for what-if siblings. The user
-  // can rename the baseline; they can't remove the last scenario.
-  const [scenarios, setScenarios] = useState<ExplorerScenario[]>(() => [
-    makeBaseScenario("Current pace", { monthly: safeDefault }),
-  ]);
+  // Empty canvas by default. The user adds their first scenario via
+  // the prompt bar (drafts), the "+ Scenario" button (manual), or
+  // the Saved dropdown (load). An empty canvas reads as "what would
+  // you like to model?" rather than starting them with a forced
+  // baseline they didn't ask for. `safeDefault` still seeds new
+  // manual scenarios via addScenario.
+  const [scenarios, setScenarios] = useState<ExplorerScenario[]>([]);
   const [view, setView] = useState<EquityScenario>("floor");
   const [goalId, setGoalId] = useState<number | null>(null);
   /**
@@ -841,9 +843,11 @@ export function ProjectionsExplorer({
               Scenarios at a glance
             </CardTitle>
             <CardDescription>
-              {scenarios.length === 1
-                ? "Add another scenario to compare. Use AI scenarios to seed a few good options."
-                : `Comparing ${scenarios.length} paths over ${(maxMonth / 12).toFixed(1)} years.`}
+              {scenarios.length === 0
+                ? "Type a prompt below — describe what you want to model — or click + Scenario to start manually."
+                : scenarios.length === 1
+                  ? "Add another scenario to compare. Use the prompt bar below to seed a few with AI."
+                  : `Comparing ${scenarios.length} paths over ${(maxMonth / 12).toFixed(1)} years.`}
             </CardDescription>
           </CardHeader>
           <CardContent>

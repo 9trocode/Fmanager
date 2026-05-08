@@ -215,9 +215,31 @@ export async function applyFlowNow(formData: FormData) {
     flowId: flow.id,
     notes: flow.notes ?? `Manually applied from ${flow.name}`,
   });
+  // Advance nextDueAt PAST today so accrueDueFlows doesn't post a
+  // second tx for the original anchored due date. Without this, a
+  // user clicking Apply Now on the 5th for a salary anchored to the
+  // 25th got two transactions per month (one dated 5th from this
+  // action, one dated 25th from the auto-accruer) — different
+  // occurred_at values, so the (flow_id, occurred_at) unique index
+  // never caught it.
+  let nextDueAt = flow.nextDueAt;
+  if (nextDueAt) {
+    let safety = 0;
+    // Walk forward in cadence steps until we land strictly after
+    // today. Handles the "applied a long-overdue flow" case where
+    // the original nextDueAt is months stale.
+    while (nextDueAt <= today && safety < 36) {
+      nextDueAt = advanceCadence(nextDueAt, flow.cadence);
+      safety += 1;
+    }
+  }
   await db
     .update(schema.recurringFlows)
-    .set({ lastPostedAt: today, updatedAt: new Date().toISOString() })
+    .set({
+      lastPostedAt: today,
+      ...(nextDueAt != null ? { nextDueAt } : {}),
+      updatedAt: new Date().toISOString(),
+    })
     .where(eq(schema.recurringFlows.id, flow.id));
   revalidate();
 }
