@@ -106,6 +106,7 @@ export default async function ProjectionsPage({
         />
       ) : (
         <ProjectionChat
+          key={activeSessionId ?? "new"}
           baseCurrency={baseCurrency}
           startNonGrantInBase={startNonGrant}
           grants={grants}

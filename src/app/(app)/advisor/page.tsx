@@ -80,7 +80,17 @@ export default async function AdvisorPage({
             </CardDescription>
           </CardHeader>
           <CardContent className="flex-1 min-h-0 p-0">
+            {/*
+              Force a fresh mount when the URL session id changes, so
+              the chat's internal sessionId / messages state is rebuilt
+              from the latest prop. Without the key, useState only
+              initializes from initialSessionId on first mount, so a
+              router.push to a different ?s= would re-render the page
+              but leave the chat stuck on the old session — sends would
+              persist to the wrong thread or silently no-op.
+            */}
             <AdvisorChat
+              key={activeSessionId ?? "new"}
               sessionId={activeSessionId}
               initialMessages={activeSession?.messages ?? []}
               sessions={sessions}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowUp,
@@ -12,6 +12,7 @@ import {
   Sparkles,
   Trash2,
   User,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -173,6 +174,12 @@ export function ProjectionChat({
   const router = useRouter();
   const [sessionId, setSessionId] = useState<number | null>(initialSessionId);
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
+  // Stop affordance. Server actions can't be cancelled mid-flight, but
+  // we can drop their results client-side. The user gets immediate
+  // visual feedback; any "phantom" advisor message that lands after
+  // stop is ignored. Worst case: a wasted server compute, no
+  // misleading state.
+  const abortRef = useRef<{ generation: number }>({ generation: 0 });
   const [messages, setMessages] = useState<ChatMessage[]>(() =>
     initialMessages
       .map((m) => deserializeMessage(m))
@@ -182,7 +189,10 @@ export function ProjectionChat({
   const [horizonValue, setHorizonValue] = useState<number>(5);
   const [horizonUnit, setHorizonUnit] = useState<"months" | "years">("years");
   const [goalId, setGoalId] = useState<number | null>(null);
-  const [busy, startSend] = useTransition();
+  // Plain busy state (not useTransition) so `stop()` can flip the UI
+  // out of the spinner immediately, even though the server-side
+  // computation continues until it naturally completes.
+  const [busy, setBusy] = useState(false);
   const [budgetEntities, setBudgetEntities] = useState(initialBudgetEntities);
   const [flowEntities, setFlowEntities] = useState(initialFlowEntities);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -246,8 +256,13 @@ export function ProjectionChat({
 
     setMessages((prev) => [...prev, userMsg]);
     setPrompt("");
+    setBusy(true);
+    // Bump the generation counter so any earlier in-flight result
+    // that lands after this point is recognized as stale.
+    abortRef.current.generation += 1;
+    const myGen = abortRef.current.generation;
 
-    startSend(async () => {
+    void (async () => {
       // Lazy-create a session on first send so empty threads don't
       // clutter the history dropdown.
       let activeId = sessionId;
@@ -282,6 +297,9 @@ export function ProjectionChat({
       }
 
       const result = await suggestScenarios(text, goalId, horizonMonths, drafts);
+      // If the user clicked Stop (or sent a follow-up that bumped the
+      // counter), this result is stale — drop it without touching state.
+      if (myGen !== abortRef.current.generation) return;
       if (!result.ok) {
         const errMsg: ChatMessage = {
           id: uid(),
@@ -328,7 +346,24 @@ export function ProjectionChat({
       // Refresh the server-rendered sessions list (title may have just
       // been set) so the next render of the history dropdown is fresh.
       setTimeout(() => router.refresh(), 1500);
+    })().finally(() => {
+      // Only clear busy if THIS is still the active generation.
+      // Otherwise a slow earlier call landing after a stop would
+      // wipe the busy flag set by a follow-up.
+      if (myGen === abortRef.current.generation) {
+        setBusy(false);
+      }
     });
+  }
+
+  function stop() {
+    // Bump the generation so the in-flight result, when it lands, is
+    // dropped. Doesn't actually cancel the model call on the server —
+    // that compute is wasted — but the user gets immediate visual
+    // feedback and can carry on.
+    abortRef.current.generation += 1;
+    setBusy(false);
+    toast.info("Stopped. Any pending response will be discarded.");
   }
 
   function updateBlock(messageId: string, blockId: string, patch: Partial<ScenarioBlock>) {
@@ -362,7 +397,7 @@ export function ProjectionChat({
 
   function applyEdits(messageId: string, block: ScenarioBlock) {
     if (block.scenario.proposedEdits.length === 0) return;
-    startSend(async () => {
+    void (async () => {
       const r = await applyProposedEdits(block.scenario.proposedEdits);
       if (!r.ok) {
         toast.error(r.error);
@@ -394,11 +429,11 @@ export function ProjectionChat({
           ? `Applied ${r.applied} edit${r.applied === 1 ? "" : "s"} (${r.skipped} skipped).`
           : `Applied ${r.applied} edit${r.applied === 1 ? "" : "s"}.`,
       );
-    });
+    })();
   }
 
   function persist(messageId: string, block: ScenarioBlock) {
-    startSend(async () => {
+    void (async () => {
       try {
         await saveScenarioAction({
           name: block.scenario.name,
@@ -417,7 +452,7 @@ export function ProjectionChat({
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Save failed.");
       }
-    });
+    })();
   }
 
   function startNewChat() {
@@ -611,21 +646,28 @@ export function ProjectionChat({
             disabled={busy}
             className="w-full rounded-md border border-input bg-background px-3 py-2 pr-12 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 resize-y min-h-[64px]"
           />
-          <button
-            type="submit"
-            disabled={busy || !prompt.trim()}
-            aria-label="Send"
-            className={cn(
-              "absolute bottom-2 right-2 inline-flex items-center justify-center size-8 rounded-md transition-colors",
-              "bg-primary text-primary-foreground hover:bg-primary/90 disabled:bg-secondary disabled:text-muted-foreground disabled:cursor-not-allowed",
-            )}
-          >
-            {busy ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
+          {busy ? (
+            <button
+              type="button"
+              onClick={stop}
+              aria-label="Stop"
+              className="absolute bottom-2 right-2 inline-flex items-center justify-center size-8 rounded-md transition-colors bg-secondary text-foreground hover:bg-secondary/80 border border-border"
+            >
+              <X className="size-4" />
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={!prompt.trim()}
+              aria-label="Send"
+              className={cn(
+                "absolute bottom-2 right-2 inline-flex items-center justify-center size-8 rounded-md transition-colors",
+                "bg-primary text-primary-foreground hover:bg-primary/90 disabled:bg-secondary disabled:text-muted-foreground disabled:cursor-not-allowed",
+              )}
+            >
               <ArrowUp className="size-4" />
-            )}
-          </button>
+            </button>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">

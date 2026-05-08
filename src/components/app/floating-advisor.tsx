@@ -107,6 +107,7 @@ export function FloatingAdvisor() {
         <div className="flex-1 min-h-0">
           {bootstrap ? (
             <AdvisorChat
+              key={bootstrap.activeSessionId ?? "new"}
               sessionId={bootstrap.activeSessionId}
               initialMessages={bootstrap.initialMessages}
               sessions={bootstrap.sessions}
