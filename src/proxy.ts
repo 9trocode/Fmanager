@@ -10,6 +10,11 @@ const PUBLIC_PATHS = [
   "/login",
   "/welcome",
   "/api/auth/login",
+  // Logout must always be reachable, even with a bad/stale session
+  // cookie. Otherwise the proxy redirects /api/auth/logout to
+  // /login?next=/api/auth/logout and the user can't clear the bad
+  // cookie without manually deleting it in DevTools.
+  "/api/auth/logout",
   "/api/health",
 ];
 
