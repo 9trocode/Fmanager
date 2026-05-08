@@ -5,7 +5,11 @@ import { generateText, Output } from "ai";
 import { z } from "zod";
 import { assertAdmin } from "@/lib/auth/session";
 import { buildAdvisorClient } from "@/lib/ai/provider";
-import { computeMonthlyCashFlow, computeNetWorth } from "@/lib/aggregation";
+import {
+  computeBudgetStatus,
+  computeMonthlyCashFlow,
+  computeNetWorth,
+} from "@/lib/aggregation";
 import {
   listFlows,
   listSavingsGoals,
@@ -14,6 +18,9 @@ import {
 import { computeGoalState } from "@/lib/goals";
 import { monthlyEquivalent } from "@/lib/flows";
 import { convert } from "@/lib/fx";
+import { db, schema } from "@/lib/db";
+import { eq } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
 import type { ScenarioEvent } from "@/lib/projections";
 
 /**
@@ -36,6 +43,173 @@ import type { ScenarioEvent } from "@/lib/projections";
  * Gemini compatibility — it'll start throwing
  * "No object generated: response did not match schema" again.
  */
+/**
+ * Proposed edits the advisor wants the user to apply to their actual
+ * data. Each scenario can carry zero or more — these are the concrete
+ * diffs that, if applied, produce the projection the scenario is
+ * showing. The user reviews them on the draft card and clicks Apply
+ * to commit (via `applyProposedEdits` below).
+ *
+ * Flat shape for Gemini compatibility (same reason as ScenarioEvent —
+ * discriminated unions become JSON Schema oneOf which Gemini rejects).
+ * Server narrows it back into the strict ProposedEdit type.
+ */
+const ProposedEditSchema = z.object({
+  kind: z.enum(["update_budget", "update_savings_goal", "update_flow"]),
+  /** Existing entity id — must match a row the user actually has. */
+  id: z.number().int().positive(),
+  /** Reason: one short sentence the user can read and decide on. */
+  reason: z.string(),
+  // Target fields — only the relevant subset is set per kind.
+  monthlyLimit: z.number().optional(),
+  monthlyContribution: z.number().optional(),
+  targetAmount: z.number().optional(),
+  horizonMonths: z.number().int().optional(),
+  amount: z.number().optional(),
+});
+
+export type ProposedEdit =
+  | {
+      kind: "update_budget";
+      id: number;
+      monthlyLimit: number;
+      reason: string;
+    }
+  | {
+      kind: "update_savings_goal";
+      id: number;
+      monthlyContribution?: number;
+      targetAmount?: number;
+      horizonMonths?: number;
+      reason: string;
+    }
+  | {
+      kind: "update_flow";
+      id: number;
+      amount: number;
+      reason: string;
+    };
+
+function flatToProposedEdit(
+  e: z.infer<typeof ProposedEditSchema>,
+): ProposedEdit | null {
+  if (e.kind === "update_budget") {
+    if (typeof e.monthlyLimit !== "number" || !Number.isFinite(e.monthlyLimit) || e.monthlyLimit <= 0) {
+      return null;
+    }
+    return {
+      kind: "update_budget",
+      id: e.id,
+      monthlyLimit: e.monthlyLimit,
+      reason: e.reason,
+    };
+  }
+  if (e.kind === "update_flow") {
+    if (typeof e.amount !== "number" || !Number.isFinite(e.amount) || e.amount <= 0) {
+      return null;
+    }
+    return { kind: "update_flow", id: e.id, amount: e.amount, reason: e.reason };
+  }
+  // update_savings_goal — at least one of the optional fields must be set.
+  const hasField =
+    (typeof e.monthlyContribution === "number" && Number.isFinite(e.monthlyContribution)) ||
+    (typeof e.targetAmount === "number" && Number.isFinite(e.targetAmount) && e.targetAmount > 0) ||
+    (typeof e.horizonMonths === "number" && Number.isFinite(e.horizonMonths) && e.horizonMonths > 0);
+  if (!hasField) return null;
+  return {
+    kind: "update_savings_goal",
+    id: e.id,
+    monthlyContribution: e.monthlyContribution,
+    targetAmount: e.targetAmount,
+    horizonMonths: e.horizonMonths,
+    reason: e.reason,
+  };
+}
+
+/**
+ * Apply a batch of advisor-proposed edits in a single transaction.
+ * Returns the count applied so the UI can render a confirmation
+ * ("Applied 3 of 4 — one budget id no longer existed").
+ */
+export async function applyProposedEdits(
+  edits: ProposedEdit[],
+): Promise<
+  | { ok: true; applied: number; skipped: number }
+  | { ok: false; error: string }
+> {
+  await import("@/lib/auth/session").then((m) => m.assertAdmin());
+  if (edits.length === 0) {
+    return { ok: true, applied: 0, skipped: 0 };
+  }
+  let applied = 0;
+  let skipped = 0;
+  try {
+    await db.transaction(async (tx) => {
+      const nowIso = new Date().toISOString();
+      for (const e of edits) {
+        if (e.kind === "update_budget") {
+          const exists = await tx
+            .select({ id: schema.budgets.id })
+            .from(schema.budgets)
+            .where(eq(schema.budgets.id, e.id))
+            .limit(1);
+          if (exists.length === 0) {
+            skipped += 1;
+            continue;
+          }
+          await tx
+            .update(schema.budgets)
+            .set({ monthlyLimit: e.monthlyLimit, updatedAt: nowIso })
+            .where(eq(schema.budgets.id, e.id));
+          applied += 1;
+        } else if (e.kind === "update_savings_goal") {
+          const exists = await tx
+            .select({ id: schema.savingsGoals.id })
+            .from(schema.savingsGoals)
+            .where(eq(schema.savingsGoals.id, e.id))
+            .limit(1);
+          if (exists.length === 0) {
+            skipped += 1;
+            continue;
+          }
+          const set: Record<string, unknown> = { updatedAt: nowIso };
+          if (e.monthlyContribution != null)
+            set.monthlyContribution = e.monthlyContribution;
+          if (e.targetAmount != null) set.targetAmount = e.targetAmount;
+          if (e.horizonMonths != null) set.horizonMonths = e.horizonMonths;
+          await tx
+            .update(schema.savingsGoals)
+            .set(set)
+            .where(eq(schema.savingsGoals.id, e.id));
+          applied += 1;
+        } else if (e.kind === "update_flow") {
+          const exists = await tx
+            .select({ id: schema.recurringFlows.id })
+            .from(schema.recurringFlows)
+            .where(eq(schema.recurringFlows.id, e.id))
+            .limit(1);
+          if (exists.length === 0) {
+            skipped += 1;
+            continue;
+          }
+          await tx
+            .update(schema.recurringFlows)
+            .set({ amount: e.amount, updatedAt: nowIso })
+            .where(eq(schema.recurringFlows.id, e.id));
+          applied += 1;
+        }
+      }
+    });
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to apply edits.",
+    };
+  }
+  revalidatePath("/", "layout");
+  return { ok: true, applied, skipped };
+}
+
 /**
  * Wire-format event schema. Gemini's structured-output mode rejects
  * JSON Schema `oneOf` (which is what `z.discriminatedUnion` produces),
@@ -66,6 +240,13 @@ const RawSuggestedScenarioSchema = z.object({
   annualReturnPct: z.number(),
   horizonMonths: z.number().int(),
   events: z.array(FlatEventSchema),
+  /**
+   * Concrete edits that, if applied, produce the projection above.
+   * The user reviews these on the draft card and can apply with one
+   * click. Empty array = "no actual entity changes, just a thought
+   * experiment".
+   */
+  proposedEdits: z.array(ProposedEditSchema),
 });
 
 const ResponseSchema = z.object({
@@ -84,6 +265,8 @@ export type SuggestedScenario = {
   annualReturnPct: number;
   horizonMonths: number;
   events: ScenarioEvent[];
+  /** Concrete diffs to existing budgets/goals/flows. Apply via applyProposedEdits. */
+  proposedEdits: ProposedEdit[];
 };
 
 /**
@@ -207,11 +390,12 @@ export async function suggestScenarios(
   }
 
   const baseCurrency = await getBaseCurrency();
-  const [summary, cashFlow, goals, flows] = await Promise.all([
+  const [summary, cashFlow, goals, flows, budgetStatus] = await Promise.all([
     computeNetWorth(baseCurrency),
     computeMonthlyCashFlow(baseCurrency),
     listSavingsGoals(),
     listFlows(),
+    computeBudgetStatus(baseCurrency),
   ]);
 
   // Per-currency flow breakdown so the model can SEE the multi-currency
@@ -313,6 +497,14 @@ export async function suggestScenarios(
     "  - summary: 1 sentence on WHAT the path involves and what they'd land at — the practical takeaway. e.g. 'Hits the emergency fund 9 months earlier but requires sustaining ~80k/mo until December.'",
     "Both fields are required. Keep each under 25 words. No fluff, no headers, no bullets — plain prose.",
     "",
+    "## Proposed edits (the painting-scenarios surface)",
+    "Each scenario can carry `proposedEdits` — concrete diffs to existing budgets / goals / flows that, if applied, produce the projection. The user reviews them on the draft card and clicks Apply to commit.",
+    "  - update_budget: set { kind: 'update_budget', id: <budget.id>, monthlyLimit: <new>, reason }",
+    "  - update_savings_goal: set { kind: 'update_savings_goal', id: <goal.id>, monthlyContribution? | targetAmount? | horizonMonths?, reason }. Set ONLY the fields you're changing.",
+    "  - update_flow: set { kind: 'update_flow', id: <flow.id>, amount: <new>, reason }",
+    "Always cite REAL ids from the lists above. NEVER invent ids. If you can't tie the scenario to existing entities, return an empty `proposedEdits: []` — the projection still renders, the user just won't see Apply suggestions.",
+    "Reasons must be short — one sentence the user can scan and decide on. e.g. 'Bumping Food covers the holiday spike already showing 35% over.'",
+    "",
     "## Event shape rules",
     "  - For kind='raise' or kind='expense_shock': set the `newMonthly` field to the contribution AFTER the change. Do NOT set `amount`.",
     "  - For kind='lump_sum': set the `amount` field (positive = injection, negative = withdrawal). Do NOT set `newMonthly`.",
@@ -356,12 +548,32 @@ export async function suggestScenarios(
         ].join("\n")
       : "",
     goalContext ? `## ${goalContext}\n` : "",
-    "## Active goals",
+    "## Active goals (cite the id when proposing edits)",
     goals.length
       ? goals
           .map(
             (g) =>
-              `- ${g.name} (${g.kind}, target ${g.targetAmount ?? "n/a"} ${g.currency}, ${g.monthlyContribution}/mo, horizon ${g.horizonMonths}mo)`,
+              `- id=${g.id}  ${g.name} (${g.kind})  target ${g.targetAmount ?? "n/a"} ${g.currency}  ${g.monthlyContribution}/mo  horizon ${g.horizonMonths}mo`,
+          )
+          .join("\n")
+      : "(none)",
+    "",
+    "## Active budgets (cite the id when proposing edits)",
+    budgetStatus.rows.length
+      ? budgetStatus.rows
+          .map(
+            (b) =>
+              `- id=${b.id}  ${b.category}  cap ${b.monthlyLimit.toFixed(0)} ${b.baseCurrency}  spent-MTD ${b.spentThisMonth.toFixed(0)} (${b.percentUsed.toFixed(0)}%)`,
+          )
+          .join("\n")
+      : "(none)",
+    "",
+    "## Recurring flows (cite the id when proposing edits)",
+    flows.length
+      ? flows
+          .map(
+            (f) =>
+              `- id=${f.id}  ${f.kind === "income" ? "+" : "−"}${f.name}  ${f.amount} ${f.currency} ${f.cadence}${f.category ? `  [${f.category}]` : ""}`,
           )
           .join("\n")
       : "(none)",
@@ -399,6 +611,13 @@ export async function suggestScenarios(
       // Allow withdrawals (negative) — the cap is an upper bound only.
       return Math.min(n, hardCap);
     };
+    // Allow-list of real entity ids so the model can't propose edits
+    // to budgets/goals/flows the user doesn't actually own (whether
+    // hallucinated or stale from a prior session).
+    const realBudgetIds = new Set(budgetStatus.rows.map((b) => b.id));
+    const realGoalIds = new Set(goals.map((g) => g.id));
+    const realFlowIds = new Set(flows.map((f) => f.id));
+
     const scenarios: SuggestedScenario[] = result.output.scenarios.map((s) => ({
       name: s.name,
       rationale: s.rationale,
@@ -412,6 +631,15 @@ export async function suggestScenarios(
         .map((e): ScenarioEvent => {
           if (e.kind === "lump_sum") return e;
           return { ...e, newMonthly: clampMoney(e.newMonthly) };
+        }),
+      proposedEdits: (s.proposedEdits ?? [])
+        .map(flatToProposedEdit)
+        .filter((e): e is ProposedEdit => {
+          if (e == null) return false;
+          if (e.kind === "update_budget") return realBudgetIds.has(e.id);
+          if (e.kind === "update_savings_goal") return realGoalIds.has(e.id);
+          if (e.kind === "update_flow") return realFlowIds.has(e.id);
+          return false;
         }),
     }));
     return { ok: true, scenarios };

@@ -7,6 +7,8 @@ import {
 } from "@/components/app/projections-explorer";
 import {
   getBaseCurrency,
+  listBudgets,
+  listFlows,
   listGrants,
   listSavingsGoals,
 } from "@/lib/db/queries";
@@ -16,13 +18,16 @@ import { listSavedScenarios } from "@/lib/actions/saved-scenarios";
 
 export default async function ProjectionsPage() {
   const baseCurrency = await getBaseCurrency();
-  const [summary, grants, cashFlow, goals, savedScenarios] = await Promise.all([
-    computeNetWorth(baseCurrency),
-    listGrants(),
-    computeMonthlyCashFlow(baseCurrency),
-    listSavingsGoals(),
-    listSavedScenarios(),
-  ]);
+  const [summary, grants, cashFlow, goals, savedScenarios, budgets, flows] =
+    await Promise.all([
+      computeNetWorth(baseCurrency),
+      listGrants(),
+      computeMonthlyCashFlow(baseCurrency),
+      listSavingsGoals(),
+      listSavedScenarios(),
+      listBudgets(),
+      listFlows(),
+    ]);
 
   // Pre-resolve every (currency → base) FX rate the page will need:
   // grant currencies for the projection engine, and goal currencies for
@@ -101,6 +106,20 @@ export default async function ProjectionsPage() {
           defaultMonthlyContribution={safeDefaultContribution}
           goals={projectionGoals}
           savedScenarios={savedScenarios}
+          budgetEntities={budgets.map((b) => ({
+            id: b.id,
+            category: b.category,
+            monthlyLimit: b.monthlyLimit,
+            currency: b.currency,
+          }))}
+          flowEntities={flows.map((f) => ({
+            id: f.id,
+            name: f.name,
+            kind: f.kind,
+            amount: f.amount,
+            currency: f.currency,
+            cadence: f.cadence,
+          }))}
         />
       )}
     </>

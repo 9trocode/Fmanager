@@ -74,10 +74,28 @@ import {
   type ThreadMessage,
 } from "@/components/app/prediction-thread";
 import {
+  applyProposedEdits,
   suggestScenarios,
   type DraftContext,
+  type ProposedEdit,
   type SuggestedScenario,
 } from "@/lib/actions/projections";
+
+export type BudgetEntity = {
+  id: number;
+  category: string;
+  monthlyLimit: number;
+  currency: string;
+};
+
+export type FlowEntity = {
+  id: number;
+  name: string;
+  kind: "income" | "expense";
+  amount: number;
+  currency: string;
+  cadence: "weekly" | "monthly" | "yearly";
+};
 import type { Scenario as EquityScenario } from "@/lib/scenarios";
 import { formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -131,6 +149,12 @@ type ExplorerScenario = NamedScenario & {
    * of the regular edit-and-keep affordances.
    */
   kind?: "concrete" | "draft";
+  /**
+   * Concrete diffs the AI suggested on this scenario. Only populated
+   * for AI-source drafts. Rendered in the card with a one-click Apply
+   * button.
+   */
+  proposedEdits?: ProposedEdit[];
 };
 
 function makeBaseScenario(
@@ -177,6 +201,8 @@ export function ProjectionsExplorer({
   defaultMonthlyContribution,
   goals,
   savedScenarios: initialSavedScenarios,
+  budgetEntities: initialBudgetEntities,
+  flowEntities: initialFlowEntities,
 }: {
   baseCurrency: string;
   startNonGrantInBase: number;
@@ -185,6 +211,8 @@ export function ProjectionsExplorer({
   defaultMonthlyContribution?: number;
   goals: ProjectionGoal[];
   savedScenarios: SavedScenarioRow[];
+  budgetEntities: BudgetEntity[];
+  flowEntities: FlowEntity[];
 }) {
   const safeDefault = Number.isFinite(defaultMonthlyContribution)
     ? (defaultMonthlyContribution as number)
@@ -211,6 +239,18 @@ export function ProjectionsExplorer({
   // full page reload.
   const [savedLib, setSavedLib] = useState<SavedScenarioRow[]>(initialSavedScenarios);
   const [savePending, startSave] = useTransition();
+  // Mutable mirrors of budgets/flows so applying an edit updates the
+  // diff display ("from" values) without a full page reload.
+  const [budgetEntities, setBudgetEntities] = useState<BudgetEntity[]>(
+    initialBudgetEntities,
+  );
+  const [flowEntities, setFlowEntities] = useState<FlowEntity[]>(
+    initialFlowEntities,
+  );
+  /** Tracks which scenario ids have had their proposedEdits applied. */
+  const [appliedScenarioIds, setAppliedScenarioIds] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   const selectedGoal = goalId != null
     ? (goals.find((g) => g.id === goalId) ?? null)
@@ -388,6 +428,7 @@ export function ProjectionsExplorer({
         summary: s.summary,
         source: "ai",
         kind: "draft",
+        proposedEdits: s.proposedEdits,
       }));
       setScenarios((prev) => {
         const replacedIds = new Set<string>();
@@ -423,6 +464,58 @@ export function ProjectionsExplorer({
           createdAt: new Date().toISOString(),
         },
       ]);
+    });
+  }
+
+  /**
+   * Hand the scenario's proposedEdits over to the server, which
+   * applies them in a transaction. Then mirror the new values into
+   * the local entity state so the diff display reads the post-edit
+   * "from" on subsequent renders, and mark the scenario applied so
+   * the button changes shape.
+   */
+  function applyEditsForScenario(scenarioId: string, edits: ProposedEdit[]) {
+    if (edits.length === 0) return;
+    startPredict(async () => {
+      const result = await applyProposedEdits(edits);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      // Optimistically reflect the new values in the local entity
+      // mirrors. Skipped edits (entity disappeared) are dropped.
+      setBudgetEntities((prev) =>
+        prev.map((b) => {
+          const e = edits.find(
+            (x) => x.kind === "update_budget" && x.id === b.id,
+          );
+          if (e && e.kind === "update_budget") {
+            return { ...b, monthlyLimit: e.monthlyLimit };
+          }
+          return b;
+        }),
+      );
+      setFlowEntities((prev) =>
+        prev.map((f) => {
+          const e = edits.find(
+            (x) => x.kind === "update_flow" && x.id === f.id,
+          );
+          if (e && e.kind === "update_flow") {
+            return { ...f, amount: e.amount };
+          }
+          return f;
+        }),
+      );
+      setAppliedScenarioIds((prev) => {
+        const next = new Set(prev);
+        next.add(scenarioId);
+        return next;
+      });
+      toast.success(
+        result.skipped > 0
+          ? `Applied ${result.applied} edit${result.applied === 1 ? "" : "s"} (${result.skipped} skipped — entity missing).`
+          : `Applied ${result.applied} edit${result.applied === 1 ? "" : "s"}.`,
+      );
     });
   }
 
@@ -724,12 +817,18 @@ export function ProjectionsExplorer({
                 deltaVsBaseline={deltaVsBaseline}
                 canDelete={scenarios.length > 1}
                 savePending={savePending}
+                budgetEntities={budgetEntities}
+                flowEntities={flowEntities}
+                goalEntities={goals}
+                editsApplied={appliedScenarioIds.has(s.id)}
+                applyPending={predictBusy}
                 onUpdate={(patch) => updateScenario(s.id, patch)}
                 onDuplicate={() => duplicateScenario(s.id)}
                 onDelete={() => removeScenario(s.id)}
                 onSave={() => persistScenario(s.id)}
                 onPin={() => pinDraft(s.id)}
                 onDiscard={() => discardDraft(s.id)}
+                onApplyEdits={(edits) => applyEditsForScenario(s.id, edits)}
               />
             );
           })}
@@ -879,12 +978,18 @@ function ScenarioCard({
   deltaVsBaseline,
   canDelete,
   savePending,
+  budgetEntities,
+  flowEntities,
+  goalEntities,
+  editsApplied,
+  applyPending,
   onUpdate,
   onDuplicate,
   onDelete,
   onSave,
   onPin,
   onDiscard,
+  onApplyEdits,
 }: {
   scenario: ExplorerScenario;
   colorVar: string;
@@ -901,6 +1006,12 @@ function ScenarioCard({
   onSave: () => void;
   onPin: () => void;
   onDiscard: () => void;
+  onApplyEdits: (edits: ProposedEdit[]) => void;
+  budgetEntities: BudgetEntity[];
+  flowEntities: FlowEntity[];
+  goalEntities: ProjectionGoal[];
+  editsApplied: boolean;
+  applyPending: boolean;
 }) {
   const [open, setOpen] = useState(true);
   const events = scenario.inputs.events ?? [];
@@ -1044,6 +1155,18 @@ function ScenarioCard({
                 </p>
               ) : null}
             </div>
+          ) : null}
+          {scenario.proposedEdits && scenario.proposedEdits.length > 0 ? (
+            <ProposedEditsPanel
+              edits={scenario.proposedEdits}
+              budgets={budgetEntities}
+              flows={flowEntities}
+              goals={goalEntities}
+              baseCurrency={baseCurrency}
+              applied={editsApplied}
+              pending={applyPending}
+              onApply={() => onApplyEdits(scenario.proposedEdits ?? [])}
+            />
           ) : null}
           <div className="grid grid-cols-2 gap-2 pt-3">
             <div className="col-span-2 space-y-1">
@@ -1327,5 +1450,152 @@ function EventRow({
         </div>
       </div>
     </div>
+  );
+}
+
+
+/**
+ * Renders the AI's `proposedEdits` for a single scenario as a list
+ * of from→to diff rows, plus an Apply button that fires them all
+ * server-side via `applyProposedEdits`. Each row shows the entity's
+ * current value (looked up from the explorer's mirrored budget /
+ * flow / goal lists), the proposed new value, and the model's reason.
+ */
+function ProposedEditsPanel({
+  edits,
+  budgets,
+  flows,
+  goals,
+  baseCurrency,
+  applied,
+  pending,
+  onApply,
+}: {
+  edits: ProposedEdit[];
+  budgets: BudgetEntity[];
+  flows: FlowEntity[];
+  goals: ProjectionGoal[];
+  baseCurrency: string;
+  applied: boolean;
+  pending: boolean;
+  onApply: () => void;
+}) {
+  return (
+    <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2.5 space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-primary font-medium">
+          <Sparkles className="size-3" />
+          Suggested edits ({edits.length})
+        </div>
+        <Button
+          variant={applied ? "ghost" : "default"}
+          size="xs"
+          disabled={pending || applied}
+          onClick={onApply}
+        >
+          {applied ? (
+            <>
+              <BookmarkCheck className="size-3.5" />
+              Applied
+            </>
+          ) : (
+            <>
+              <Save className="size-3.5" />
+              Apply all
+            </>
+          )}
+        </Button>
+      </div>
+      <ul className="space-y-1.5">
+        {edits.map((e, i) => (
+          <EditRow
+            key={i}
+            edit={e}
+            budgets={budgets}
+            flows={flows}
+            goals={goals}
+            baseCurrency={baseCurrency}
+          />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function EditRow({
+  edit,
+  budgets,
+  flows,
+  goals,
+  baseCurrency,
+}: {
+  edit: ProposedEdit;
+  budgets: BudgetEntity[];
+  flows: FlowEntity[];
+  goals: ProjectionGoal[];
+  baseCurrency: string;
+}) {
+  let label = "";
+  let from = "";
+  let to = "";
+
+  if (edit.kind === "update_budget") {
+    const b = budgets.find((x) => x.id === edit.id);
+    label = b ? `${b.category} budget` : `Budget #${edit.id}`;
+    from = b
+      ? formatMoney(b.monthlyLimit, b.currency, { compact: true })
+      : "—";
+    to = formatMoney(
+      edit.monthlyLimit,
+      b?.currency ?? baseCurrency,
+      { compact: true },
+    );
+  } else if (edit.kind === "update_flow") {
+    const f = flows.find((x) => x.id === edit.id);
+    label = f
+      ? `${f.kind === "income" ? "+" : "−"} ${f.name}`
+      : `Flow #${edit.id}`;
+    from = f
+      ? formatMoney(f.amount, f.currency, { compact: true })
+      : "—";
+    to = formatMoney(edit.amount, f?.currency ?? baseCurrency, {
+      compact: true,
+    });
+  } else {
+    // update_savings_goal — could touch any of three fields.
+    const g = goals.find((x) => x.id === edit.id);
+    label = g ? `Goal: ${g.name}` : `Goal #${edit.id}`;
+    const parts: string[] = [];
+    if (edit.monthlyContribution != null) {
+      parts.push(
+        `monthly → ${formatMoney(edit.monthlyContribution, baseCurrency, { compact: true })}`,
+      );
+    }
+    if (edit.targetAmount != null) {
+      parts.push(
+        `target → ${formatMoney(edit.targetAmount, baseCurrency, { compact: true })}`,
+      );
+    }
+    if (edit.horizonMonths != null) {
+      parts.push(`horizon → ${edit.horizonMonths}mo`);
+    }
+    from = "current";
+    to = parts.join(", ");
+  }
+
+  return (
+    <li className="text-[12px] leading-snug">
+      <div className="flex items-baseline gap-2 flex-wrap">
+        <span className="font-medium">{label}:</span>
+        <span className="font-mono tabular-nums text-muted-foreground">
+          {from}
+        </span>
+        <span className="text-muted-foreground">→</span>
+        <span className="font-mono tabular-nums text-foreground">{to}</span>
+      </div>
+      <div className="text-muted-foreground/80 leading-snug">
+        {edit.reason}
+      </div>
+    </li>
   );
 }
