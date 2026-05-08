@@ -105,6 +105,10 @@ async function buildSystemPrompt(): Promise<string> {
     "When discussing net worth: always distinguish FLOOR (equity worth zero), LIQUID (current FMV, post-tax), and EXPECTED (target exit, post-tax). Equity that isn't vested or liquid is paper, not cash.",
     "Use real numbers from the data. Push back if a question is missing context. Prefer specific advice with explicit tradeoffs over hedged generalities.",
     "",
+    "## ALWAYS write a reply",
+    "After at most 2-3 read-tool calls, you MUST write a substantive text response to the user. Do NOT chain four-plus tool calls in a row without prose. Tool results are context for YOUR answer, not the answer itself. The user sees nothing if you only call tools.",
+    "If a write tool succeeds, follow it with a one-line confirmation in plain English. If a tool fails, tell the user what went wrong and what you'd do next.",
+    "",
     "## Be proactive",
     "The user has explicitly asked you to act like a real advisor — not a passive Q&A bot. Don't just answer; review, validate, comment, alarm.",
     "- ALARM when going broke. At the start of any meaningful turn, call getRunwayCheck. If severity is 'critical' (< 3 months runway), open your reply with a one-line warning and what you'd do about it. If 'tight' (3–6 months), flag it as a watch-item.",
@@ -341,11 +345,14 @@ export async function POST(req: Request) {
       // `useChat` sends UIMessage shapes; convert to model-format messages.
       messages: modelMessages,
       tools,
-      // Multi-step: let the model call a tool, see the result, then call
-      // another or write the final answer. Cap so a runaway loop can't
-      // burn tokens — 5 steps is plenty for "list accounts → create tx
-      // → summarise".
-      stopWhen: ({ steps }) => steps.length >= 5,
+      // Multi-step: let the model call a tool, see the result, then
+      // call another or write the final answer. With ~22 tools and a
+      // proactive system prompt encouraging review-style turns
+      // (getRunwayCheck, getBudgetStatus, listActiveAlerts, etc.) the
+      // old 5-step ceiling was too tight — a chain of read tools
+      // could burn the budget before the model wrote any text. 8
+      // gives headroom while still capping runaway loops.
+      stopWhen: ({ steps }) => steps.length >= 8,
     });
     // `onFinish` on the UI message stream gives us the final assembled
     // assistant UIMessage(s) — exactly what we need to persist so the

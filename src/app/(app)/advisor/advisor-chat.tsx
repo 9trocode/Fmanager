@@ -15,7 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
@@ -87,18 +87,37 @@ export function AdvisorChat({
   // send). Mirrors `?s=<id>` in the URL.
   const [sessionId, setSessionId] = useState<number | null>(initialSessionId);
 
+  // Stable ref tracking the latest sessionId — used by the transport's
+  // body callback so it always reads the CURRENT id, even when the
+  // transport itself is memoised across renders.
+  //
+  // Why this matters: if we constructed `new DefaultChatTransport` on
+  // every render, useChat keeps the original instance internally and
+  // ignores subsequent ones. The body callback in that frozen instance
+  // would close over the FIRST render's sessionId — so a lazy-created
+  // session id from `setSessionId` would never make it to the request.
+  const sessionIdRef = useRef(sessionId);
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
+
+  const transport = useMemo(
+    () =>
+      new DefaultChatTransport({
+        api: "/api/chat",
+        // Read through the ref so each request picks up the latest id.
+        body: () => ({ sessionId: sessionIdRef.current }),
+      }),
+    [],
+  );
+
   const { messages, status, error, sendMessage, setMessages, stop } = useChat({
     messages: initialMessages,
     // `id` keys the chat — switching it makes useChat treat it as a new
     // thread (clears in-memory state). We pass our DB session id so
     // navigating between threads via the history menu is clean.
     id: sessionId ? `session-${sessionId}` : undefined,
-    transport: new DefaultChatTransport({
-      api: "/api/chat",
-      // Forward the active sessionId on every request so the API route
-      // can persist messages to the right thread.
-      body: () => ({ sessionId }),
-    }),
+    transport,
   });
 
   // Auto-scroll only while the user is reading the bottom of the
