@@ -174,10 +174,26 @@ export async function refineScenario(
   return { ok: true, scenario: result.scenarios[0] };
 }
 
+/**
+ * Compact wire shape for a scenario already on the user's canvas.
+ * Used to give the model context when refining via a chat-style
+ * prompt — "make the second one less aggressive" needs to know what
+ * "the second one" looks like.
+ */
+export type DraftContext = {
+  name: string;
+  monthlyContribution: number;
+  annualReturnPct: number;
+  horizonMonths: number;
+  rationale?: string | null;
+  summary?: string | null;
+};
+
 export async function suggestScenarios(
   prompt: string,
   goalId: number | null,
   horizonMonths: number = 60,
+  currentDrafts: DraftContext[] = [],
 ): Promise<SuggestScenariosResult> {
   await assertAdmin();
   let client;
@@ -328,6 +344,17 @@ export async function suggestScenarios(
     `## Realistic monthlyContribution upper bound: ${realisticContributionCap.toFixed(0)} ${baseCurrency}`,
     "(This is income minus a 40%-expense floor. Don't exceed it unless the prompt explicitly says to ignore expenses entirely. A 'X% raise' affects income, not the contribution — savings still need to subtract expenses.)",
     "",
+    currentDrafts.length > 0
+      ? [
+          "## Scenarios already on the user's canvas (for context)",
+          "These are the AI-generated drafts the user is currently iterating on. If their request is a refinement (e.g. 'make the second one less aggressive', 'swap the lump sum for a raise'), produce REPLACEMENTS that match by name. Otherwise treat them as inspiration but generate fresh distinct scenarios.",
+          ...currentDrafts.map(
+            (d, i) =>
+              `${i + 1}. ${d.name}: ${d.monthlyContribution.toFixed(0)} ${baseCurrency}/mo, ${d.annualReturnPct}% APR, ${d.horizonMonths}mo${d.rationale ? ` — ${d.rationale}` : ""}`,
+          ),
+          "",
+        ].join("\n")
+      : "",
     goalContext ? `## ${goalContext}\n` : "",
     "## Active goals",
     goals.length

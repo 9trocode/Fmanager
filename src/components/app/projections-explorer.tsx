@@ -63,16 +63,24 @@ import {
   type ProjectionGrant,
   type ScenarioEvent,
 } from "@/lib/projections";
-import { type SuggestedScenario } from "@/lib/actions/projections";
 import {
   deleteSavedScenario,
   saveScenario as saveScenarioAction,
   updateSavedScenario,
   type SavedScenarioRow,
 } from "@/lib/actions/saved-scenarios";
-import { PredictDialog } from "@/components/app/predict-dialog";
+import {
+  PredictionThread,
+  type ThreadMessage,
+} from "@/components/app/prediction-thread";
+import {
+  suggestScenarios,
+  type DraftContext,
+  type SuggestedScenario,
+} from "@/lib/actions/projections";
 import type { Scenario as EquityScenario } from "@/lib/scenarios";
 import { formatMoney } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 export type ProjectionGoal = {
   id: number;
@@ -115,6 +123,14 @@ type ExplorerScenario = NamedScenario & {
   savedId?: number | null;
   /** True when the user has edited a saved scenario since the last persist. */
   dirty?: boolean;
+  /**
+   * Visual + workflow state. "concrete" scenarios render solid on the
+   * chart and are committed parts of the canvas. "draft" scenarios
+   * are AI-generated proposals that haven't been pinned/saved yet —
+   * they render dashed and have Pin / Save / Discard actions instead
+   * of the regular edit-and-keep affordances.
+   */
+  kind?: "concrete" | "draft";
 };
 
 function makeBaseScenario(
@@ -181,7 +197,15 @@ export function ProjectionsExplorer({
   ]);
   const [view, setView] = useState<EquityScenario>("floor");
   const [goalId, setGoalId] = useState<number | null>(null);
-  const [predictOpen, setPredictOpen] = useState(false);
+  /**
+   * Conversational thread for the prediction surface — user prompts
+   * and the advisor's summaries of what it generated. Each advisor
+   * entry references the scenario ids it created so the chips in the
+   * thread can scroll the user back to the corresponding draft card.
+   * Lives in memory only; refresh = clean slate.
+   */
+  const [thread, setThread] = useState<ThreadMessage[]>([]);
+  const [predictBusy, startPredict] = useTransition();
   // Mutable client-side mirror of the server's saved-scenarios list.
   // Updated on save / delete so the dropdown stays in sync without a
   // full page reload.
@@ -295,23 +319,144 @@ export function ProjectionsExplorer({
     );
   }
 
-  function applySuggestions(suggestions: SuggestedScenario[]) {
-    // Append so existing scenarios stay anchored at the top of the
-    // user's viewport. AI rationale + summary travel with each card.
-    const made: ExplorerScenario[] = suggestions.map((s) => ({
+  /**
+   * Send a prompt to the prediction model. Generated scenarios land
+   * on the canvas as DRAFT (dashed) cards + lines, the user message
+   * + an advisor summary land in the thread. Subsequent prompts pass
+   * the current set of drafts as context so refinement messages
+   * ("make the second less aggressive") can target them.
+   */
+  function sendPrompt(promptText: string, horizonMonths: number) {
+    const goalName = goalId != null
+      ? (goals.find((g) => g.id === goalId)?.name ?? null)
+      : null;
+    const userMsg: ThreadMessage = {
       id: uid(),
-      name: s.name,
-      inputs: {
-        monthlyContribution: s.monthlyContribution,
-        annualReturnPct: s.annualReturnPct,
-        horizonMonths: s.horizonMonths,
-        events: s.events,
-      },
-      rationale: s.rationale,
-      summary: s.summary,
-      source: "ai",
-    }));
-    setScenarios((prev) => [...prev, ...made]);
+      kind: "user",
+      text: promptText,
+      horizonMonths,
+      goalName,
+      createdAt: new Date().toISOString(),
+    };
+    setThread((prev) => [...prev, userMsg]);
+
+    // Snapshot the current drafts so the model has refinement context.
+    const drafts: DraftContext[] = scenarios
+      .filter((s) => s.kind === "draft")
+      .map((s) => ({
+        name: s.name,
+        monthlyContribution: s.inputs.monthlyContribution,
+        annualReturnPct: s.inputs.annualReturnPct,
+        horizonMonths: s.inputs.horizonMonths,
+        rationale: s.rationale ?? null,
+        summary: s.summary ?? null,
+      }));
+
+    startPredict(async () => {
+      const result = await suggestScenarios(
+        promptText,
+        goalId,
+        horizonMonths,
+        drafts,
+      );
+      if (!result.ok) {
+        setThread((prev) => [
+          ...prev,
+          {
+            id: uid(),
+            kind: "error",
+            message: result.error,
+            createdAt: new Date().toISOString(),
+          },
+        ]);
+        toast.error(result.error);
+        return;
+      }
+      // Refinement detection: if a returned name matches an existing
+      // DRAFT name, replace that draft in place rather than appending.
+      // The action's prompt already encourages this shape.
+      const newDrafts: ExplorerScenario[] = result.scenarios.map((s) => ({
+        id: uid(),
+        name: s.name,
+        inputs: {
+          monthlyContribution: s.monthlyContribution,
+          annualReturnPct: s.annualReturnPct,
+          horizonMonths: s.horizonMonths,
+          events: s.events,
+        },
+        rationale: s.rationale,
+        summary: s.summary,
+        source: "ai",
+        kind: "draft",
+      }));
+      setScenarios((prev) => {
+        const replacedIds = new Set<string>();
+        const next = prev.map((s) => {
+          if (s.kind !== "draft") return s;
+          const match = newDrafts.find((d) => d.name === s.name);
+          if (!match) return s;
+          replacedIds.add(match.id);
+          // Reuse the existing slot's id so chip clicks still work.
+          return { ...match, id: s.id };
+        });
+        for (const d of newDrafts) {
+          if (!replacedIds.has(d.id)) next.push(d);
+        }
+        return next;
+      });
+      setThread((prev) => [
+        ...prev,
+        {
+          id: uid(),
+          kind: "advisor",
+          summary:
+            result.scenarios.length === 1
+              ? `Drafted 1 scenario.`
+              : `Drafted ${result.scenarios.length} scenarios.`,
+          // Map names back to ids so the chips work. Look up freshly
+          // in setScenarios closure isn't available here; we use the
+          // newDrafts array and assume match-by-name remained stable.
+          scenarios: result.scenarios.map((s, i) => ({
+            id: newDrafts[i].id,
+            name: s.name,
+          })),
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+    });
+  }
+
+  function pinDraft(id: string) {
+    setScenarios((prev) =>
+      prev.map((s) =>
+        s.id === id && s.kind === "draft" ? { ...s, kind: "concrete" } : s,
+      ),
+    );
+    toast.success("Pinned to canvas.");
+  }
+
+  function discardDraft(id: string) {
+    setScenarios((prev) => prev.filter((s) => s.id !== id));
+  }
+
+  function discardAllDrafts() {
+    setScenarios((prev) => prev.filter((s) => s.kind !== "draft"));
+    toast.success("Cleared all drafts.");
+  }
+
+  function scrollToScenario(scenarioId: string) {
+    // Each card has data-scenario-id; scroll the matching one into view.
+    const el = document.querySelector(
+      `[data-scenario-id="${scenarioId}"]`,
+    ) as HTMLElement | null;
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("ring-2", "ring-primary/60");
+      window.setTimeout(
+        () => el.classList.remove("ring-2", "ring-primary/60"),
+        1200,
+      );
+    }
   }
 
   function loadSavedScenario(saved: SavedScenarioRow) {
@@ -353,10 +498,12 @@ export function ProjectionsExplorer({
             source: s.source ?? "user",
             goalId: goalId,
           });
+          // Saving promotes a draft into a concrete card (solid line)
+          // since the user has now committed to keeping it on canvas.
           setScenarios((prev) =>
             prev.map((x) =>
               x.id === scenarioId
-                ? { ...x, savedId: id, dirty: false }
+                ? { ...x, savedId: id, dirty: false, kind: "concrete" }
                 : x,
             ),
           );
@@ -545,37 +692,8 @@ export function ProjectionsExplorer({
           <Button variant="outline" size="sm" onClick={addScenario}>
             <Plus className="size-4" /> Scenario
           </Button>
-          <Button
-            variant="default"
-            size="sm"
-            onClick={() => setPredictOpen(true)}
-          >
-            <Sparkles className="size-4" /> Predict
-          </Button>
         </div>
       </div>
-
-      <PredictDialog
-        open={predictOpen}
-        onOpenChange={setPredictOpen}
-        goals={goals}
-        defaultGoalId={goalId}
-        defaultHorizonMonths={
-          // Default to the longest current horizon on the canvas so a
-          // user who set up a 10y baseline doesn't get a dialog
-          // pre-filled with 5y by accident. min: 6mo.
-          Math.max(
-            6,
-            ...scenarios.map((s) => s.inputs.horizonMonths || 60),
-          )
-        }
-        baseCurrency={baseCurrency}
-        startNonGrantInBase={startNonGrantInBase}
-        grants={grants}
-        fxToBase={fxToBase}
-        view={view}
-        onApply={applySuggestions}
-      />
 
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-1 space-y-3">
@@ -610,6 +728,8 @@ export function ProjectionsExplorer({
                 onDuplicate={() => duplicateScenario(s.id)}
                 onDelete={() => removeScenario(s.id)}
                 onSave={() => persistScenario(s.id)}
+                onPin={() => pinDraft(s.id)}
+                onDiscard={() => discardDraft(s.id)}
               />
             );
           })}
@@ -679,6 +799,10 @@ export function ProjectionsExplorer({
                     dataKey={s.id}
                     stroke={`var(--color-${s.id})`}
                     strokeWidth={2}
+                    // Drafts render dashed so they're visually distinct
+                    // from committed/saved scenarios. Pinning or saving
+                    // flips kind to "concrete" → solid.
+                    strokeDasharray={s.kind === "draft" ? "5 4" : undefined}
                     dot={false}
                     connectNulls={false}
                   />
@@ -725,6 +849,22 @@ export function ProjectionsExplorer({
           </CardContent>
         </Card>
       </div>
+
+      <PredictionThread
+        thread={thread}
+        busy={predictBusy}
+        goals={goals.map((g) => ({ id: g.id, name: g.name }))}
+        goalId={goalId}
+        onGoalChange={setGoalId}
+        defaultHorizonMonths={Math.max(
+          6,
+          ...scenarios.map((s) => s.inputs.horizonMonths || 60),
+        )}
+        draftCount={scenarios.filter((s) => s.kind === "draft").length}
+        onSend={sendPrompt}
+        onDiscardAllDrafts={discardAllDrafts}
+        onScenarioClick={scrollToScenario}
+      />
     </div>
   );
 }
@@ -743,6 +883,8 @@ function ScenarioCard({
   onDuplicate,
   onDelete,
   onSave,
+  onPin,
+  onDiscard,
 }: {
   scenario: ExplorerScenario;
   colorVar: string;
@@ -757,6 +899,8 @@ function ScenarioCard({
   onDuplicate: () => void;
   onDelete: () => void;
   onSave: () => void;
+  onPin: () => void;
+  onDiscard: () => void;
 }) {
   const [open, setOpen] = useState(true);
   const events = scenario.inputs.events ?? [];
@@ -787,9 +931,17 @@ function ScenarioCard({
     patchEvents([...events, base]);
   }
 
+  const isDraft = scenario.kind === "draft";
+
   return (
     <div
-      className="rounded-lg border border-border bg-card overflow-hidden"
+      data-scenario-id={scenario.id}
+      className={cn(
+        "rounded-lg border bg-card overflow-hidden transition-shadow",
+        isDraft
+          ? "border-dashed border-primary/40 ring-1 ring-primary/10"
+          : "border-border",
+      )}
       style={{ borderLeftWidth: 4, borderLeftColor: colorVar }}
     >
       <button
@@ -1002,34 +1154,53 @@ function ScenarioCard({
           </div>
 
           <div className="flex items-center justify-between gap-1 pt-1">
-            <Button
-              variant={isDirty ? "default" : isSaved ? "ghost" : "outline"}
-              size="xs"
-              onClick={onSave}
-              disabled={savePending || (isSaved && !isDirty)}
-            >
-              {isSaved && !isDirty ? (
-                <>
-                  <BookmarkCheck className="size-3.5" />
-                  Saved
-                </>
-              ) : isSaved ? (
-                <>
-                  <Save className="size-3.5" />
-                  Save changes
-                </>
-              ) : (
-                <>
-                  <Save className="size-3.5" />
-                  Save
-                </>
-              )}
-            </Button>
             <div className="flex items-center gap-1">
-              <Button variant="ghost" size="xs" onClick={onDuplicate}>
-                Duplicate
+              <Button
+                variant={isDirty ? "default" : isSaved ? "ghost" : "outline"}
+                size="xs"
+                onClick={onSave}
+                disabled={savePending || (isSaved && !isDirty)}
+              >
+                {isSaved && !isDirty ? (
+                  <>
+                    <BookmarkCheck className="size-3.5" />
+                    Saved
+                  </>
+                ) : isSaved ? (
+                  <>
+                    <Save className="size-3.5" />
+                    Save changes
+                  </>
+                ) : (
+                  <>
+                    <Save className="size-3.5" />
+                    Save
+                  </>
+                )}
               </Button>
-              {canDelete ? (
+              {isDraft ? (
+                <Button variant="outline" size="xs" onClick={onPin}>
+                  Pin
+                </Button>
+              ) : null}
+            </div>
+            <div className="flex items-center gap-1">
+              {!isDraft ? (
+                <Button variant="ghost" size="xs" onClick={onDuplicate}>
+                  Duplicate
+                </Button>
+              ) : null}
+              {isDraft ? (
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  onClick={onDiscard}
+                  className="text-muted-foreground hover:text-destructive"
+                >
+                  <Trash2 className="size-3.5" />
+                  Discard
+                </Button>
+              ) : canDelete ? (
                 <Button
                   variant="ghost"
                   size="xs"
