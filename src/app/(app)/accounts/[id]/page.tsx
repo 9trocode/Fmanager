@@ -59,6 +59,7 @@ import {
 import { ACCOUNT_TYPE_LABEL, isLiability } from "@/lib/account-types";
 import { FLOW_CADENCE_LABEL, monthlyEquivalent } from "@/lib/flows";
 import { formatMoney } from "@/lib/format";
+import { convert } from "@/lib/fx";
 
 export default async function AccountDetailPage({
   params,
@@ -109,6 +110,65 @@ export default async function AccountDetailPage({
 
   const displayValue =
     effective.effectiveValue ?? latest?.value ?? null;
+
+  // Per-transaction derivation. For every tx posted strictly AFTER
+  // the latest snapshot date that touches this account (as source or
+  // destination), compute its signed contribution in the account's
+  // currency. If the tx was in another currency, FX-convert with the
+  // current cached rate and surface that fact so the user can spot
+  // misconfigured flows. Same-day-as-snapshot txs are skipped to
+  // match the engine's "snapshot wins on its own date" rule.
+  type DerivationRow = {
+    id: number;
+    occurredAt: string;
+    kind: string;
+    nativeAmount: number;
+    nativeCurrency: string;
+    contribution: number;
+    isCrossCurrency: boolean;
+    notes: string | null;
+    category: string | null;
+  };
+  let derivationRows: DerivationRow[] = [];
+  if (latest) {
+    const sinceTxs = txs.filter((t) => t.occurredAt > latest.asOf);
+    derivationRows = await Promise.all(
+      sinceTxs.map(async (t) => {
+        const isSource = t.accountId === id;
+        const isDest = t.destAccountId === id && t.kind === "transfer";
+        const sign = isSource
+          ? t.kind === "expense" || t.kind === "transfer"
+            ? -1
+            : t.kind === "income"
+              ? 1
+              : 0
+          : isDest
+            ? 1
+            : 0;
+        const isCrossCurrency = t.currency !== account.currency;
+        const inAccount = isCrossCurrency
+          ? await convert(t.amount, t.currency, account.currency)
+          : t.amount;
+        return {
+          id: t.id,
+          occurredAt: t.occurredAt,
+          kind: t.kind,
+          nativeAmount: t.amount,
+          nativeCurrency: t.currency,
+          contribution: sign * inAccount,
+          isCrossCurrency,
+          notes: t.notes,
+          category: t.category,
+        };
+      }),
+    );
+  }
+  // Same-day skipped count — these don't show in the running total
+  // but should be flagged so the user knows their salary on the
+  // snapshot date isn't silently being eaten.
+  const sameDaySkipCount = latest
+    ? txs.filter((t) => t.occurredAt === latest.asOf).length
+    : 0;
 
   return (
     <>
@@ -270,6 +330,118 @@ export default async function AccountDetailPage({
           </CardContent>
         </Card>
       </div>
+
+      {/*
+        Balance derivation. Spelled out math from snapshot → effective
+        balance. The user gets to see exactly which transactions
+        contributed and at what rate (when FX-converted), so a
+        suspicious balance never has to be a mystery.
+      */}
+      {latest && derivationRows.length > 0 ? (
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle className="text-base">How this is computed</CardTitle>
+            <CardDescription>
+              Snapshot value plus every transaction posted since.
+              Cross-currency transactions are FX-converted into{" "}
+              <span className="font-mono">{account.currency}</span> at
+              today&apos;s cached rate.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="px-4 py-2.5 border-t border-border bg-secondary/20 flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">
+                Snapshot {latest.asOf}
+              </span>
+              <span className="font-mono tabular-nums">
+                {formatMoney(latest.value, account.currency)}
+              </span>
+            </div>
+            <ul className="divide-y divide-border/60">
+              {derivationRows.map((r) => (
+                <li
+                  key={r.id}
+                  className="px-4 py-2 flex items-center justify-between gap-3 text-xs"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono text-muted-foreground">
+                        {r.occurredAt}
+                      </span>
+                      <span className="capitalize">{r.kind}</span>
+                      {r.category ? (
+                        <Badge variant="secondary" className="text-[10px]">
+                          {r.category}
+                        </Badge>
+                      ) : null}
+                      {r.isCrossCurrency ? (
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] border-amber-500/40 text-amber-300"
+                        >
+                          {r.nativeCurrency} → {account.currency}
+                        </Badge>
+                      ) : null}
+                    </div>
+                    {r.notes ? (
+                      <div className="text-[11px] text-muted-foreground truncate mt-0.5">
+                        {r.notes}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="text-right shrink-0">
+                    {r.isCrossCurrency ? (
+                      <div className="text-[10px] text-muted-foreground/80 font-mono">
+                        {r.kind === "expense" || r.kind === "transfer"
+                          ? "−"
+                          : "+"}
+                        {formatMoney(r.nativeAmount, r.nativeCurrency, {
+                          compact: true,
+                        })}
+                      </div>
+                    ) : null}
+                    <div
+                      className={
+                        "font-mono tabular-nums " +
+                        (r.contribution > 0
+                          ? "text-emerald-400"
+                          : r.contribution < 0
+                            ? "text-destructive"
+                            : "text-muted-foreground")
+                      }
+                    >
+                      {r.contribution > 0 ? "+" : ""}
+                      {formatMoney(r.contribution, account.currency)}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <div className="px-4 py-2.5 border-t border-border bg-secondary/30 flex items-center justify-between text-sm font-medium">
+              <span>Effective balance</span>
+              <span
+                className={
+                  "font-mono tabular-nums " +
+                  ((displayValue ?? 0) < 0 ? "text-destructive" : "")
+                }
+              >
+                {displayValue != null
+                  ? formatMoney(displayValue, account.currency)
+                  : "—"}
+              </span>
+            </div>
+            {sameDaySkipCount > 0 ? (
+              <div className="px-4 py-2 border-t border-border text-[11px] text-muted-foreground">
+                {sameDaySkipCount}{" "}
+                {sameDaySkipCount === 1 ? "transaction" : "transactions"} on
+                the snapshot date ({latest.asOf}) were intentionally
+                skipped — the snapshot wins on its own date. To include
+                them, set the snapshot date one day earlier.
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card className="mt-6">
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
