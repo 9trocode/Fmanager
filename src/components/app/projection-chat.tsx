@@ -363,7 +363,15 @@ export function ProjectionChat({
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             onKeyDown={(e) => {
-              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+              // Enter sends (chat-default). Shift+Enter inserts a
+              // newline for multi-line prompts. IME composition (e.g.
+              // Japanese, Korean) sets isComposing — don't intercept
+              // that, the Enter is part of the composition.
+              if (
+                e.key === "Enter" &&
+                !e.shiftKey &&
+                !e.nativeEvent.isComposing
+              ) {
                 e.preventDefault();
                 send();
               }
@@ -442,7 +450,7 @@ export function ProjectionChat({
             </SelectContent>
           </Select>
           <span className="ml-auto opacity-40 text-[10px] font-mono">
-            ⌘ + ↵ to send
+            ↵ send · ⇧+↵ newline
           </span>
         </div>
       </form>
