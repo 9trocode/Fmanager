@@ -5,7 +5,6 @@ import { generateText, Output } from "ai";
 import { z } from "zod";
 import { assertAdmin } from "@/lib/auth/session";
 import { buildAdvisorClient } from "@/lib/ai/provider";
-import { advisorTools } from "@/lib/ai/tools";
 import {
   computeBudgetStatus,
   computeMonthlyCashFlow,
@@ -478,7 +477,6 @@ export async function suggestScenarios(
     "You are a personal finance scenario planner. Generate 3-5 DISTINCT, USEFUL projection scenarios for the user.",
     "Each scenario tests a different lever — raise/income bump, expense cut, lump sum (bonus/refund), longer horizon, higher contribution, or a mix.",
     "Use the user's actual numbers below. Don't invent figures or pick generic placeholders.",
-    "If a 'Tool exploration findings' section is present near the end, it summarizes what a prior agent step learned by calling read tools — use it as authoritative context.",
     "",
     `## Currency rules`,
     `- Base currency: ${baseCurrency}. ALL numbers you output (monthlyContribution, event newMonthly, event amount) MUST be in ${baseCurrency}.`,
@@ -584,83 +582,19 @@ export async function suggestScenarios(
     prompt.trim() || "(no specific question — propose what's most useful)",
   ].join("\n");
 
-  // Read-only subset of the chat advisor's tools. Prediction is
-  // non-destructive — it shouldn't be able to log a transaction or
-  // archive a flow mid-thought. Writes happen later via
-  // `applyProposedEdits` once the user confirms the diff.
-  const predictionTools = {
-    listAccounts: advisorTools.listAccounts,
-    listBudgets: advisorTools.listBudgets,
-    listSavingsGoals: advisorTools.listSavingsGoals,
-    listFlows: advisorTools.listFlows,
-    listGrants: advisorTools.listGrants,
-    listTransactions: advisorTools.listTransactions,
-    listActiveAlerts: advisorTools.listActiveAlerts,
-    getNetWorth: advisorTools.getNetWorth,
-    getRunwayCheck: advisorTools.getRunwayCheck,
-    getBudgetStatus: advisorTools.getBudgetStatus,
-    getCashFlow: advisorTools.getCashFlow,
-    getAccountBalances: advisorTools.getAccountBalances,
-    getExchangeRate: advisorTools.getExchangeRate,
-    convertCurrency: advisorTools.convertCurrency,
-  };
-
-  /**
-   * Run prediction in two phases for reliability.
-   *
-   * Phase 1 (tool loop, no schema): the model can freely use read
-   * tools to dig into the user's data. Output is plain text — a
-   * brief summary of what was found. If the model never calls a
-   * tool, the text just summarizes the existing context.
-   *
-   * Phase 2 (structured, no tools): the schema is the ONLY thing
-   * the model has to produce. With phase 1's findings appended to
-   * the prompt, the model has all the context it needs without
-   * the tool-loop-vs-structured-output conflict that produced
-   * "No output generated" errors when both were combined in one
-   * call.
-   *
-   * Cost: 2 model calls instead of 1. ~3-8s extra latency on a
-   * tool-using prompt. The tradeoff is reliability — the SDK
-   * couldn't reliably enforce structured output as the terminal
-   * step of a tool loop across all three providers (Anthropic /
-   * OpenAI / Google), and Gemini in particular would burn the
-   * step budget on tool calls and never emit the schema-conformant
-   * response.
-   */
-  let toolFindings = "";
-  try {
-    const exploration = await generateText({
-      model: client.model,
-      system: [
-        "You are gathering data for a personal finance scenario planner.",
-        "Read the user's request and the data context provided. Use READ-only tools to fetch any additional information that would meaningfully improve the scenarios — but only if the prompt clearly demands it. Most prompts are well-served by the data already in the message.",
-        "After at most 2-3 tool calls, write a short plain-text summary of what you found and what scenarios you'd propose. Do NOT produce JSON or structured output — that's the next step.",
-        "If no tools are needed, just write the summary directly.",
-      ].join("\n"),
-      prompt: dataPrompt,
-      tools: predictionTools,
-      stopWhen: ({ steps }) => steps.length >= 5,
-    });
-    toolFindings = exploration.text || "";
-  } catch (err) {
-    // Tool exploration is best-effort — if it fails, fall through
-    // to phase 2 with no extra findings. The scenario quality
-    // degrades to the pre-tool-loop one-shot quality, which is
-    // still acceptable.
-    console.warn("[predict] phase 1 (tool exploration) failed:", err);
-  }
-
+  // One-shot: single generateText with the full data context baked
+  // into the prompt + structured output enforced. We previously
+  // tried a two-phase tool-loop variant — it was reliable but doubled
+  // latency, and the rich up-front prompt (per-currency cash flow,
+  // every goal/budget/flow with id, runway upper bound, current
+  // drafts) is already enough for ~all real-world prompts. Niche
+  // "look at my last 90 days of dining" style prompts will produce
+  // less-grounded scenarios; that's the documented tradeoff.
   try {
     const result = await generateText({
       model: client.model,
       system: systemPrompt,
-      prompt: toolFindings
-        ? `${dataPrompt}\n\n## Tool exploration findings\n${toolFindings}`
-        : dataPrompt,
-      // v6 structured-output API. The model is constrained to produce
-      // a value matching ResponseSchema; result.output is fully typed.
-      // No tools at this phase — we already gathered findings above.
+      prompt: dataPrompt,
       output: Output.object({ schema: ResponseSchema }),
     });
     // Narrow the wire-format flat events back into the strict

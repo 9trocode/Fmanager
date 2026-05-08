@@ -97,7 +97,15 @@ export async function computeGoalState(
       const floorInBase = summary.totals.floor;
       const current = await convert(floorInBase, baseCurrency, goal.currency);
       const target = goal.targetAmount;
-      const percent = target && target > 0 ? (current / target) * 100 : 0;
+      // Clamp at 0% when in deficit. Net worth can be negative (loans
+      // > liquid), and (negative / positive) produces a misleading
+      // negative percent on the progress bar (e.g. "-7%"). Treat
+      // "in the hole" as 0% reached; the deficit is conveyed by the
+      // distance-to-target widget elsewhere.
+      const percent =
+        target && target > 0
+          ? Math.max(0, (current / target) * 100)
+          : 0;
       const eta =
         target == null
           ? null
@@ -130,7 +138,8 @@ export async function computeGoalState(
       const target = await convert(targetInBase, baseCurrency, goal.currency);
       const currentInBase = summary.totals.floor;
       const current = await convert(currentInBase, baseCurrency, goal.currency);
-      const percent = target > 0 ? (current / target) * 100 : 0;
+      // Clamp at 0% when in deficit — same reasoning as net_worth.
+      const percent = target > 0 ? Math.max(0, (current / target) * 100) : 0;
       const eta = monthsToTarget({
         current,
         target,
