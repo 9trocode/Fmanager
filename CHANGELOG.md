@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.1.0](https://github.com/9trocode/Fmanager/compare/v1.0.0...v1.1.0) (2026-05-08)
+
+
+### Features
+
+* **accounts:** per-account balance derivation card ([bc66ec8](https://github.com/9trocode/Fmanager/commit/bc66ec8eb62d18a4ec8928821d29cd7677b2bc37))
+* **advisor:** proactive alerts — sidebar badge, /alerts, dashboard banner ([21013c4](https://github.com/9trocode/Fmanager/commit/21013c4a5f3bcd9b06447784db176c51c3845fcd))
+* **advisor:** proactive tools, floating sheet on every page, FX from DB ([a395277](https://github.com/9trocode/Fmanager/commit/a395277301967fba1a422ced70b0ce902b3f22db))
+* **flows:** currency-mismatch warning + one-click match-account fix ([a671e27](https://github.com/9trocode/Fmanager/commit/a671e2746c178bb409f8834e47b504a464d6dc7e))
+* **predict:** chat session persistence + accounts/grants in AI context ([83f02ba](https://github.com/9trocode/Fmanager/commit/83f02ba28c9ede912054d2f8b25751a018c0221d))
+* **predict:** convert one-shot to tool loop — agentic data fetching ([da6ff6d](https://github.com/9trocode/Fmanager/commit/da6ff6d8caa91ad1351f566c4fac413e7b8c7ee9))
+* **predict:** interactive iterative workspace with refine + per-card save ([4443c09](https://github.com/9trocode/Fmanager/commit/4443c09fe6fe3f083507a179d4c4cdc5ed97c266))
+* **predict:** proposed edits — advisor suggests concrete diffs to budgets/goals/flows ([f7665ff](https://github.com/9trocode/Fmanager/commit/f7665ff309c6cf67d2c3806acf368ca8523f6556))
+* **projections:** chat-driven canvas — drafts, thread, no modal ([252be0e](https://github.com/9trocode/Fmanager/commit/252be0e8394655294f7e0eaa711c0664d8132eb1))
+* **projections:** multi-scenario engine, events, goal target, AI seed ([80c188b](https://github.com/9trocode/Fmanager/commit/80c188b2fda8cb740f32c56e4714542c0e193055))
+* **projections:** pure chat-first surface, everything inline ([475a187](https://github.com/9trocode/Fmanager/commit/475a18736a676942ab6cd2bdf5aa0ba353074f6f))
+* **projections:** redesign Predict as a dialog with horizon control ([9c0fe4a](https://github.com/9trocode/Fmanager/commit/9c0fe4a9f039d3cbab61ab1fe003166bedddd95c))
+* **projections:** summary panels + save scenarios to library ([f88bbe7](https://github.com/9trocode/Fmanager/commit/f88bbe76caf8fe6b0aa5a7d8ed6ce4d03c4c3187))
+* **transactions:** show flow→tx relationship visibly ([e9f1aa1](https://github.com/9trocode/Fmanager/commit/e9f1aa1d6acd8fda2c805f5608f009507f6ec95a))
+
+
+### Bug Fixes
+
+* **advisor-chat:** stable transport + step headroom + 'write text' rule ([a0ef042](https://github.com/9trocode/Fmanager/commit/a0ef0426b7eac10c2bd212fc07f568aba4594213))
+* **balance:** exclude future-dated transactions from current balance ([75200d5](https://github.com/9trocode/Fmanager/commit/75200d572d6ea75ca64679c42a2e747d7c7ac9c7))
+* **balance:** FX-convert cross-currency transactions before summing ([c15b8f0](https://github.com/9trocode/Fmanager/commit/c15b8f02e8b9353e42ce9251a267ea778eb39b5f))
+* **chat:** switch-session no-op + add stop button on prediction chat ([65925ed](https://github.com/9trocode/Fmanager/commit/65925ed04756f5319fad53ae37f8929bea986dfa))
+* clamp goal % at 0 when in deficit; revert predict to one-shot ([f8aa269](https://github.com/9trocode/Fmanager/commit/f8aa26959d98620aba800797bb9dbe3802c5e6a0))
+* **predict:** Enter sends, Shift+Enter newlines ([bacbfb9](https://github.com/9trocode/Fmanager/commit/bacbfb92079f1973956aea650bb301e71a9ef188))
+* **predict:** two-phase generation — separate tool loop from structured output ([f397489](https://github.com/9trocode/Fmanager/commit/f397489e2e809ab9921d541dc93cee992b5036ea))
+* **projections-ai:** currency-aware prompts + realistic contribution cap ([aef13eb](https://github.com/9trocode/Fmanager/commit/aef13eb014201435d3fc324499cbe3565dadd03b))
+* **projections-ai:** flatten event schema for Gemini compatibility ([c094d42](https://github.com/9trocode/Fmanager/commit/c094d42c1bc579cdd192a575edd2f2ba560790f4))
+
 ## 1.0.0 (2026-05-07)
 
 
