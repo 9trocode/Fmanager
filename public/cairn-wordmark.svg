@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 256" width="760" height="256">
   <defs>
     <linearGradient id="g2" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#0F766E"/>
-      <stop offset="100%" stop-color="#134E4A"/>
+      <stop offset="0%" stop-color="#0a0a0a"/>
+      <stop offset="100%" stop-color="#3f3f46"/>
     </linearGradient>
   </defs>
   <!-- mark -->
@@ -18,10 +18,10 @@
     font-size="140"
     font-weight="700"
     letter-spacing="-4"
-    fill="#0F172A"
+    fill="#0a0a0a"
   >Cairn</text>
   <!-- tagline rule -->
-  <rect x="262" y="195" width="40" height="4" rx="2" fill="#0F766E"/>
+  <rect x="262" y="195" width="40" height="4" rx="2" fill="#0a0a0a"/>
   <text
     x="312"
     y="202"

@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
   <rect width="256" height="256" rx="56" fill="#FAFAF9"/>
-  <!-- subtle ink-stone shading -->
-  <ellipse cx="128" cy="190" rx="74" ry="22" fill="#0F766E"/>
-  <ellipse cx="132" cy="142" rx="54" ry="20" fill="#115E59"/>
-  <ellipse cx="126" cy="92" rx="34" ry="18" fill="#134E4A" transform="rotate(-6 126 92)"/>
+  <!-- ink-on-stone shading: deepest at bottom for grounded weight -->
+  <ellipse cx="128" cy="190" rx="74" ry="22" fill="#0a0a0a"/>
+  <ellipse cx="132" cy="142" rx="54" ry="20" fill="#262626"/>
+  <ellipse cx="126" cy="92" rx="34" ry="18" fill="#3f3f46" transform="rotate(-6 126 92)"/>
 </svg>
