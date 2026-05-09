@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/table";
 import { PageHeader } from "@/components/app/page-header";
 import { LogSpendDialog } from "@/components/app/log-spend-dialog";
+import { BudgetNuggets } from "@/components/app/budget-nuggets";
 import { db, schema } from "@/lib/db";
 import { listAccounts } from "@/lib/db/queries";
 import { computeBudgetStatus } from "@/lib/aggregation";
@@ -158,6 +159,10 @@ export default async function BudgetDetailPage({
           </CardContent>
         ) : null}
       </Card>
+
+      <div className="mb-6">
+        <BudgetNuggets budgetId={budget.id} />
+      </div>
 
       <Card>
         <CardHeader>
