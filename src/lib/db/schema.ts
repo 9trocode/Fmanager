@@ -605,6 +605,34 @@ export const users = sqliteTable(
  * On successful signup the row's `usedAt` is stamped and `usedByUserId`
  * is set. Codes are single-use.
  */
+/**
+ * Per-tenant override for settings that aren't host-instance-wide.
+ *
+ * The host's global `settings` table holds:
+ *   • host-only config (admin_email/name/password_hash, registration_mode)
+ *   • global defaults (FX last refresh, baseline base_currency, etc.)
+ *
+ * `user_settings` overrides scoped settings on a per-user basis. When
+ * an isolated tenant changes their base_currency, AI key, screen-lock
+ * timeout, or panic URL, the row lands here keyed by their user id —
+ * not in the host's global table. Host (settings-admin) + shared users
+ * keep using the global table because they share the host's tenancy.
+ */
+export const userSettings = sqliteTable(
+  "user_settings",
+  {
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    value: text("value"),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    pk: uniqueIndex("user_settings_user_key_uniq").on(t.userId, t.key),
+  }),
+);
+
 export const invites = sqliteTable(
   "invites",
   {

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { setSetting } from "@/lib/db/queries";
 import { assertAdmin } from "@/lib/auth/session";
@@ -448,7 +449,17 @@ function buildSampleTransactions(idsByName: Record<string, number>) {
 export async function wipeAllData() {
   await assertAdmin();
   await wipe();
-  await db.delete(schema.settings);
+  // Clear scoped settings for the active owner. Host-only keys
+  // (admin_*, registration_mode) live in `settings` and get cleared
+  // for the host; isolated users have user_settings rows wiped instead.
+  const owner = await getOwner();
+  if (owner != null) {
+    await db
+      .delete(schema.userSettings)
+      .where(eq(schema.userSettings.userId, owner));
+  } else {
+    await db.delete(schema.settings);
+  }
   revalidatePath("/", "layout");
 }
 

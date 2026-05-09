@@ -2,8 +2,27 @@
 
 import { revalidatePath } from "next/cache";
 import { db, schema } from "@/lib/db";
-import { assertAdmin } from "@/lib/auth/session";
+import { assertAdmin, getCurrentUser } from "@/lib/auth/session";
 import { parseCsv } from "@/lib/csv";
+
+/**
+ * The full-DB export/import surface is host-only — it dumps and
+ * restores every row in every table including the host's auth and
+ * registration config. Letting an isolated tenant call importAllData
+ * would wipe other tenants' data and global host config.
+ *
+ * Per-tenant backup is something we'd add separately (scoped export
+ * + scoped restore); for now, isolated tenants get a clear error.
+ */
+async function assertHostOnly(): Promise<void> {
+  await assertAdmin();
+  const u = await getCurrentUser();
+  if (u && u.dataScope === "isolated") {
+    throw new Error(
+      "Full backup/restore is host-only. Per-tenant export will land separately.",
+    );
+  }
+}
 
 const EXPORT_VERSION = "0.1";
 
@@ -24,7 +43,7 @@ type ExportShape = {
 
 /** Returns the entire database as a JSON string. */
 export async function exportAllData(): Promise<string> {
-  await assertAdmin();
+  await assertHostOnly();
   const [
     accounts,
     snapshots,
@@ -71,7 +90,7 @@ export async function exportAllData(): Promise<string> {
  * Destructive — wipes existing rows in every table first.
  */
 export async function importAllData(formData: FormData) {
-  await assertAdmin();
+  await assertHostOnly();
   const text = String(formData.get("json") ?? "").trim();
   if (!text) throw new Error("No JSON provided.");
 

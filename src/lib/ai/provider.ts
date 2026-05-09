@@ -40,8 +40,17 @@ export async function getAdvisorModelId(
 }
 
 async function getApiKey(provider: AdvisorProvider): Promise<string | null> {
+  // getSetting is owner-scoped — isolated tenants get their own
+  // stored key; host + shared users see the host's key.
   const stored = await getSetting(PROVIDER_KEY_SETTING[provider]);
   if (stored) return stored;
+  // Env-key fallback is HOST-ONLY. If we let isolated tenants fall
+  // through to ANTHROPIC_API_KEY etc., they'd silently spend on the
+  // host's API budget — a real billing hole when reselling Cairn.
+  // They must bring their own key via Settings → Advisor.
+  const { getOwner } = await import("@/lib/db/scope");
+  const owner = await getOwner();
+  if (owner != null) return null;
   const fromEnv = process.env[PROVIDER_ENV[provider]];
   return fromEnv ?? null;
 }

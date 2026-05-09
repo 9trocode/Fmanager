@@ -246,55 +246,62 @@ export default async function SettingsPage() {
             </CardContent>
           </Card>
 
-          <Separator />
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Sharing read-only access</CardTitle>
-              <CardDescription>
-                Let a partner or co-founder view your numbers without giving them
-                edit rights.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="text-sm text-muted-foreground space-y-2">
-              {process.env.VIEWER_PASSWORD ? (
-                <>
-                  <p>
-                    <span className="inline-block size-2 rounded-full bg-emerald-500 mr-2 align-middle" />
-                    Viewer access is <span className="text-foreground font-medium">enabled</span>.
-                  </p>
-                  <p>
-                    Share the password from <code className="font-mono">VIEWER_PASSWORD</code>{" "}
-                    with whoever you want to grant read-only access. They sign in at{" "}
-                    <code className="font-mono">/login</code> like you do. Viewers see
-                    every page but cannot create, edit, or delete anything.
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p>
-                    <span className="inline-block size-2 rounded-full bg-muted-foreground/40 mr-2 align-middle" />
-                    Viewer access is <span className="text-foreground font-medium">disabled</span>.
-                  </p>
-                  <p>
-                    Set <code className="font-mono">VIEWER_PASSWORD</code> in your
-                    environment to enable read-only sharing. Restart the app after
-                    setting it.
-                  </p>
-                </>
-              )}
-            </CardContent>
-          </Card>
+          {isHost ? (
+            <>
+              <Separator />
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Sharing read-only access</CardTitle>
+                  <CardDescription>
+                    Let a partner or co-founder view your numbers without giving them
+                    edit rights.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="text-sm text-muted-foreground space-y-2">
+                  {process.env.VIEWER_PASSWORD ? (
+                    <>
+                      <p>
+                        <span className="inline-block size-2 rounded-full bg-emerald-500 mr-2 align-middle" />
+                        Viewer access is <span className="text-foreground font-medium">enabled</span>.
+                      </p>
+                      <p>
+                        Share the password from <code className="font-mono">VIEWER_PASSWORD</code>{" "}
+                        with whoever you want to grant read-only access. They sign in at{" "}
+                        <code className="font-mono">/login</code> like you do. Viewers see
+                        every page but cannot create, edit, or delete anything.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p>
+                        <span className="inline-block size-2 rounded-full bg-muted-foreground/40 mr-2 align-middle" />
+                        Viewer access is <span className="text-foreground font-medium">disabled</span>.
+                      </p>
+                      <p>
+                        Set <code className="font-mono">VIEWER_PASSWORD</code> in your
+                        environment to enable read-only sharing. Restart the app after
+                        setting it.
+                      </p>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </>
+          ) : null}
 
           <Separator />
 
           <StatementExport baseCurrency={settings.base_currency ?? "USD"} />
 
-          <Separator />
-
-          <DataTools />
-
-          <Separator />
+          {isHost ? (
+            <>
+              <Separator />
+              <DataTools />
+              <Separator />
+            </>
+          ) : (
+            <Separator />
+          )}
 
           <Card>
             <CardHeader>
@@ -310,20 +317,23 @@ export default async function SettingsPage() {
             </CardContent>
           </Card>
 
-          <Separator />
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Database</CardTitle>
-              <CardDescription>
-                Data lives in <code className="font-mono">./data/app.db</code>. Back it up
-                yourself — that&apos;s the entire point of self-hosting.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="text-xs text-muted-foreground font-mono">
-              {process.env.DATABASE_URL ?? "./data/app.db"}
-            </CardContent>
-          </Card>
+          {isHost ? (
+            <>
+              <Separator />
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Database</CardTitle>
+                  <CardDescription>
+                    Data lives in <code className="font-mono">./data/app.db</code>. Back it up
+                    yourself — that&apos;s the entire point of self-hosting.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="text-xs text-muted-foreground font-mono">
+                  {process.env.DATABASE_URL ?? "./data/app.db"}
+                </CardContent>
+              </Card>
+            </>
+          ) : null}
         </TabsContent>
       </Tabs>
     </>

@@ -7,44 +7,93 @@ import { convert } from "@/lib/fx";
 import { localToday } from "@/lib/dates";
 import type { AccountType, TransactionKind } from "@/lib/db/schema";
 
+/**
+ * Settings come in three flavors:
+ *
+ *  • SCOPED: per-tenant config that isolated users override on a
+ *    per-row basis. Host (settings-admin + shared users) keeps using
+ *    the global `settings` table; isolated users get their own row in
+ *    `user_settings`. Examples: base currency, AI keys, advisor
+ *    model, screen-lock timeout, panic URL.
+ *
+ *  • HOST: instance-wide config the host owns. Authentication and
+ *    registration policy live here — these have no per-tenant meaning.
+ *    Examples: admin_email, admin_password_hash, registration_mode.
+ *    Routed via `hostDb` from `auth/session.ts` and
+ *    `actions/members.ts` directly, not through `getSetting()`.
+ *
+ *  • GLOBAL: read-only-ish shared resources. Everyone reads them but
+ *    only the host writes. Example: fx_last_refresh.
+ */
+const SCOPED_KEYS = [
+  "base_currency",
+  "anthropic_api_key",
+  "openai_api_key",
+  "google_api_key",
+  "advisor_provider",
+  "advisor_model",
+  "onboarding_complete",
+  "screen_lock_timeout_minutes",
+  "panic_redirect_url",
+] as const;
+type ScopedKey = (typeof SCOPED_KEYS)[number];
+
+const GLOBAL_KEYS = ["fx_last_refresh"] as const;
+type GlobalKey = (typeof GLOBAL_KEYS)[number];
+
+// Public union — kept for back-compat with callers that already type
+// against this. Includes host keys for the few legacy callers; new
+// code should reach for hostDb directly when touching host config.
 export type SettingKey =
-  | "base_currency"
-  | "anthropic_api_key"
-  | "openai_api_key"
-  | "google_api_key"
-  | "advisor_provider"
-  | "advisor_model"
-  | "onboarding_complete"
-  | "fx_last_refresh"
+  | ScopedKey
+  | GlobalKey
   | "admin_email"
   | "admin_name"
   | "admin_password_hash"
-  /**
-   * Idle minutes before the in-app screen lock kicks in. "0" or
-   * unset = disabled. Stored as a string in settings (everything
-   * else is); the client parses to a number on load.
-   */
-  | "screen_lock_timeout_minutes"
-  /**
-   * Optional URL the panic button redirects to after logging out
-   * — somewhere innocuous like google.com. Defaults to /login when
-   * unset.
-   */
-  | "panic_redirect_url"
-  /**
-   * "1" allows anyone with a valid invite code to create an account
-   * (default). "open" allows registration WITHOUT a code — useful
-   * when admin trusts everyone who can reach the URL. Anything else
-   * (including unset) means registration is closed.
-   */
   | "registration_mode";
+
+function isScopedKey(key: SettingKey): key is ScopedKey {
+  return (SCOPED_KEYS as readonly string[]).includes(key);
+}
 
 const DEFAULTS: Partial<Record<SettingKey, string>> = {
   base_currency: "USD",
   advisor_model: "claude-sonnet-4-6",
 };
 
+/**
+ * Read a setting value with scope resolution.
+ *
+ *   • Scoped key + isolated user → user_settings row, falling back to
+ *     the global `settings` row when no per-user override exists.
+ *   • Anything else → global `settings` row.
+ *
+ * The fallback for scoped keys means a tenant inherits the host's
+ * defaults until they explicitly override — useful for rolling out
+ * sensible base currency / advisor model values.
+ */
 export async function getSetting(key: SettingKey): Promise<string | null> {
+  if (isScopedKey(key)) {
+    const owner = await getOwner();
+    if (owner != null) {
+      const userRow = await db
+        .select()
+        .from(schema.userSettings)
+        .where(
+          and(
+            eq(schema.userSettings.userId, owner),
+            eq(schema.userSettings.key, key),
+          ),
+        )
+        .limit(1);
+      // Per-user value present (even if empty string after explicit
+      // clear) wins over global default.
+      if (userRow[0]) {
+        return userRow[0].value ?? null;
+      }
+      // Fall through to global default below.
+    }
+  }
   const row = await db
     .select()
     .from(schema.settings)
@@ -57,17 +106,77 @@ export async function getSettings(
   keys: readonly SettingKey[],
 ): Promise<Record<string, string | null>> {
   if (keys.length === 0) return {};
-  const rows = await db
-    .select()
-    .from(schema.settings)
-    .where(inArray(schema.settings.key, keys as unknown as string[]));
   const map: Record<string, string | null> = {};
   for (const k of keys) map[k] = DEFAULTS[k] ?? null;
-  for (const r of rows) if (r.value != null) map[r.key] = r.value;
+
+  // Per-user overrides (scoped keys only, isolated user only).
+  const owner = await getOwner();
+  const scopedNeeded = keys.filter(isScopedKey);
+  const overrides = new Set<string>();
+  if (owner != null && scopedNeeded.length > 0) {
+    const userRows = await db
+      .select()
+      .from(schema.userSettings)
+      .where(
+        and(
+          eq(schema.userSettings.userId, owner),
+          inArray(
+            schema.userSettings.key,
+            scopedNeeded as unknown as string[],
+          ),
+        ),
+      );
+    for (const r of userRows) {
+      overrides.add(r.key);
+      map[r.key] = r.value;
+    }
+  }
+
+  // Global table for everything not already overridden.
+  const globalNeeded = keys.filter((k) => !overrides.has(k));
+  if (globalNeeded.length > 0) {
+    const rows = await db
+      .select()
+      .from(schema.settings)
+      .where(
+        inArray(schema.settings.key, globalNeeded as unknown as string[]),
+      );
+    for (const r of rows) if (r.value != null) map[r.key] = r.value;
+  }
   return map;
 }
 
+/**
+ * Write a setting. Scoped keys land in user_settings for isolated
+ * tenants; everything else (and host/shared sessions) writes to the
+ * global `settings` table.
+ */
 export async function setSetting(key: SettingKey, value: string | null) {
+  if (isScopedKey(key)) {
+    const owner = await getOwner();
+    if (owner != null) {
+      if (value == null || value === "") {
+        await db
+          .delete(schema.userSettings)
+          .where(
+            and(
+              eq(schema.userSettings.userId, owner),
+              eq(schema.userSettings.key, key),
+            ),
+          );
+        return;
+      }
+      await db
+        .insert(schema.userSettings)
+        .values({ userId: owner, key, value })
+        .onConflictDoUpdate({
+          target: [schema.userSettings.userId, schema.userSettings.key],
+          set: { value, updatedAt: new Date().toISOString() },
+        });
+      return;
+    }
+  }
+  // Global path: host settings table.
   if (value == null || value === "") {
     await db.delete(schema.settings).where(eq(schema.settings.key, key));
     return;
