@@ -826,15 +826,22 @@ export async function listBudgets() {
 }
 
 export async function getBudget(id: number) {
+  const owner = await getOwner();
   const rows = await db
     .select()
     .from(schema.budgets)
-    .where(eq(schema.budgets.id, id))
+    .where(
+      and(
+        eq(schema.budgets.id, id),
+        ownedBy(schema.budgets.ownerUserId, owner),
+      ),
+    )
     .limit(1);
   return rows[0] ?? null;
 }
 
 export async function getBudgetByCategory(category: string, currency: string) {
+  const owner = await getOwner();
   const rows = await db
     .select()
     .from(schema.budgets)
@@ -842,6 +849,7 @@ export async function getBudgetByCategory(category: string, currency: string) {
       and(
         eq(schema.budgets.category, category),
         eq(schema.budgets.currency, currency),
+        ownedBy(schema.budgets.ownerUserId, owner),
       ),
     )
     .limit(1);

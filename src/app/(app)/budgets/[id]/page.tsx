@@ -22,7 +22,8 @@ import { PageHeader } from "@/components/app/page-header";
 import { LogSpendDialog } from "@/components/app/log-spend-dialog";
 import { BudgetNuggets } from "@/components/app/budget-nuggets";
 import { db, schema } from "@/lib/db";
-import { listAccounts } from "@/lib/db/queries";
+import { listAccounts, listTransactions } from "@/lib/db/queries";
+import { getOwner, ownedBy } from "@/lib/db/scope";
 import { computeBudgetStatus } from "@/lib/aggregation";
 import { deleteTransaction } from "@/lib/actions/transactions";
 import { formatMoney } from "@/lib/format";
@@ -54,30 +55,33 @@ export default async function BudgetDetailPage({
   const id = Number(idStr);
   if (!Number.isFinite(id)) notFound();
 
+  // Scoped read — isolated tenants viewing /budgets/<host-id> get a
+  // clean 404 instead of seeing the host's budget detail.
+  const owner = await getOwner();
   const rows = await db
     .select()
     .from(schema.budgets)
-    .where(eq(schema.budgets.id, id))
+    .where(
+      and(eq(schema.budgets.id, id), ownedBy(schema.budgets.ownerUserId, owner)),
+    )
     .limit(1);
   const budget = rows[0];
   if (!budget) notFound();
 
   const { start, end } = monthBounds();
 
+  // listTransactions applies the owner filter. Was a direct
+  // db.select that pulled every tenant's transactions for the
+  // category in this date range.
   const [accounts, summary, monthTxs] = await Promise.all([
     listAccounts(),
     computeBudgetStatus(budget.currency),
-    db
-      .select()
-      .from(schema.transactions)
-      .where(
-        and(
-          eq(schema.transactions.kind, "expense"),
-          eq(schema.transactions.category, budget.category),
-          gte(schema.transactions.occurredAt, start),
-          lte(schema.transactions.occurredAt, end),
-        ),
-      ),
+    listTransactions({
+      kind: "expense",
+      category: budget.category,
+      dateFrom: start,
+      dateTo: end,
+    }),
   ]);
 
   const status = summary.rows.find((r) => r.id === budget.id);

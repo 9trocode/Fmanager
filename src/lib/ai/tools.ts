@@ -7,6 +7,7 @@ import {
   getBaseCurrency,
   listAccounts,
   listAccountsWithEffective,
+  listBudgets,
   listFlows,
   listSavingsGoals,
   listDecisions,
@@ -14,7 +15,7 @@ import {
   listTransactions,
   type TransactionFilter,
 } from "@/lib/db/queries";
-import { getOwner } from "@/lib/db/scope";
+import { getOwner, ownedBy } from "@/lib/db/scope";
 import {
   computeBudgetStatus,
   computeCashRunway,
@@ -24,7 +25,7 @@ import {
 import { getRate, convert } from "@/lib/fx";
 import { listActiveAlerts } from "@/lib/advisor-alerts";
 import { localToday } from "@/lib/dates";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 /**
  * Tools the advisor can call on the user's behalf.
@@ -76,7 +77,7 @@ const listBudgetsTool = tool({
     "List the user's active budgets (id, category, monthly limit, currency). Use to find an existing budget by category name.",
   inputSchema: z.object({}),
   execute: async () => {
-    const rows = await db.select().from(schema.budgets);
+    const rows = await listBudgets();
     return {
       budgets: rows.map((b) => ({
         id: b.id,
@@ -198,10 +199,16 @@ const updateBudgetTool = tool({
     };
     if (input.monthlyLimit != null) set.monthlyLimit = input.monthlyLimit;
     if (input.notes !== undefined) set.notes = input.notes;
+    const owner = await getOwner();
     await db
       .update(schema.budgets)
       .set(set)
-      .where(eq(schema.budgets.id, input.budgetId));
+      .where(
+        and(
+          eq(schema.budgets.id, input.budgetId),
+          ownedBy(schema.budgets.ownerUserId, owner),
+        ),
+      );
     return { ok: true };
   },
 });
@@ -405,10 +412,16 @@ const updateLoanTermsTool = tool({
     if (input.loanTermMonths != null) set.loanTermMonths = input.loanTermMonths;
     if (input.paymentDayOfMonth != null)
       set.paymentDayOfMonth = input.paymentDayOfMonth;
+    const owner = await getOwner();
     await db
       .update(schema.accounts)
       .set(set)
-      .where(eq(schema.accounts.id, input.accountId));
+      .where(
+        and(
+          eq(schema.accounts.id, input.accountId),
+          ownedBy(schema.accounts.ownerUserId, owner),
+        ),
+      );
     return { ok: true };
   },
 });
@@ -800,75 +813,129 @@ async function applyNote(
   dated: string,
   updatedAtIso: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  // Owner-scoping each branch — without this, the model could in
+  // theory invent a foreign id and append a note to another tenant's
+  // entity. Both the read AND the write filter by ownerUserId.
+  const owner = await getOwner();
   switch (entity) {
     case "budget": {
       const [row] = await db
         .select({ notes: schema.budgets.notes })
         .from(schema.budgets)
-        .where(eq(schema.budgets.id, id))
+        .where(
+          and(
+            eq(schema.budgets.id, id),
+            ownedBy(schema.budgets.ownerUserId, owner),
+          ),
+        )
         .limit(1);
       if (!row) return { ok: false, error: `budget ${id} not found` };
       const next = row.notes ? `${dated}\n\n${row.notes}` : dated;
       await db
         .update(schema.budgets)
         .set({ notes: next, updatedAt: updatedAtIso })
-        .where(eq(schema.budgets.id, id));
+        .where(
+          and(
+            eq(schema.budgets.id, id),
+            ownedBy(schema.budgets.ownerUserId, owner),
+          ),
+        );
       return { ok: true };
     }
     case "savingsGoal": {
       const [row] = await db
         .select({ notes: schema.savingsGoals.notes })
         .from(schema.savingsGoals)
-        .where(eq(schema.savingsGoals.id, id))
+        .where(
+          and(
+            eq(schema.savingsGoals.id, id),
+            ownedBy(schema.savingsGoals.ownerUserId, owner),
+          ),
+        )
         .limit(1);
       if (!row) return { ok: false, error: `savingsGoal ${id} not found` };
       const next = row.notes ? `${dated}\n\n${row.notes}` : dated;
       await db
         .update(schema.savingsGoals)
         .set({ notes: next, updatedAt: updatedAtIso })
-        .where(eq(schema.savingsGoals.id, id));
+        .where(
+          and(
+            eq(schema.savingsGoals.id, id),
+            ownedBy(schema.savingsGoals.ownerUserId, owner),
+          ),
+        );
       return { ok: true };
     }
     case "flow": {
       const [row] = await db
         .select({ notes: schema.recurringFlows.notes })
         .from(schema.recurringFlows)
-        .where(eq(schema.recurringFlows.id, id))
+        .where(
+          and(
+            eq(schema.recurringFlows.id, id),
+            ownedBy(schema.recurringFlows.ownerUserId, owner),
+          ),
+        )
         .limit(1);
       if (!row) return { ok: false, error: `flow ${id} not found` };
       const next = row.notes ? `${dated}\n\n${row.notes}` : dated;
       await db
         .update(schema.recurringFlows)
         .set({ notes: next, updatedAt: updatedAtIso })
-        .where(eq(schema.recurringFlows.id, id));
+        .where(
+          and(
+            eq(schema.recurringFlows.id, id),
+            ownedBy(schema.recurringFlows.ownerUserId, owner),
+          ),
+        );
       return { ok: true };
     }
     case "account": {
       const [row] = await db
         .select({ notes: schema.accounts.notes })
         .from(schema.accounts)
-        .where(eq(schema.accounts.id, id))
+        .where(
+          and(
+            eq(schema.accounts.id, id),
+            ownedBy(schema.accounts.ownerUserId, owner),
+          ),
+        )
         .limit(1);
       if (!row) return { ok: false, error: `account ${id} not found` };
       const next = row.notes ? `${dated}\n\n${row.notes}` : dated;
       await db
         .update(schema.accounts)
         .set({ notes: next, updatedAt: updatedAtIso })
-        .where(eq(schema.accounts.id, id));
+        .where(
+          and(
+            eq(schema.accounts.id, id),
+            ownedBy(schema.accounts.ownerUserId, owner),
+          ),
+        );
       return { ok: true };
     }
     case "transaction": {
       const [row] = await db
         .select({ notes: schema.transactions.notes })
         .from(schema.transactions)
-        .where(eq(schema.transactions.id, id))
+        .where(
+          and(
+            eq(schema.transactions.id, id),
+            ownedBy(schema.transactions.ownerUserId, owner),
+          ),
+        )
         .limit(1);
       if (!row) return { ok: false, error: `transaction ${id} not found` };
       const next = row.notes ? `${dated}\n\n${row.notes}` : dated;
       await db
         .update(schema.transactions)
         .set({ notes: next, updatedAt: updatedAtIso })
-        .where(eq(schema.transactions.id, id));
+        .where(
+          and(
+            eq(schema.transactions.id, id),
+            ownedBy(schema.transactions.ownerUserId, owner),
+          ),
+        );
       return { ok: true };
     }
     case "decision": {
@@ -877,14 +944,24 @@ async function applyNote(
       const [row] = await db
         .select({ context: schema.decisions.context })
         .from(schema.decisions)
-        .where(eq(schema.decisions.id, id))
+        .where(
+          and(
+            eq(schema.decisions.id, id),
+            ownedBy(schema.decisions.ownerUserId, owner),
+          ),
+        )
         .limit(1);
       if (!row) return { ok: false, error: `decision ${id} not found` };
       const next = row.context ? `${dated}\n\n${row.context}` : dated;
       await db
         .update(schema.decisions)
         .set({ context: next, updatedAt: updatedAtIso })
-        .where(eq(schema.decisions.id, id));
+        .where(
+          and(
+            eq(schema.decisions.id, id),
+            ownedBy(schema.decisions.ownerUserId, owner),
+          ),
+        );
       return { ok: true };
     }
   }
@@ -914,10 +991,16 @@ const updateSavingsGoalTool = tool({
     if (input.expectedReturnPct != null)
       set.expectedReturnPct = input.expectedReturnPct;
     if (input.archived != null) set.archived = input.archived;
+    const owner = await getOwner();
     await db
       .update(schema.savingsGoals)
       .set(set)
-      .where(eq(schema.savingsGoals.id, input.goalId));
+      .where(
+        and(
+          eq(schema.savingsGoals.id, input.goalId),
+          ownedBy(schema.savingsGoals.ownerUserId, owner),
+        ),
+      );
     return { ok: true };
   },
 });
@@ -945,10 +1028,16 @@ const updateFlowTool = tool({
     if (input.nextDueAt != null) set.nextDueAt = input.nextDueAt;
     if (input.category != null) set.category = input.category;
     if (input.archived != null) set.archived = input.archived;
+    const owner = await getOwner();
     await db
       .update(schema.recurringFlows)
       .set(set)
-      .where(eq(schema.recurringFlows.id, input.flowId));
+      .where(
+        and(
+          eq(schema.recurringFlows.id, input.flowId),
+          ownedBy(schema.recurringFlows.ownerUserId, owner),
+        ),
+      );
     return { ok: true };
   },
 });
@@ -962,6 +1051,7 @@ const decideDecisionTool = tool({
     outcome: z.string().optional(),
   }),
   execute: async (input) => {
+    const owner = await getOwner();
     await db
       .update(schema.decisions)
       .set({
@@ -970,7 +1060,12 @@ const decideDecisionTool = tool({
         decidedAt: input.status === "decided" ? localToday() : null,
         updatedAt: new Date().toISOString(),
       })
-      .where(eq(schema.decisions.id, input.decisionId));
+      .where(
+        and(
+          eq(schema.decisions.id, input.decisionId),
+          ownedBy(schema.decisions.ownerUserId, owner),
+        ),
+      );
     return { ok: true };
   },
 });

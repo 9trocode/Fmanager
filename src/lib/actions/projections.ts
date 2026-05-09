@@ -21,7 +21,8 @@ import { computeGoalState } from "@/lib/goals";
 import { monthlyEquivalent } from "@/lib/flows";
 import { convert } from "@/lib/fx";
 import { db, schema } from "@/lib/db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { getOwner, ownedBy } from "@/lib/db/scope";
 import { revalidatePath } from "next/cache";
 import type { ScenarioEvent } from "@/lib/projections";
 
@@ -145,6 +146,10 @@ export async function applyProposedEdits(
   }
   let applied = 0;
   let skipped = 0;
+  // Resolve scope ONCE before opening the transaction. Inside the
+  // transaction we'd be in the same async context so getOwner() would
+  // still work, but pulling it out keeps the hot path tight.
+  const owner = await getOwner();
   try {
     await db.transaction(async (tx) => {
       const nowIso = new Date().toISOString();
@@ -153,7 +158,12 @@ export async function applyProposedEdits(
           const exists = await tx
             .select({ id: schema.budgets.id })
             .from(schema.budgets)
-            .where(eq(schema.budgets.id, e.id))
+            .where(
+              and(
+                eq(schema.budgets.id, e.id),
+                ownedBy(schema.budgets.ownerUserId, owner),
+              ),
+            )
             .limit(1);
           if (exists.length === 0) {
             skipped += 1;
@@ -162,13 +172,23 @@ export async function applyProposedEdits(
           await tx
             .update(schema.budgets)
             .set({ monthlyLimit: e.monthlyLimit, updatedAt: nowIso })
-            .where(eq(schema.budgets.id, e.id));
+            .where(
+              and(
+                eq(schema.budgets.id, e.id),
+                ownedBy(schema.budgets.ownerUserId, owner),
+              ),
+            );
           applied += 1;
         } else if (e.kind === "update_savings_goal") {
           const exists = await tx
             .select({ id: schema.savingsGoals.id })
             .from(schema.savingsGoals)
-            .where(eq(schema.savingsGoals.id, e.id))
+            .where(
+              and(
+                eq(schema.savingsGoals.id, e.id),
+                ownedBy(schema.savingsGoals.ownerUserId, owner),
+              ),
+            )
             .limit(1);
           if (exists.length === 0) {
             skipped += 1;
@@ -182,13 +202,23 @@ export async function applyProposedEdits(
           await tx
             .update(schema.savingsGoals)
             .set(set)
-            .where(eq(schema.savingsGoals.id, e.id));
+            .where(
+              and(
+                eq(schema.savingsGoals.id, e.id),
+                ownedBy(schema.savingsGoals.ownerUserId, owner),
+              ),
+            );
           applied += 1;
         } else if (e.kind === "update_flow") {
           const exists = await tx
             .select({ id: schema.recurringFlows.id })
             .from(schema.recurringFlows)
-            .where(eq(schema.recurringFlows.id, e.id))
+            .where(
+              and(
+                eq(schema.recurringFlows.id, e.id),
+                ownedBy(schema.recurringFlows.ownerUserId, owner),
+              ),
+            )
             .limit(1);
           if (exists.length === 0) {
             skipped += 1;
@@ -197,7 +227,12 @@ export async function applyProposedEdits(
           await tx
             .update(schema.recurringFlows)
             .set({ amount: e.amount, updatedAt: nowIso })
-            .where(eq(schema.recurringFlows.id, e.id));
+            .where(
+              and(
+                eq(schema.recurringFlows.id, e.id),
+                ownedBy(schema.recurringFlows.ownerUserId, owner),
+              ),
+            );
           applied += 1;
         }
       }

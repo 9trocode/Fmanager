@@ -531,9 +531,15 @@ export async function seedSampleData() {
   }
 
   if (SAVINGS_GOALS.length > 0) {
-    const accountByName = new Map(
-      (await db.select().from(schema.accounts)).map((a) => [a.name, a.id]),
-    );
+    // Owner-scoped lookup — without the filter, an isolated tenant
+    // seeding sample data would resolve account names against
+    // EVERY tenant's accounts and could foreign-key its goals to
+    // another tenant's account row.
+    const ownAccounts = await db
+      .select()
+      .from(schema.accounts)
+      .where(ownedBy(schema.accounts.ownerUserId, owner));
+    const accountByName = new Map(ownAccounts.map((a) => [a.name, a.id]));
     const goalRows = SAVINGS_GOALS.map(({ accountName, ...rest }) => ({
       ...rest,
       accountId: accountName ? (accountByName.get(accountName) ?? null) : null,
