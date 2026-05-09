@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
 import { streamText, convertToModelMessages, type UIMessage } from "ai";
-import { eq } from "drizzle-orm";
-import { db, schema } from "@/lib/db";
 import { isAuthenticated, getRole } from "@/lib/auth/session";
 import { buildAdvisorClient } from "@/lib/ai/provider";
 import { advisorTools } from "@/lib/ai/tools";
@@ -15,7 +13,15 @@ import {
   computeCashRunway,
   computeBudgetStatus,
 } from "@/lib/aggregation";
-import { getBaseCurrency, listRecentTransactions } from "@/lib/db/queries";
+import {
+  getBaseCurrency,
+  listAccounts,
+  listDecisions,
+  listFlows,
+  listGrants,
+  listRecentTransactions,
+  listSavingsGoals,
+} from "@/lib/db/queries";
 import { prefetchRates } from "@/lib/fx";
 import { formatMoney } from "@/lib/format";
 import { monthlyEquivalent } from "@/lib/flows";
@@ -31,6 +37,10 @@ function fmt(value: number, currency: string): string {
 
 async function buildSystemPrompt(): Promise<string> {
   const baseCurrency = await getBaseCurrency();
+  // Use the scope-aware list helpers — direct db.select() bypassed
+  // the owner_user_id filter and would have leaked the host's
+  // decisions/accounts/grants/flows/goals into an isolated tenant's
+  // advisor system prompt.
   const [
     decisions,
     accounts,
@@ -43,28 +53,16 @@ async function buildSystemPrompt(): Promise<string> {
     budgets,
     savingsGoals,
   ] = await Promise.all([
-    db
-      .select()
-      .from(schema.decisions)
-      .where(eq(schema.decisions.status, "open")),
-    db
-      .select()
-      .from(schema.accounts)
-      .where(eq(schema.accounts.archived, false)),
-    db.select().from(schema.equityGrants),
-    db
-      .select()
-      .from(schema.recurringFlows)
-      .where(eq(schema.recurringFlows.archived, false)),
+    listDecisions({ onlyOpen: true }),
+    listAccounts(),
+    listGrants(),
+    listFlows(),
     computeNetWorth(baseCurrency),
     computeMonthlyCashFlow(baseCurrency),
     computeCashRunway(baseCurrency),
     listRecentTransactions(30),
     computeBudgetStatus(baseCurrency),
-    db
-      .select()
-      .from(schema.savingsGoals)
-      .where(eq(schema.savingsGoals.archived, false)),
+    listSavingsGoals(),
   ]);
 
   // One pass over the txs after resolving every (currency → base)
