@@ -101,11 +101,19 @@ function SidebarContent({
   alertCount = 0,
   alertCritical = 0,
   panicRedirectUrl = "/login",
+  whoami,
 }: {
   onNavigate?: () => void;
   alertCount?: number;
   alertCritical?: number;
   panicRedirectUrl?: string;
+  /**
+   * Display label for the active session — owner email/name for the
+   * settings-admin host, the user's email/name for invited or
+   * isolated-tenant accounts. Falls back to "admin" / "viewer" when
+   * we don't have anything better.
+   */
+  whoami?: { label: string; sub?: string | null } | null;
 }) {
   const pathname = usePathname();
   const role = useRole();
@@ -196,16 +204,26 @@ function SidebarContent({
           <MonthFilter variant="compact" />
         </div>
         <div className="flex items-center justify-between gap-2 px-2 pt-1">
-          <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
             {role === "viewer" ? (
               <span className="flex items-center gap-1.5 text-xs font-mono text-amber-300/90">
                 <Eye className="size-3.5" />
                 viewer
               </span>
             ) : (
-              <span className="text-xs font-mono text-muted-foreground">
-                admin
-              </span>
+              <div className="min-w-0 flex-1">
+                <div
+                  className="text-xs font-mono text-muted-foreground truncate"
+                  title={whoami?.sub ?? whoami?.label ?? undefined}
+                >
+                  {whoami?.label ?? "admin"}
+                </div>
+                {whoami?.sub ? (
+                  <div className="text-[10px] font-mono text-muted-foreground/60 truncate">
+                    {whoami.sub}
+                  </div>
+                ) : null}
+              </div>
             )}
           </div>
           <div className="flex items-center gap-1">
@@ -239,10 +257,12 @@ export function Sidebar({
   alertCount,
   alertCritical,
   panicRedirectUrl,
+  whoami,
 }: {
   alertCount?: number;
   alertCritical?: number;
   panicRedirectUrl?: string;
+  whoami?: { label: string; sub?: string | null } | null;
 }) {
   return (
     <aside className="hidden md:flex sticky top-0 self-start h-screen w-72 shrink-0 border-r border-border bg-card/40 backdrop-blur-md flex-col">
@@ -250,6 +270,7 @@ export function Sidebar({
         alertCount={alertCount}
         alertCritical={alertCritical}
         panicRedirectUrl={panicRedirectUrl}
+        whoami={whoami}
       />
     </aside>
   );
@@ -264,10 +285,12 @@ export function MobileTopBar({
   alertCount,
   alertCritical,
   panicRedirectUrl,
+  whoami,
 }: {
   alertCount?: number;
   alertCritical?: number;
   panicRedirectUrl?: string;
+  whoami?: { label: string; sub?: string | null } | null;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -312,6 +335,7 @@ export function MobileTopBar({
             alertCount={alertCount}
             alertCritical={alertCritical}
             panicRedirectUrl={panicRedirectUrl}
+            whoami={whoami}
           />
         </SheetContent>
       </Sheet>

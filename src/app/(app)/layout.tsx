@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { MobileTopBar, Sidebar } from "@/components/app/sidebar";
 import {
+  getAdminProfile,
+  getCurrentUser,
   getRole,
   isAdminConfigured,
   isAuthenticated,
@@ -78,6 +80,29 @@ export default async function AppLayout({
   const panicRedirectUrl =
     (await getSetting("panic_redirect_url")) || "/login";
 
+  // Sidebar identity: pull the active user's display label.
+  //   • settings-admin host → admin_name / admin_email
+  //   • invited or isolated user → users.name / users.email
+  // Falls back to "admin" only when nothing is set (legacy / dev).
+  const currentUser = await getCurrentUser();
+  let whoami: { label: string; sub?: string | null } | null = null;
+  if (currentUser) {
+    const label = currentUser.name?.trim() || currentUser.email;
+    whoami = {
+      label,
+      sub: currentUser.name && currentUser.name.trim() ? currentUser.email : null,
+    };
+  } else {
+    const profile = await getAdminProfile();
+    if (profile.email || profile.name) {
+      const label = profile.name?.trim() || profile.email!;
+      whoami = {
+        label,
+        sub: profile.name && profile.name.trim() ? profile.email : null,
+      };
+    }
+  }
+
   return (
     <RoleProvider role={role}>
      <ScreenLockProvider
@@ -98,11 +123,13 @@ export default async function AppLayout({
           alertCount={alertCount}
           alertCritical={alertCritical}
           panicRedirectUrl={panicRedirectUrl}
+          whoami={whoami}
         />
         <Sidebar
           alertCount={alertCount}
           alertCritical={alertCritical}
           panicRedirectUrl={panicRedirectUrl}
+          whoami={whoami}
         />
         <main className="flex-1 min-w-0 relative">
           <div className="max-w-6xl mx-auto px-4 sm:px-6 md:px-8 py-6 md:py-12 relative">

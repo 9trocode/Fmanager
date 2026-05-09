@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/app/empty-state";
 import { AddAccountDialog } from "@/components/app/add-account-dialog";
 import { AddGrantDialog } from "@/components/app/add-grant-dialog";
 import { getBaseCurrency, getSetting } from "@/lib/db/queries";
+import { getAdminProfile, getCurrentUser } from "@/lib/auth/session";
 import { listActiveAlerts } from "@/lib/advisor-alerts";
 import {
   computeNetWorth,
@@ -75,12 +76,25 @@ export default async function DashboardPage({
   ]);
   const criticalAlerts = activeAlerts.filter((a) => a.severity === "critical");
 
+  // Personalize the page title with the active user's first name —
+  // pulls from `users.name` for invited/isolated accounts, falls back
+  // to the host admin profile for the settings-admin session.
+  const currentUser = await getCurrentUser();
+  let firstName: string | null = null;
+  if (currentUser?.name) {
+    firstName = currentUser.name.trim().split(/\s+/)[0] ?? null;
+  } else if (!currentUser) {
+    const profile = await getAdminProfile();
+    firstName = profile.name?.trim().split(/\s+/)[0] ?? null;
+  }
+  const heading = firstName ? `Hi, ${firstName}` : "Home";
+
   return (
     <>
       <HeroBackground />
       <PageHeader
         size="lg"
-        title="Home"
+        title={heading}
         description={`Where your money's going in ${month.monthLabel}.`}
       />
 
