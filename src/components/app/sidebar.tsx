@@ -25,6 +25,7 @@ import {
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/app/theme-toggle";
 import { LockNowButton, PanicButton } from "@/components/app/screen-lock";
+import { CairnMark } from "@/components/app/cairn-mark";
 import { MonthFilter } from "@/components/app/month-filter";
 import { useRole } from "@/components/app/role-context";
 import {
@@ -118,15 +119,15 @@ function SidebarContent({
           onClick={onNavigate}
           className="flex items-center gap-3 group"
         >
-          <div className="size-10 rounded-lg bg-gradient-to-br from-primary to-primary/70 text-primary-foreground grid place-items-center text-lg font-semibold shadow-sm group-hover:shadow-md transition-shadow">
-            ƒ
+          <div className="size-10 rounded-lg bg-gradient-to-br from-primary to-primary/70 text-primary-foreground grid place-items-center shadow-sm group-hover:shadow-md transition-shadow">
+            <CairnMark size={22} bare className="text-primary-foreground" />
           </div>
           <div className="leading-tight min-w-0">
             <div className="text-[15px] font-semibold tracking-tight truncate">
-              Founder Finance
+              Cairn
             </div>
             <div className="text-[11px] text-muted-foreground tracking-wide">
-              your honest balance sheet
+              stack the truths, plan against the floor
             </div>
           </div>
         </Link>
@@ -280,11 +281,11 @@ export function MobileTopBar({
   return (
     <header className="md:hidden sticky top-0 z-40 flex items-center justify-between gap-3 h-14 px-4 border-b border-border bg-background/85 backdrop-blur-md">
       <Link href="/dashboard" className="flex items-center gap-2 min-w-0">
-        <div className="size-8 rounded-md bg-gradient-to-br from-primary to-primary/70 text-primary-foreground grid place-items-center text-sm font-semibold shrink-0">
-          ƒ
+        <div className="size-8 rounded-md bg-gradient-to-br from-primary to-primary/70 text-primary-foreground grid place-items-center shrink-0">
+          <CairnMark size={18} bare className="text-primary-foreground" />
         </div>
         <span className="text-sm font-semibold tracking-tight truncate">
-          Founder Finance
+          Cairn
         </span>
       </Link>
       <Sheet open={open} onOpenChange={setOpen}>

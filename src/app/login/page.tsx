@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { SubmitButton } from "@/components/app/submit-button";
+import { CairnMark } from "@/components/app/cairn-mark";
 import {
   Card,
   CardContent,
@@ -43,10 +44,10 @@ export default async function LoginPage({
     <main className="min-h-screen grid place-items-center px-4 bg-background">
       <div className="w-full max-w-sm space-y-6">
         <div className="text-center space-y-1.5">
-          <div className="size-10 rounded-lg bg-gradient-to-br from-primary to-primary/70 text-primary-foreground grid place-items-center text-base font-semibold mx-auto">
-            ƒ
+          <div className="size-10 rounded-lg bg-gradient-to-br from-primary to-primary/70 text-primary-foreground grid place-items-center mx-auto">
+            <CairnMark size={22} bare className="text-primary-foreground" />
           </div>
-          <h1 className="text-xl font-semibold tracking-tight">Founder Finance</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Cairn</h1>
           <p className="text-sm text-muted-foreground">
             {profile.name
               ? `Welcome back, ${profile.name}.`

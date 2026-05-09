@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   return NextResponse.json({
     ok: true,
-    name: "founder-finance",
+    name: "cairn",
     time: new Date().toISOString(),
   });
 }

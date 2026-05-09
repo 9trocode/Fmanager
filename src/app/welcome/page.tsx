@@ -30,6 +30,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { MoneyInput } from "@/components/app/money-input";
+import { CairnMark } from "@/components/app/cairn-mark";
 import { ACCOUNT_TYPE_LABEL, ACCOUNT_TYPE_ORDER } from "@/lib/account-types";
 import { SUPPORTED_CURRENCIES } from "@/lib/format";
 import {
@@ -214,12 +215,12 @@ function Header({ step }: { step: number }) {
     <header className="border-b border-border/60">
       <div className="max-w-3xl mx-auto px-6 h-16 flex items-center justify-between gap-6">
         <Link href="/" className="flex items-center gap-2.5">
-          <div className="size-8 rounded-md bg-primary text-primary-foreground grid place-items-center text-sm font-semibold">
-            ƒ
+          <div className="size-8 rounded-md bg-primary text-primary-foreground grid place-items-center">
+            <CairnMark size={18} bare className="text-primary-foreground" />
           </div>
           <div className="leading-tight">
             <div className="text-sm font-semibold tracking-tight">
-              Founder Finance
+              Cairn
             </div>
             <div className="text-[10px] text-muted-foreground">
               welcome aboard
@@ -302,7 +303,7 @@ function Step1() {
     <StepShell
       eyebrow="01 — welcome"
       title="Three minutes from here to your honest balance sheet."
-      subtitle="Founder Finance is your personal finance command center — every account, transaction, budget, savings goal, and grant in one place. Built for the wallet of a founder, not their company."
+      subtitle="Cairn is your personal finance command center — every account, transaction, budget, savings goal, and grant in one place. Built for the wallet of a founder, not their company."
     >
       <div className="space-y-3 mt-2">
         {promises.map(({ icon: Icon, title, body }) => (

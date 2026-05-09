@@ -17,8 +17,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Founder Finance",
-  description: "Multi-currency net worth + decision co-pilot for founders.",
+  title: "Cairn",
+  description:
+    "Multi-currency net worth + decision co-pilot for founders. Stack the truths, plan against the floor.",
 };
 
 export default async function RootLayout({

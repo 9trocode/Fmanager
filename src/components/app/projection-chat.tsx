@@ -67,6 +67,7 @@ import {
 } from "@/lib/projections";
 import { formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { CairnMark } from "@/components/app/cairn-mark";
 
 export type ProjectionGoal = {
   id: number;
@@ -782,8 +783,8 @@ function EmptyState({ onPick }: { onPick: (p: string) => void }) {
   ];
   return (
     <div className="max-w-xl mx-auto py-8 space-y-4 text-center">
-      <div className="size-14 rounded-2xl bg-gradient-to-br from-primary to-primary/70 text-primary-foreground grid place-items-center text-2xl font-semibold mx-auto">
-        ƒ
+      <div className="size-14 rounded-2xl bg-gradient-to-br from-primary to-primary/70 text-primary-foreground grid place-items-center mx-auto">
+        <CairnMark size={32} bare className="text-primary-foreground" />
       </div>
       <div className="space-y-1.5">
         <h2 className="text-lg font-semibold">Predict</h2>
@@ -812,8 +813,8 @@ function EmptyState({ onPick }: { onPick: (p: string) => void }) {
 
 function AdvisorAvatar() {
   return (
-    <div className="size-7 shrink-0 rounded-full bg-gradient-to-br from-primary to-primary/70 text-primary-foreground grid place-items-center text-[13px] font-semibold mt-0.5">
-      ƒ
+    <div className="size-7 shrink-0 rounded-full bg-gradient-to-br from-primary to-primary/70 text-primary-foreground grid place-items-center mt-0.5">
+      <CairnMark size={16} bare className="text-primary-foreground" />
     </div>
   );
 }

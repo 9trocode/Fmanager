@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { CairnMark } from "@/components/app/cairn-mark";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -610,9 +611,9 @@ function Avatar() {
   return (
     <div
       aria-hidden
-      className="size-7 shrink-0 rounded-full bg-gradient-to-br from-primary to-primary/70 text-primary-foreground grid place-items-center text-[13px] font-semibold mt-0.5 shadow-sm"
+      className="size-7 shrink-0 rounded-full bg-gradient-to-br from-primary to-primary/70 text-primary-foreground grid place-items-center mt-0.5 shadow-sm"
     >
-      ƒ
+      <CairnMark size={16} bare className="text-primary-foreground" />
     </div>
   );
 }

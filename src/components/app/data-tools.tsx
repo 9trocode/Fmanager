@@ -64,7 +64,7 @@ function ExportButton() {
             downloadBlob(
               json,
               "application/json",
-              `founder-finance-${stamp}.json`,
+              `cairn-${stamp}.json`,
             );
             toast.success("Backup downloaded.");
           } catch (e) {

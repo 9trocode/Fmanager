@@ -5,8 +5,17 @@
       <stop offset="100%" stop-color="#3f3f46"/>
     </linearGradient>
   </defs>
+  <!--
+    Cairn — three stacked stones marking a path. Bottom is the
+    widest and most grounded; middle balances slightly off-center
+    to feel hand-stacked; top is the smallest, slightly tilted.
+    Drawn as ellipses + a couple of paths to keep crisp at 16px.
+  -->
   <rect width="32" height="32" rx="7" fill="url(#g)"/>
-  <text x="16" y="23" text-anchor="middle"
-        font-family="ui-sans-serif, system-ui, -apple-system, 'Geist', sans-serif"
-        font-size="22" font-style="italic" font-weight="600" fill="#fafafa">ƒ</text>
+  <!-- bottom stone -->
+  <ellipse cx="16" cy="24" rx="9" ry="3" fill="#fafafa"/>
+  <!-- middle stone -->
+  <ellipse cx="16.5" cy="18.5" rx="6.5" ry="2.6" fill="#fafafa"/>
+  <!-- top stone — slight tilt via a rotated rounded shape -->
+  <ellipse cx="16" cy="13.5" rx="4.2" ry="2.3" fill="#fafafa" transform="rotate(-6 16 13.5)"/>
 </svg>

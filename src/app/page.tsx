@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { isAuthenticated } from "@/lib/auth/session";
+import { CairnMark } from "@/components/app/cairn-mark";
 
 // `isAuthenticated()` reads cookies (request-scoped) and indirectly hits
 // the SQLite settings table — both forbid prerender. Force dynamic so the
@@ -74,15 +75,15 @@ function Header({ authed }: { authed: boolean }) {
     <header className="border-b border-border/60 bg-background/80 backdrop-blur sticky top-0 z-30">
       <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2.5 group">
-          <div className="size-9 rounded-lg bg-gradient-to-br from-primary to-primary/70 text-primary-foreground grid place-items-center text-base font-semibold">
-            ƒ
+          <div className="size-9 rounded-lg bg-gradient-to-br from-primary to-primary/70 text-primary-foreground grid place-items-center">
+            <CairnMark size={20} bare className="text-primary-foreground" />
           </div>
           <div className="leading-tight">
             <div className="text-sm font-semibold tracking-tight">
-              Founder Finance
+              Cairn
             </div>
             <div className="text-[10px] text-muted-foreground">
-              your honest balance sheet
+              stack the truths
             </div>
           </div>
         </Link>
@@ -834,10 +835,10 @@ function SelfHostedPitch() {
               </span>
             </h2>
             <p className="text-muted-foreground leading-relaxed">
-              Founder Finance is a single Next.js app talking to a single
-              SQLite file on disk. Bring your own Anthropic key for the AI
-              features. The repo is open source — every feature on this page
-              ships in the box.
+              Cairn is a single Next.js app talking to a single SQLite
+              file on disk. Bring your own Anthropic key for the AI
+              features. The repo is open source — every feature on this
+              page ships in the box.
             </p>
             <ul className="space-y-3 text-sm">
               {[
@@ -861,7 +862,7 @@ function SelfHostedPitch() {
               </div>
               <div>
                 <span className="text-muted-foreground">$</span> git clone
-                founder-finance
+                cairn
               </div>
               <div>
                 <span className="text-muted-foreground">$</span> cp .env.example
@@ -924,12 +925,12 @@ function Footer() {
     <footer className="border-t border-border/60 py-10">
       <div className="max-w-6xl mx-auto px-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex items-center gap-2.5 text-xs text-muted-foreground">
-          <div className="size-6 rounded bg-primary/10 text-primary grid place-items-center text-[10px] font-semibold">
-            ƒ
+          <div className="size-6 rounded bg-primary/10 text-primary grid place-items-center">
+            <CairnMark size={14} bare className="text-primary" />
           </div>
           <span>
-            Founder Finance · open source ·{" "}
-            <span className="font-mono">v0.1.0</span>
+            Cairn · open source ·{" "}
+            <span className="font-mono">v1.1.0</span>
           </span>
         </div>
         <nav className="flex items-center gap-5 text-xs text-muted-foreground">
