@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.2.0](https://github.com/9trocode/Fmanager/compare/v1.1.0...v1.2.0) (2026-05-09)
+
+
+### Features
+
+* **accounts:** respect month filter — view balances as of past months ([0b15f54](https://github.com/9trocode/Fmanager/commit/0b15f54a44889ad0459cbff9d38db4274176157e))
+* **month-filter:** respect filter on alerts, cash-flow, net-worth ([e1107d7](https://github.com/9trocode/Fmanager/commit/e1107d761124a9c4f8b968807781ded6535ef822))
+* **security:** screen lock + panic mode ([6f7bd98](https://github.com/9trocode/Fmanager/commit/6f7bd98ab416bb2ba49bc6b747de2089dabc5c1e))
+
+
+### Bug Fixes
+
+* **accounts:** replace flow projection with month actuals on past-month view ([a11b11c](https://github.com/9trocode/Fmanager/commit/a11b11ce84af0eec9d88e2a415be90d9ad03eca5))
+* **auth:** /api/auth/logout 500 — derive redirect URL from request ([27a2df8](https://github.com/9trocode/Fmanager/commit/27a2df88f2adcf2729e7405c166bfad2664f9fb5))
+* **auth:** logout reachable + GET handler + bulletproof redirect ([2d8f36f](https://github.com/9trocode/Fmanager/commit/2d8f36f543a3bbd8f542ed59c19079545bfbbb64))
+
 ## [1.1.0](https://github.com/9trocode/Fmanager/compare/v1.0.0...v1.1.0) (2026-05-08)
 
 
