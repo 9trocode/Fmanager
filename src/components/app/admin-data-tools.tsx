@@ -55,15 +55,15 @@ export function AdminDataTools() {
         </AlertDialogTrigger>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Seed sample founder data?</AlertDialogTitle>
+            <AlertDialogTitle>Seed sample data?</AlertDialogTitle>
             <AlertDialogDescription className="space-y-2">
               <span className="block">
                 This wipes accounts, snapshots, grants, decisions, and FX cache,
-                then inserts a realistic multi-currency founder dataset:
+                then inserts a realistic multi-currency sample dataset:
               </span>
               <span className="block text-xs font-mono">
                 · 8 accounts (USD/NGN/EUR cash, brokerage, crypto, real estate, mortgage)
-                <br />· 3 equity grants (founder, ISO, public RSU)
+                <br />· 3 equity grants (initial, ISO, public RSU)
                 <br />· 3 active decisions
                 <br />· base currency reset to USD
               </span>

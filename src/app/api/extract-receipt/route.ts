@@ -57,7 +57,7 @@ export async function POST(req: Request) {
     "You are extracting structured fields from a photo of a receipt.",
     "Return null for any field you can't read with reasonable confidence.",
     `Currency must be one of: ${SUPPORTED_CURRENCIES.join(", ")}.`,
-    "The user is a founder logging a personal/business expense. Choose a category from this list when possible:",
+    "The user is logging a personal/business expense. Choose a category from this list when possible:",
     SUGGESTED_EXPENSE_CATEGORIES.join(", "),
     "If no listed category fits, propose a short one of your own.",
     "occurredAt must be a valid ISO date in YYYY-MM-DD format if visible on the receipt; otherwise null.",

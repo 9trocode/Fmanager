@@ -54,7 +54,7 @@ export async function POST(req: Request) {
   const promptText = [
     "You are parsing a spoken description of a money movement into structured fields.",
     `Today is ${today}.`,
-    "The user is a founder logging an expense or income. Return null for fields they didn't mention; do not invent.",
+    "The user is logging an expense or income. Return null for fields they didn't mention; do not invent.",
     `Currency must be one of: ${SUPPORTED_CURRENCIES.join(", ")}.`,
     "If the user says a currency symbol or name (₦, naira, $, dollars, €, euros, £, pounds, ¥, yen, CHF, francs), pick the matching ISO code.",
     `For an expense, choose a category from: ${SUGGESTED_EXPENSE_CATEGORIES.join(", ")}.`,

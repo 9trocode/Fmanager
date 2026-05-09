@@ -12,7 +12,7 @@ export const GRANT_TYPE_LABEL: Record<GrantType, string> = {
   iso: "ISO",
   nso: "NSO",
   rsu: "RSU",
-  founder_shares: "Founder shares",
+  founder_shares: "Common shares",
   safe: "SAFE",
   other: "Other",
 };

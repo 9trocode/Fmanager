@@ -307,7 +307,7 @@ export default async function SettingsPage() {
             <CardHeader>
               <CardTitle className="text-base">Sample data</CardTitle>
               <CardDescription>
-                Quickly populate a realistic founder dataset (multi-currency
+                Quickly populate a realistic sample dataset (multi-currency
                 accounts, three equity grants, three active decisions) — useful for
                 kicking the tires before entering your real numbers.
               </CardDescription>

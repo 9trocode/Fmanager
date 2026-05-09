@@ -179,9 +179,9 @@ function Hero({
             body="Run it on your own box. One login, all your data, never leaves the machine."
           />
           <DeployMode
-            label="Family / co-founders"
+            label="Family / Partners"
             title="Share the same view"
-            body="Invite a partner or co-founder. They sign in with their own password and read or write your shared finances."
+            body="Invite a partner or family member. They sign in with their own password and read or write your shared finances."
           />
           <DeployMode
             label="Host for others"
@@ -692,7 +692,7 @@ function FeatureGrid() {
           icon: Users2,
           title: "Read-only sharing",
           body:
-            "Optional VIEWER_PASSWORD lets a partner or co-founder see your dashboard without edit rights. Every mutation is admin-guarded server-side.",
+            "Optional VIEWER_PASSWORD lets a partner view your dashboard without edit rights. Every mutation is admin-guarded server-side.",
         },
         {
           icon: DollarSign,
@@ -715,7 +715,7 @@ function FeatureGrid() {
             What it actually does
           </Badge>
           <h2 className="text-3xl md:text-4xl font-semibold tracking-tight text-balance">
-            Everything you need to run your personal finance life as a founder.
+            Everything you need to run your personal finance life.
           </h2>
           <p className="text-muted-foreground leading-relaxed">
             Not a stock-tracking app with a dashboard glued on. Real personal
@@ -1005,4 +1005,8 @@ function Footer() {
       </div>
     </footer>
   );
+}
+oter>
+  );
+}
 }

@@ -100,7 +100,7 @@ const ACCOUNTS = [
 
 const GRANTS = [
   {
-    company: "Founder Inc",
+    company: "Growth Co",
     grantType: "founder_shares" as const,
     totalShares: 1_200_000,
     vestedShares: 1_200_000,
@@ -113,7 +113,7 @@ const GRANTS = [
     cliffMonths: 12,
     expectedExitMonths: 48,
     taxRatePct: 20,
-    vestingNotes: "Co-founder shares. Fully vested. QSBS clock started 2023-01-15.",
+    vestingNotes: "Initial equity. Fully vested. QSBS clock started 2023-01-15.",
     grantedAt: "2023-01-15",
   },
   {
@@ -370,8 +370,8 @@ function buildSampleTransactions(idsByName: Record<string, number>) {
   };
 
   // Salary + consulting income (USD)
-  push({ accountId: mercury, kind: "income", amount: 6500, currency: "USD", category: "Salary", occurredAt: daysAgo(58), notes: "Founder draw" });
-  push({ accountId: mercury, kind: "income", amount: 6500, currency: "USD", category: "Salary", occurredAt: daysAgo(28), notes: "Founder draw" });
+  push({ accountId: mercury, kind: "income", amount: 6500, currency: "USD", category: "Salary", occurredAt: daysAgo(58), notes: "Salary draw" });
+  push({ accountId: mercury, kind: "income", amount: 6500, currency: "USD", category: "Salary", occurredAt: daysAgo(28), notes: "Salary draw" });
   push({ accountId: mercury, kind: "income", amount: 2500, currency: "USD", category: "Consulting", occurredAt: daysAgo(21), notes: "Acme retainer" });
   push({ accountId: mercury, kind: "income", amount: 1800, currency: "USD", category: "Consulting", occurredAt: daysAgo(7), notes: "Half-month side project" });
 

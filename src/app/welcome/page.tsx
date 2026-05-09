@@ -303,7 +303,7 @@ function Step1() {
     <StepShell
       eyebrow="01 — welcome"
       title="Three minutes from here to your honest balance sheet."
-      subtitle="Cairn is your personal finance command center — every account, transaction, budget, savings goal, and grant in one place. Built for the wallet of a founder, not their company."
+      subtitle="Cairn is your personal finance command center — every account, transaction, budget, savings goal, and grant in one place. Built for your personal economy, not just your job."
     >
       <div className="space-y-3 mt-2">
         {promises.map(({ icon: Icon, title, body }) => (
@@ -341,7 +341,7 @@ function Step1() {
         </Button>
       </div>
       <p className="text-[11px] text-muted-foreground text-center mt-3 leading-relaxed">
-        The demo seeds a realistic founder dataset (multi-currency accounts,
+        The demo seeds a realistic sample dataset (multi-currency accounts,
         equity grants, budgets, transactions) so you can explore before
         entering your real numbers. You can wipe it any time from
         Settings → Admin.

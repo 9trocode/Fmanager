@@ -118,7 +118,7 @@ function RegistrationModeCard({ currentMode }: { currentMode: Mode }) {
       <CardHeader>
         <CardTitle className="text-base">Registration</CardTitle>
         <CardDescription>
-          Let family members or co-founders create their own accounts. Each
+          Let family members or partners create their own accounts. Each
           account gets its own login + role.
         </CardDescription>
       </CardHeader>

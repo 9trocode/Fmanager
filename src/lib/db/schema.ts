@@ -642,10 +642,9 @@ export const invites = sqliteTable(
     role: text("role", { enum: userRoles }).notNull(),
     /**
      * Whether the invited user joins the host's shared data (default,
-     * for family/co-founder use) or gets their own isolated tenant
+     * for family/partner use) or gets their own isolated tenant
      * (for resell / hosted-for-others use).
-     */
-    dataScope: text("data_scope", { enum: dataScopes })
+     */    dataScope: text("data_scope", { enum: dataScopes })
       .notNull()
       .default("shared"),
     expiresAt: text("expires_at"),
@@ -689,3 +688,4 @@ export const chatMessages = sqliteTable(
     ),
   }),
 );
+

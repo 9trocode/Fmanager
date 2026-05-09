@@ -19,7 +19,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Cairn",
   description:
-    "Multi-currency net worth + decision co-pilot for founders. Stack the truths, plan against the floor.",
+    "Multi-currency net worth + decision co-pilot for professionals. Stack the truths, plan against the floor.",
 };
 
 export default async function RootLayout({

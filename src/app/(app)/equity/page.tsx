@@ -22,7 +22,7 @@ export default async function EquityPage() {
     <>
       <PageHeader
         title="Equity grants"
-        description="Founder shares, options, RSUs, SAFEs. Each grant is shown in three scenarios — Floor (zero), Liquid (current FMV), Expected (target exit)."
+        description="Common shares, options, RSUs, SAFEs. Each grant is shown in three scenarios — Floor (zero), Liquid (current FMV), Expected (target exit)."
         actions={<AddGrantDialog />}
       />
 

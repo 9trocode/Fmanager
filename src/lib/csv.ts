@@ -47,5 +47,5 @@ export function parseCsv(text: string): string[][] {
 export const TRANSACTION_CSV_TEMPLATE = `date,account,amount,currency,category,kind,notes
 2026-05-04,Mercury USD checking,250.00,USD,Personal,expense,Groceries
 2026-05-03,GTBank naira savings,150000,NGN,Family,expense,Lagos rent partial
-2026-05-01,Mercury USD checking,6500,USD,Salary,income,Founder draw
+2026-05-01,Mercury USD checking,6500,USD,Salary,income,Salary draw
 `;

@@ -171,7 +171,7 @@ function FlowFields({
             id="name"
             name="name"
             defaultValue={defaults?.name ?? ""}
-            placeholder={kind === "income" ? "Founder salary" : "Lagos rent"}
+            placeholder={kind === "income" ? "Monthly salary" : "Monthly rent"}
             required
             autoFocus
           />

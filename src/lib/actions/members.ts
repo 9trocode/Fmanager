@@ -192,7 +192,7 @@ export async function registerWithCode(formData: FormData) {
   // Isolated tenants (open registration + isolated-scope invites)
   // start with an empty workspace — route them through the welcome
   // flow so they set their own base currency, optional AI key, and
-  // first account. Shared-scope users (family / co-founder) are
+  // first account. Shared-scope users (family / partners) are
   // joining the host's already-set-up data; skip onboarding and
   // drop them on the dashboard.
   if (dataScope === "isolated") {
