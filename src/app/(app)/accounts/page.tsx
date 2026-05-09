@@ -15,7 +15,12 @@ import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
 import { AddAccountDialog } from "@/components/app/add-account-dialog";
-import { listAccountsWithEffective, listFlows } from "@/lib/db/queries";
+import {
+  listAccountsWithEffective,
+  listFlows,
+  listTransactionsBetween,
+} from "@/lib/db/queries";
+import { convert } from "@/lib/fx";
 import { ACCOUNT_TYPE_LABEL, isLiability } from "@/lib/account-types";
 import { monthlyEquivalent } from "@/lib/flows";
 import { formatMoney } from "@/lib/format";
@@ -26,6 +31,13 @@ type FlowSummary = {
   monthlyExpense: number;
   count: number;
   hasMixedCurrency: boolean;
+};
+
+type ActualSummary = {
+  in: number;
+  out: number;
+  net: number;
+  count: number;
 };
 
 function currentMonthKey(): string {
@@ -95,6 +107,61 @@ export default async function AccountsPage({
     flowByAccount.set(f.accountId, existing);
   }
 
+  // For past-month views, the recurring-flow projection is misleading
+  // — it answers "what does my setup expect every month" rather than
+  // "what actually moved this month". So when filtered to a past
+  // month, build a parallel actuals-from-transactions rollup per
+  // account, in account currency (FX-converted when needed). Render
+  // chooses one or the other below.
+  const actualByAccount = new Map<number, ActualSummary>();
+  if (isPastMonth) {
+    const [yStr, mStr] = selectedMonth!.split("-");
+    const startDate = `${yStr}-${mStr}-01`;
+    const endDate = asOfDate!;
+    const txsInMonth = await listTransactionsBetween(startDate, endDate);
+    for (const t of txsInMonth) {
+      const source = accounts.find((a) => a.id === t.accountId);
+      const dest =
+        t.destAccountId != null
+          ? accounts.find((a) => a.id === t.destAccountId)
+          : null;
+      if (source) {
+        const amt =
+          t.currency === source.currency
+            ? t.amount
+            : await convert(t.amount, t.currency, source.currency);
+        const s = actualByAccount.get(source.id) ?? {
+          in: 0,
+          out: 0,
+          net: 0,
+          count: 0,
+        };
+        if (t.kind === "income") s.in += amt;
+        else if (t.kind === "expense" || t.kind === "transfer")
+          s.out += amt;
+        s.net = s.in - s.out;
+        s.count += 1;
+        actualByAccount.set(source.id, s);
+      }
+      if (dest && t.kind === "transfer") {
+        const amt =
+          t.currency === dest.currency
+            ? t.amount
+            : await convert(t.amount, t.currency, dest.currency);
+        const d = actualByAccount.get(dest.id) ?? {
+          in: 0,
+          out: 0,
+          net: 0,
+          count: 0,
+        };
+        d.in += amt;
+        d.net = d.in - d.out;
+        d.count += 1;
+        actualByAccount.set(dest.id, d);
+      }
+    }
+  }
+
   return (
     <>
       <PageHeader
@@ -127,11 +194,14 @@ export default async function AccountsPage({
         <div className="grid gap-3">
           {active.map((a) => {
             const flow = flowByAccount.get(a.id);
+            const actual = actualByAccount.get(a.id);
             const hasFlow =
               flow != null &&
               (flow.monthlyIncome > 0 ||
                 flow.monthlyExpense > 0 ||
                 flow.hasMixedCurrency);
+            const hasActual =
+              actual != null && (actual.in > 0 || actual.out > 0);
             const net = flow
               ? flow.monthlyIncome - flow.monthlyExpense
               : 0;
@@ -158,7 +228,53 @@ export default async function AccountsPage({
                         ) : null}
                       </div>
                       <CardTitle className="text-base truncate">{a.name}</CardTitle>
-                      {hasFlow ? (
+                      {isPastMonth ? (
+                        // Past-month view — show ACTUALS for the
+                        // selected month, sourced from transactions
+                        // on this account, FX-converted into the
+                        // account currency.
+                        hasActual ? (
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] font-mono">
+                            {actual.in > 0 ? (
+                              <span className="inline-flex items-center gap-1 text-emerald-300">
+                                <ArrowUpRight className="size-3" />+
+                                {formatMoney(actual.in, a.currency)} in
+                              </span>
+                            ) : null}
+                            {actual.out > 0 ? (
+                              <span className="inline-flex items-center gap-1 text-destructive">
+                                <ArrowDownRight className="size-3" />−
+                                {formatMoney(actual.out, a.currency)} out
+                              </span>
+                            ) : null}
+                            {actual.in > 0 && actual.out > 0 ? (
+                              <span
+                                className={
+                                  "tabular-nums " +
+                                  (actual.net >= 0
+                                    ? "text-muted-foreground"
+                                    : "text-destructive")
+                                }
+                              >
+                                net{" "}
+                                {formatMoney(actual.net, a.currency, {
+                                  signed: true,
+                                })}
+                              </span>
+                            ) : null}
+                            <span className="text-muted-foreground">
+                              · {actual.count}{" "}
+                              {actual.count === 1 ? "tx" : "txs"} in{" "}
+                              {monthLabelFromKey(selectedMonth!)}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="text-[11px] font-mono text-muted-foreground">
+                            no transactions in{" "}
+                            {monthLabelFromKey(selectedMonth!)}
+                          </div>
+                        )
+                      ) : hasFlow ? (
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] font-mono">
                           {flow.monthlyIncome > 0 ? (
                             <span className="inline-flex items-center gap-1 text-emerald-300">
