@@ -67,7 +67,7 @@ const MODE_COPY: Record<
   open: {
     label: "Open",
     dot: "bg-amber-500",
-    help: "Anyone reaching the registration URL can sign up — defaults to viewer (read-only). Switch back to invite-only if this URL is internet-reachable.",
+    help: "Anyone reaching the registration URL can sign up. Each new user gets their own private workspace — they can't see your data and you can't see theirs. They run through onboarding to set up their own accounts. Use this for resell or hosted-for-others deployments.",
   },
 };
 

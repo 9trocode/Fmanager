@@ -121,8 +121,11 @@ export async function removeMember(formData: FormData) {
 
 /**
  * Public registration. Path depends on `registration_mode`:
- *  - "invite": code required, must match an unused/unexpired row
- *  - "open":   no code; role defaults to viewer
+ *  - "invite": code required, must match an unused/unexpired row.
+ *              Role + data scope come from the invite the host minted.
+ *  - "open":   no code; new account is isolated-scope admin of its
+ *              own private workspace. Routed through the onboarding
+ *              flow so they set up their own accounts.
  *  - else:     redirects back to /login (registration closed)
  */
 export async function registerWithCode(formData: FormData) {
@@ -185,5 +188,15 @@ export async function registerWithCode(formData: FormData) {
     await markInviteUsed(inviteId, user.id);
   }
   await createSession(role, user.id);
+
+  // Isolated tenants (open registration + isolated-scope invites)
+  // start with an empty workspace — route them through the welcome
+  // flow so they set their own base currency, optional AI key, and
+  // first account. Shared-scope users (family / co-founder) are
+  // joining the host's already-set-up data; skip onboarding and
+  // drop them on the dashboard.
+  if (dataScope === "isolated") {
+    redirect("/welcome?step=1");
+  }
   redirect("/dashboard");
 }
