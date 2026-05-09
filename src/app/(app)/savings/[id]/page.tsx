@@ -428,11 +428,17 @@ export default async function SavingsGoalDetailPage({
         {goal.notes ? (
           <CardContent className="border-t border-border pt-4">
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5">
-              Notes
+              Description
             </div>
             <p className="text-sm whitespace-pre-wrap">{goal.notes}</p>
           </CardContent>
-        ) : null}
+        ) : (
+          <CardContent className="border-t border-border pt-4 text-[12px] text-muted-foreground/80">
+            No description yet. Edit the goal to add one — the advisor
+            uses it for the &quot;Worth knowing&quot; nuggets below
+            (why this matters, deadlines, what hitting it unlocks).
+          </CardContent>
+        )}
       </Card>
     </>
   );

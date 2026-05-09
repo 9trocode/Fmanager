@@ -155,9 +155,18 @@ export default async function BudgetDetailPage({
         </CardHeader>
         {budget.notes ? (
           <CardContent className="border-t border-border pt-4 text-sm text-muted-foreground whitespace-pre-wrap">
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground/70 font-medium mb-1.5">
+              Description
+            </div>
             {budget.notes}
           </CardContent>
-        ) : null}
+        ) : (
+          <CardContent className="border-t border-border pt-4 text-[12px] text-muted-foreground/80">
+            No description yet. Edit the budget to add one — the advisor
+            uses it to ground the &quot;Worth knowing&quot; panel below
+            (what the cap covers, your location, market specifics).
+          </CardContent>
+        )}
       </Card>
 
       <div className="mb-6">

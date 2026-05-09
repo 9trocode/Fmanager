@@ -538,19 +538,24 @@ export function SavingsGoalFields({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="notes">Notes</Label>
+            <Label htmlFor="notes">Description / context</Label>
             <textarea
               id="notes"
               name="notes"
-              rows={2}
+              rows={3}
               defaultValue={defaults?.notes ?? ""}
               placeholder={
                 isDebt
-                  ? "Rate, lender, payoff strategy, etc."
-                  : "Why this goal matters, deadlines, etc."
+                  ? "Rate, lender, payoff strategy, why this debt — anything that shapes the right plan."
+                  : "Why this matters, deadlines, what hitting it would unlock for you. Specifics let the advisor's nuggets land harder."
               }
               className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring resize-y"
             />
+            <p className="text-[10px] text-muted-foreground leading-snug">
+              The advisor reads this for the &quot;Worth knowing&quot; panel
+              on this goal. The more concrete the context, the sharper the
+              unlock + next-step nuggets.
+            </p>
           </div>
         </div>
       </details>

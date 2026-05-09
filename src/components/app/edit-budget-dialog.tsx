@@ -133,14 +133,20 @@ export function EditBudgetDialog({
             </div>
           ) : null}
           <div className="space-y-1.5">
-            <Label htmlFor="notes">Notes (optional)</Label>
+            <Label htmlFor="notes">Description / context (optional)</Label>
             <textarea
               id="notes"
               name="notes"
-              rows={2}
+              rows={3}
               defaultValue={budget.notes ?? ""}
+              placeholder="e.g. Covers full-time chef + cleaner. Lagos. ₦60k chef, ₦60k cleaner. Negotiated last quarter."
               className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring resize-y"
             />
+            <p className="text-[10px] text-muted-foreground leading-snug">
+              The advisor reads this for the &quot;Worth knowing&quot; panel.
+              Mention what the cap covers, where you are, anything market-
+              specific — it sharpens benchmarks and price-realism comments.
+            </p>
           </div>
           <DialogFooter>
             <Button type="submit" disabled={pending} loading={pending}>
