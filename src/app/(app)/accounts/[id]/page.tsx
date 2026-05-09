@@ -59,7 +59,7 @@ import {
 import { ACCOUNT_TYPE_LABEL, isLiability } from "@/lib/account-types";
 import { FLOW_CADENCE_LABEL, monthlyEquivalent } from "@/lib/flows";
 import { formatMoney } from "@/lib/format";
-import { convert } from "@/lib/fx";
+import { prefetchRates } from "@/lib/fx";
 import { localToday } from "@/lib/dates";
 import { resolveMonthKey } from "@/lib/month-filter";
 
@@ -174,36 +174,41 @@ export default async function AccountDetailPage({
   const today = asOfDate ?? localToday();
   if (latest) {
     const sinceTxs = txs.filter((t) => t.occurredAt > latest.asOf);
-    const allRows = await Promise.all(
-      sinceTxs.map(async (t) => {
-        const isSource = t.accountId === id;
-        const isDest = t.destAccountId === id && t.kind === "transfer";
-        const sign = isSource
-          ? t.kind === "expense" || t.kind === "transfer"
-            ? -1
-            : t.kind === "income"
-              ? 1
-              : 0
-          : isDest
-            ? 1
-            : 0;
-        const isCrossCurrency = t.currency !== account.currency;
-        const inAccount = isCrossCurrency
-          ? await convert(t.amount, t.currency, account.currency)
-          : t.amount;
-        return {
-          id: t.id,
-          occurredAt: t.occurredAt,
-          kind: t.kind,
-          nativeAmount: t.amount,
-          nativeCurrency: t.currency,
-          contribution: sign * inAccount,
-          isCrossCurrency,
-          notes: t.notes,
-          category: t.category,
-        };
-      }),
+    // Prefetch the (txCcy → accountCcy) rate for every cross-currency
+    // tx, then build rows synchronously. Was a Promise.all of awaited
+    // convert() calls — sequential under the cache-miss path even
+    // though the surface looks parallel.
+    const sinceRates = await prefetchRates(
+      sinceTxs.map((t) => [t.currency, account.currency] as const),
     );
+    const allRows = sinceTxs.map((t) => {
+      const isSource = t.accountId === id;
+      const isDest = t.destAccountId === id && t.kind === "transfer";
+      const sign = isSource
+        ? t.kind === "expense" || t.kind === "transfer"
+          ? -1
+          : t.kind === "income"
+            ? 1
+            : 0
+        : isDest
+          ? 1
+          : 0;
+      const isCrossCurrency = t.currency !== account.currency;
+      const inAccount = isCrossCurrency
+        ? sinceRates.convert(t.amount, t.currency, account.currency)
+        : t.amount;
+      return {
+        id: t.id,
+        occurredAt: t.occurredAt,
+        kind: t.kind,
+        nativeAmount: t.amount,
+        nativeCurrency: t.currency,
+        contribution: sign * inAccount,
+        isCrossCurrency,
+        notes: t.notes,
+        category: t.category,
+      };
+    });
     // Split: anything dated on/before today contributes to the
     // running balance. Anything in the future is intent/scheduled —
     // shown separately so the user can see it without it dropping

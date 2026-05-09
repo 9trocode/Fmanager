@@ -10,7 +10,7 @@ import {
   computeCashRunway,
   computeMonthlyCashFlow,
 } from "@/lib/aggregation";
-import { convert } from "@/lib/fx";
+import { prefetchRates } from "@/lib/fx";
 import { localToday } from "@/lib/dates";
 import { resolveMonthKey } from "@/lib/month-filter";
 
@@ -67,11 +67,21 @@ export default async function BudgetsPage({
   const budgetedCategoriesLower = new Set(
     summary.rows.map((r) => r.category.trim().toLowerCase()),
   );
+  // Prefetch every (txCcy → base) rate up front so the loop below
+  // is sync. Was a per-tx awaited convert() — sequential despite
+  // the cache.
+  const oneTimeRates = await prefetchRates(
+    monthExpenses.map((t) => [t.currency, baseCurrency] as const),
+  );
   let oneTimeExpenses = 0;
   for (const t of monthExpenses) {
     const cat = (t.category ?? "").trim().toLowerCase();
     if (cat && budgetedCategoriesLower.has(cat)) continue;
-    oneTimeExpenses += await convert(t.amount, t.currency, baseCurrency);
+    oneTimeExpenses += oneTimeRates.convert(
+      t.amount,
+      t.currency,
+      baseCurrency,
+    );
   }
 
   return (

@@ -20,7 +20,7 @@ import {
   listFlows,
   listTransactionsBetween,
 } from "@/lib/db/queries";
-import { convert } from "@/lib/fx";
+import { prefetchRates } from "@/lib/fx";
 import { ACCOUNT_TYPE_LABEL, isLiability } from "@/lib/account-types";
 import { monthlyEquivalent } from "@/lib/flows";
 import { formatMoney } from "@/lib/format";
@@ -119,17 +119,30 @@ export default async function AccountsPage({
     const startDate = `${yStr}-${mStr}-01`;
     const endDate = asOfDate!;
     const txsInMonth = await listTransactionsBetween(startDate, endDate);
+    // Index accounts for O(1) lookup instead of N×M find().
+    const accountById = new Map(accounts.map((a) => [a.id, a]));
+    // Prefetch every (txCcy → accountCcy) pair we'll need so the loop
+    // is sync. Was per-tx awaited convert() — sequential despite the
+    // cache.
+    const ratePairs: Array<readonly [string, string]> = [];
     for (const t of txsInMonth) {
-      const source = accounts.find((a) => a.id === t.accountId);
+      const source = accountById.get(t.accountId);
+      if (source) ratePairs.push([t.currency, source.currency]);
+      if (t.destAccountId != null) {
+        const dest = accountById.get(t.destAccountId);
+        if (dest) ratePairs.push([t.currency, dest.currency]);
+      }
+    }
+    const accountsRates = await prefetchRates(ratePairs);
+    for (const t of txsInMonth) {
+      const source = accountById.get(t.accountId);
       const dest =
-        t.destAccountId != null
-          ? accounts.find((a) => a.id === t.destAccountId)
-          : null;
+        t.destAccountId != null ? accountById.get(t.destAccountId) : null;
       if (source) {
         const amt =
           t.currency === source.currency
             ? t.amount
-            : await convert(t.amount, t.currency, source.currency);
+            : accountsRates.convert(t.amount, t.currency, source.currency);
         const s = actualByAccount.get(source.id) ?? {
           in: 0,
           out: 0,
@@ -147,7 +160,7 @@ export default async function AccountsPage({
         const amt =
           t.currency === dest.currency
             ? t.amount
-            : await convert(t.amount, t.currency, dest.currency);
+            : accountsRates.convert(t.amount, t.currency, dest.currency);
         const d = actualByAccount.get(dest.id) ?? {
           in: 0,
           out: 0,

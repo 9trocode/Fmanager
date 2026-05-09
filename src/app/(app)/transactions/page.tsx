@@ -24,7 +24,7 @@ import {
 } from "@/lib/db/queries";
 import { resolveMonthKey } from "@/lib/month-filter";
 import { localYmd } from "@/lib/dates";
-import { convert } from "@/lib/fx";
+import { prefetchRates } from "@/lib/fx";
 import { formatMoney } from "@/lib/format";
 import type { TransactionKind } from "@/lib/db/schema";
 
@@ -163,11 +163,16 @@ export default async function TransactionsPage({
     currency: b.currency,
   }));
 
-  // Compute totals in base currency for the filtered range.
+  // Compute totals in base currency for the filtered range. Was a
+  // per-tx awaited convert() — sequential despite the cache. Prefetch
+  // every (txCcy → base) pair, then sync math.
+  const totalsRates = await prefetchRates(
+    transactions.map((t) => [t.currency, baseCurrency] as const),
+  );
   let incomeTotal = 0;
   let expenseTotal = 0;
   for (const t of transactions) {
-    const inBase = await convert(t.amount, t.currency, baseCurrency);
+    const inBase = totalsRates.convert(t.amount, t.currency, baseCurrency);
     if (t.kind === "income") incomeTotal += inBase;
     else if (t.kind === "expense") expenseTotal += inBase;
     // Transfers are net-zero across accounts; ignore for the totals row.

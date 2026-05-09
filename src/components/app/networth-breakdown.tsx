@@ -13,7 +13,7 @@ import {
   listAccounts,
   listAccountTransactions,
 } from "@/lib/db/queries";
-import { convert } from "@/lib/fx";
+import { prefetchRates } from "@/lib/fx";
 import { localToday } from "@/lib/dates";
 import { formatMoney } from "@/lib/format";
 import { isLiability } from "@/lib/account-types";
@@ -60,22 +60,22 @@ export async function NetWorthBreakdown() {
             (t) => t.occurredAt > latest.asOf && t.occurredAt <= today,
           )
         : txs.filter((t) => t.occurredAt <= today);
+      // Prefetch every (txCcy → accountCcy) pair before the loop so
+      // FX conversion is sync. Was per-tx awaited convert().
+      const sinceRates = await prefetchRates(
+        sinceTxs.map((t) => [t.currency, a.currency] as const),
+      );
       let delta = 0;
       let crossCurrencyCount = 0;
       for (const t of sinceTxs) {
         const isSource = t.accountId === a.id;
         const isDest = t.destAccountId === a.id && t.kind === "transfer";
         if (!isSource && !isDest) continue;
-        // FX-convert into the account's currency. If the tx was
-        // posted in a different currency (often a flow misconfigured
-        // to the wrong account), surface a cross-currency count so
-        // the user knows their balance includes a conversion.
         if (t.currency !== a.currency) crossCurrencyCount += 1;
-        const amountInAccountCcy = await convert(
-          t.amount,
-          t.currency,
-          a.currency,
-        );
+        const amountInAccountCcy =
+          t.currency === a.currency
+            ? t.amount
+            : sinceRates.convert(t.amount, t.currency, a.currency);
         if (isSource) {
           if (t.kind === "expense" || t.kind === "transfer")
             delta -= amountInAccountCcy;

@@ -3,7 +3,7 @@ import { cache } from "react";
 import { and, asc, desc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { getOwner, ownedBy } from "@/lib/db/scope";
-import { convert } from "@/lib/fx";
+import { convert, prefetchRates } from "@/lib/fx";
 import { localToday } from "@/lib/dates";
 import type { AccountType, TransactionKind } from "@/lib/db/schema";
 
@@ -383,17 +383,18 @@ export async function getEffectiveBalance(
       ),
     );
 
+  // Prefetch every (txCcy → accountCcy) rate so the loop is sync.
+  // Was per-tx awaited convert() — sequential despite the cache.
+  const rates = await prefetchRates(
+    txs.map((t) => [t.currency, accountCurrency] as const),
+  );
   let delta = 0;
   for (const t of txs) {
-    // Skip transactions on the snapshot date itself; snapshot wins.
     if (t.occurredAt === latest.asOf) continue;
-    // FX-convert into the account's currency. No-op if currencies
-    // already match (convert short-circuits on from === to).
-    const amountInAccountCcy = await convert(
-      t.amount,
-      t.currency,
-      accountCurrency,
-    );
+    const amountInAccountCcy =
+      t.currency === accountCurrency
+        ? t.amount
+        : rates.convert(t.amount, t.currency, accountCurrency);
     if (t.accountId === accountId) {
       if (t.kind === "expense" || t.kind === "transfer") delta -= amountInAccountCcy;
       else if (t.kind === "income") delta += amountInAccountCcy;
@@ -484,53 +485,63 @@ export async function listAccountsWithEffective(
         )
     : [];
 
-  // Build the per-account result. Cross-currency transactions
-  // (e.g. an NGN flow linked to a USD account) get FX-converted
-  // into the account's currency before summing — without this,
-  // a -₦70k transaction on a USD account naively subtracted
-  // 70,000 from the USD balance, producing -$70,000.
-  const result = await Promise.all(
-    accounts.map(async (a) => {
-      const latest = latestByAccount.get(a.id);
-      if (!latest) {
-        return {
-          ...a,
-          effectiveValue: null as number | null,
-          latestValue: null as number | null,
-          latestAsOf: null as string | null,
-        };
+  // Cross-currency transactions get FX-converted into the account's
+  // currency before summing. Was: per-tx awaited convert() inside the
+  // outer Promise.all over accounts — sequential despite the surface
+  // parallelism (each inner await yields, then the next). At 10
+  // accounts × 50 mixed-currency txs that's 500 sequential awaits
+  // even with the 12h cache.
+  //
+  // Now: prefetch every (txCcy → accountCcy) pair we'll need into one
+  // RateMap, then synchronous in-memory math. The Promise.all + inner
+  // for-loop becomes a plain map.
+  const ratePairs: Array<readonly [string, string]> = [];
+  for (const a of accounts) {
+    for (const t of txs) {
+      if (t.accountId === a.id || t.destAccountId === a.id) {
+        ratePairs.push([t.currency, a.currency]);
       }
-      let delta = 0;
-      for (const t of txs) {
-        // Skip transactions on the snapshot date itself; snapshot wins.
-        if (t.occurredAt === latest.asOf) continue;
-        if (t.occurredAt < latest.asOf) continue;
-        const isSource = t.accountId === a.id;
-        const isDest = t.destAccountId === a.id && t.kind === "transfer";
-        if (!isSource && !isDest) continue;
-        const amountInAccountCcy = await convert(
-          t.amount,
-          t.currency,
-          a.currency,
-        );
-        if (isSource) {
-          if (t.kind === "expense" || t.kind === "transfer")
-            delta -= amountInAccountCcy;
-          else if (t.kind === "income") delta += amountInAccountCcy;
-        }
-        if (isDest) {
-          delta += amountInAccountCcy;
-        }
-      }
+    }
+  }
+  const rates = await prefetchRates(ratePairs);
+
+  return accounts.map((a) => {
+    const latest = latestByAccount.get(a.id);
+    if (!latest) {
       return {
         ...a,
-        effectiveValue: latest.value + delta,
-        latestValue: latest.value,
-        latestAsOf: latest.asOf,
+        effectiveValue: null as number | null,
+        latestValue: null as number | null,
+        latestAsOf: null as string | null,
       };
-    }),
-  );
-  return result;
+    }
+    let delta = 0;
+    for (const t of txs) {
+      if (t.occurredAt === latest.asOf) continue;
+      if (t.occurredAt < latest.asOf) continue;
+      const isSource = t.accountId === a.id;
+      const isDest = t.destAccountId === a.id && t.kind === "transfer";
+      if (!isSource && !isDest) continue;
+      const amountInAccountCcy =
+        t.currency === a.currency
+          ? t.amount
+          : rates.convert(t.amount, t.currency, a.currency);
+      if (isSource) {
+        if (t.kind === "expense" || t.kind === "transfer")
+          delta -= amountInAccountCcy;
+        else if (t.kind === "income") delta += amountInAccountCcy;
+      }
+      if (isDest) {
+        delta += amountInAccountCcy;
+      }
+    }
+    return {
+      ...a,
+      effectiveValue: latest.value + delta,
+      latestValue: latest.value,
+      latestAsOf: latest.asOf,
+    };
+  });
 }
 
 export async function listGrants() {
