@@ -2,9 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { assertAdmin } from "@/lib/auth/session";
+import { getOwner, ownedBy } from "@/lib/db/scope";
 import { localToday } from "@/lib/dates";
 
 function revalidate(id?: number) {
@@ -78,7 +79,10 @@ export async function createSavingsGoal(formData: FormData) {
   const fields = commonFields(formData);
   if (!fields.name) throw new Error("Name is required.");
   if (fields.horizonMonths <= 0) throw new Error("Horizon must be > 0 months.");
-  await db.insert(schema.savingsGoals).values(fields);
+  const owner = await getOwner();
+  await db
+    .insert(schema.savingsGoals)
+    .values({ ...fields, ownerUserId: owner });
   revalidate();
 }
 
@@ -88,10 +92,16 @@ export async function updateSavingsGoal(formData: FormData) {
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
   const fields = commonFields(formData);
   if (!fields.name) throw new Error("Name is required.");
+  const owner = await getOwner();
   await db
     .update(schema.savingsGoals)
     .set({ ...fields, updatedAt: new Date().toISOString() })
-    .where(eq(schema.savingsGoals.id, id));
+    .where(
+      and(
+        eq(schema.savingsGoals.id, id),
+        ownedBy(schema.savingsGoals.ownerUserId, owner),
+      ),
+    );
   revalidate(id);
 }
 
@@ -99,10 +109,16 @@ export async function archiveSavingsGoal(formData: FormData) {
   await assertAdmin();
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
+  const owner = await getOwner();
   await db
     .update(schema.savingsGoals)
     .set({ archived: true, updatedAt: new Date().toISOString() })
-    .where(eq(schema.savingsGoals.id, id));
+    .where(
+      and(
+        eq(schema.savingsGoals.id, id),
+        ownedBy(schema.savingsGoals.ownerUserId, owner),
+      ),
+    );
   revalidate(id);
 }
 
@@ -110,10 +126,16 @@ export async function unarchiveSavingsGoal(formData: FormData) {
   await assertAdmin();
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
+  const owner = await getOwner();
   await db
     .update(schema.savingsGoals)
     .set({ archived: false, updatedAt: new Date().toISOString() })
-    .where(eq(schema.savingsGoals.id, id));
+    .where(
+      and(
+        eq(schema.savingsGoals.id, id),
+        ownedBy(schema.savingsGoals.ownerUserId, owner),
+      ),
+    );
   revalidate(id);
 }
 
@@ -121,7 +143,15 @@ export async function deleteSavingsGoal(formData: FormData) {
   await assertAdmin();
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
-  await db.delete(schema.savingsGoals).where(eq(schema.savingsGoals.id, id));
+  const owner = await getOwner();
+  await db
+    .delete(schema.savingsGoals)
+    .where(
+      and(
+        eq(schema.savingsGoals.id, id),
+        ownedBy(schema.savingsGoals.ownerUserId, owner),
+      ),
+    );
   revalidate();
   redirect("/savings");
 }

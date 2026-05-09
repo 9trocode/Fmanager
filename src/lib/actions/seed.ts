@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { db, schema } from "@/lib/db";
 import { setSetting } from "@/lib/db/queries";
 import { assertAdmin } from "@/lib/auth/session";
+import { getOwner, ownedBy } from "@/lib/db/scope";
 
 const ACCOUNTS = [
   {
@@ -316,17 +317,19 @@ const DECISIONS = [
 ];
 
 async function wipe() {
-  await db.delete(schema.transactions);
-  await db.delete(schema.valueSnapshots);
-  await db.delete(schema.accounts);
-  await db.delete(schema.equityGrants);
-  await db.delete(schema.decisions);
-  await db.delete(schema.savingsGoals);
-  await db.delete(schema.recurringFlows);
-  await db.delete(schema.budgets);
-  await db.delete(schema.fxRates);
-  // Settings: keep API key + advisor model untouched (user-entered),
-  // but reset base_currency to USD.
+  // Scoped wipe: deletes only the rows belonging to the active owner.
+  // No tenant can clobber another's data even if they hit the
+  // "wipe all data" / "seed sample data" admin tools.
+  const owner = await getOwner();
+  await db.delete(schema.transactions).where(ownedBy(schema.transactions.ownerUserId, owner));
+  await db.delete(schema.valueSnapshots).where(ownedBy(schema.valueSnapshots.ownerUserId, owner));
+  await db.delete(schema.accounts).where(ownedBy(schema.accounts.ownerUserId, owner));
+  await db.delete(schema.equityGrants).where(ownedBy(schema.equityGrants.ownerUserId, owner));
+  await db.delete(schema.decisions).where(ownedBy(schema.decisions.ownerUserId, owner));
+  await db.delete(schema.savingsGoals).where(ownedBy(schema.savingsGoals.ownerUserId, owner));
+  await db.delete(schema.recurringFlows).where(ownedBy(schema.recurringFlows.ownerUserId, owner));
+  await db.delete(schema.budgets).where(ownedBy(schema.budgets.ownerUserId, owner));
+  // FX rates are global — never wiped per-tenant.
 }
 
 /**
@@ -456,6 +459,10 @@ export async function seedSampleData() {
   await setSetting("base_currency", "USD");
   await setSetting("advisor_model", "claude-sonnet-4-6");
 
+  // Stamp every seeded row with the active owner so isolated tenants
+  // who hit "give me sample data" get the dataset in their own scope.
+  const owner = await getOwner();
+
   const idsByName: Record<string, number> = {};
   for (const a of ACCOUNTS) {
     const [created] = await db
@@ -466,6 +473,7 @@ export async function seedSampleData() {
         currency: a.currency,
         institution: a.institution,
         notes: a.notes,
+        ownerUserId: owner,
       })
       .returning();
     if (!created) continue;
@@ -477,40 +485,48 @@ export async function seedSampleData() {
         currency: a.currency,
         asOf: s.asOf,
         source: "sample",
+        ownerUserId: owner,
       });
     }
   }
 
   for (const g of GRANTS) {
-    await db.insert(schema.equityGrants).values(g);
+    await db.insert(schema.equityGrants).values({ ...g, ownerUserId: owner });
   }
 
-  await db.insert(schema.decisions).values(DECISIONS);
+  await db
+    .insert(schema.decisions)
+    .values(DECISIONS.map((d) => ({ ...d, ownerUserId: owner })));
 
-  // Resolve flow accountName → accountId before insert.
   const flowRows = FLOWS.map(({ accountName, ...rest }) => ({
     ...rest,
     accountId: accountName ? (idsByName[accountName] ?? null) : null,
+    ownerUserId: owner,
   }));
   await db.insert(schema.recurringFlows).values(flowRows);
 
-  const txRows = buildSampleTransactions(idsByName);
+  const txRows = buildSampleTransactions(idsByName).map((t) => ({
+    ...t,
+    ownerUserId: owner,
+  }));
   if (txRows.length > 0) {
     await db.insert(schema.transactions).values(txRows);
   }
 
   if (BUDGETS.length > 0) {
-    await db.insert(schema.budgets).values(BUDGETS);
+    await db
+      .insert(schema.budgets)
+      .values(BUDGETS.map((b) => ({ ...b, ownerUserId: owner })));
   }
 
   if (SAVINGS_GOALS.length > 0) {
-    // Resolve accountName → accountId for debt_payoff goals.
     const accountByName = new Map(
       (await db.select().from(schema.accounts)).map((a) => [a.name, a.id]),
     );
     const goalRows = SAVINGS_GOALS.map(({ accountName, ...rest }) => ({
       ...rest,
       accountId: accountName ? (accountByName.get(accountName) ?? null) : null,
+      ownerUserId: owner,
     }));
     await db.insert(schema.savingsGoals).values(goalRows);
   }

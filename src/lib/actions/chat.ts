@@ -6,6 +6,7 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import type { UIMessage } from "ai";
 import { db, schema } from "@/lib/db";
 import { assertAdmin } from "@/lib/auth/session";
+import { getOwner, ownedBy } from "@/lib/db/scope";
 
 /**
  * Server-side persistence for advisor chat sessions and messages.
@@ -25,9 +26,11 @@ export type ChatSessionRow = {
 
 export async function listChatSessions(): Promise<ChatSessionRow[]> {
   await assertAdmin();
+  const owner = await getOwner();
   return db
     .select()
     .from(schema.chatSessions)
+    .where(ownedBy(schema.chatSessions.ownerUserId, owner))
     .orderBy(desc(schema.chatSessions.updatedAt));
 }
 
@@ -35,10 +38,16 @@ export async function getChatSession(
   sessionId: number,
 ): Promise<{ session: ChatSessionRow; messages: UIMessage[] } | null> {
   await assertAdmin();
+  const owner = await getOwner();
   const [session] = await db
     .select()
     .from(schema.chatSessions)
-    .where(eq(schema.chatSessions.id, sessionId))
+    .where(
+      and(
+        eq(schema.chatSessions.id, sessionId),
+        ownedBy(schema.chatSessions.ownerUserId, owner),
+      ),
+    )
     .limit(1);
   if (!session) return null;
   const rows = await db
@@ -60,9 +69,10 @@ export async function getChatSession(
 
 export async function createChatSession(): Promise<number> {
   await assertAdmin();
+  const owner = await getOwner();
   const [row] = await db
     .insert(schema.chatSessions)
-    .values({ title: "New conversation" })
+    .values({ title: "New conversation", ownerUserId: owner })
     .returning();
   revalidatePath("/advisor");
   return row.id;
@@ -70,9 +80,15 @@ export async function createChatSession(): Promise<number> {
 
 export async function deleteChatSession(sessionId: number): Promise<void> {
   await assertAdmin();
+  const owner = await getOwner();
   await db
     .delete(schema.chatSessions)
-    .where(eq(schema.chatSessions.id, sessionId));
+    .where(
+      and(
+        eq(schema.chatSessions.id, sessionId),
+        ownedBy(schema.chatSessions.ownerUserId, owner),
+      ),
+    );
   revalidatePath("/advisor");
 }
 
@@ -82,10 +98,16 @@ export async function renameChatSession(
 ): Promise<void> {
   await assertAdmin();
   const trimmed = title.trim().slice(0, 80) || "Untitled";
+  const owner = await getOwner();
   await db
     .update(schema.chatSessions)
     .set({ title: trimmed, updatedAt: new Date().toISOString() })
-    .where(eq(schema.chatSessions.id, sessionId));
+    .where(
+      and(
+        eq(schema.chatSessions.id, sessionId),
+        ownedBy(schema.chatSessions.ownerUserId, owner),
+      ),
+    );
   revalidatePath("/advisor");
 }
 
@@ -101,6 +123,19 @@ export async function upsertChatMessage(
   msg: UIMessage,
 ): Promise<void> {
   await assertAdmin();
+  const owner = await getOwner();
+  // Confirm the session belongs to the active owner before writing.
+  const [session] = await db
+    .select()
+    .from(schema.chatSessions)
+    .where(
+      and(
+        eq(schema.chatSessions.id, sessionId),
+        ownedBy(schema.chatSessions.ownerUserId, owner),
+      ),
+    )
+    .limit(1);
+  if (!session) return;
   const uiJson = JSON.stringify(msg);
   const existing = await db
     .select()
@@ -140,10 +175,16 @@ export async function maybeAutoTitle(
   userText: string,
 ): Promise<void> {
   if (!userText.trim()) return;
+  const owner = await getOwner();
   const [session] = await db
     .select()
     .from(schema.chatSessions)
-    .where(eq(schema.chatSessions.id, sessionId))
+    .where(
+      and(
+        eq(schema.chatSessions.id, sessionId),
+        ownedBy(schema.chatSessions.ownerUserId, owner),
+      ),
+    )
     .limit(1);
   if (!session) return;
   if (session.title !== "New conversation") return;

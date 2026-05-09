@@ -1,9 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { assertAdmin } from "@/lib/auth/session";
+import { getOwner, ownedBy } from "@/lib/db/scope";
 
 const STARTER_DECISIONS = [
   {
@@ -37,7 +38,10 @@ export async function createDecision(formData: FormData) {
   const question = String(formData.get("question") ?? "").trim();
   const context = String(formData.get("context") ?? "").trim() || null;
   if (!question) throw new Error("Question is required.");
-  await db.insert(schema.decisions).values({ question, context });
+  const owner = await getOwner();
+  await db
+    .insert(schema.decisions)
+    .values({ question, context, ownerUserId: owner });
   revalidate();
 }
 
@@ -48,10 +52,16 @@ export async function updateDecision(formData: FormData) {
   const question = String(formData.get("question") ?? "").trim();
   const context = String(formData.get("context") ?? "").trim() || null;
   if (!question) throw new Error("Question is required.");
+  const owner = await getOwner();
   await db
     .update(schema.decisions)
     .set({ question, context, updatedAt: new Date().toISOString() })
-    .where(eq(schema.decisions.id, id));
+    .where(
+      and(
+        eq(schema.decisions.id, id),
+        ownedBy(schema.decisions.ownerUserId, owner),
+      ),
+    );
   revalidate();
 }
 
@@ -64,6 +74,7 @@ export async function setDecisionStatus(formData: FormData) {
     | "deferred";
   const outcome = String(formData.get("outcome") ?? "").trim() || null;
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
+  const owner = await getOwner();
   await db
     .update(schema.decisions)
     .set({
@@ -72,7 +83,12 @@ export async function setDecisionStatus(formData: FormData) {
       decidedAt: status === "decided" ? new Date().toISOString() : null,
       updatedAt: new Date().toISOString(),
     })
-    .where(eq(schema.decisions.id, id));
+    .where(
+      and(
+        eq(schema.decisions.id, id),
+        ownedBy(schema.decisions.ownerUserId, owner),
+      ),
+    );
   revalidate();
 }
 
@@ -80,15 +96,30 @@ export async function deleteDecision(formData: FormData) {
   await assertAdmin();
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
-  await db.delete(schema.decisions).where(eq(schema.decisions.id, id));
+  const owner = await getOwner();
+  await db
+    .delete(schema.decisions)
+    .where(
+      and(
+        eq(schema.decisions.id, id),
+        ownedBy(schema.decisions.ownerUserId, owner),
+      ),
+    );
   revalidate();
 }
 
 export async function seedStarterDecisions() {
   await assertAdmin();
-  const existing = await db.select().from(schema.decisions).limit(1);
+  const owner = await getOwner();
+  const existing = await db
+    .select()
+    .from(schema.decisions)
+    .where(ownedBy(schema.decisions.ownerUserId, owner))
+    .limit(1);
   if (existing.length > 0) return { seeded: false };
-  await db.insert(schema.decisions).values(STARTER_DECISIONS);
+  await db
+    .insert(schema.decisions)
+    .values(STARTER_DECISIONS.map((d) => ({ ...d, ownerUserId: owner })));
   revalidate();
   return { seeded: true };
 }

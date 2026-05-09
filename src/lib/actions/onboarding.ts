@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db, schema } from "@/lib/db";
 import { setSetting } from "@/lib/db/queries";
+import { getOwner } from "@/lib/db/scope";
 import { SUPPORTED_CURRENCIES } from "@/lib/format";
 import { accountTypes } from "@/lib/db/schema";
 import { assertAdmin } from "@/lib/auth/session";
@@ -58,9 +59,10 @@ export async function welcomeFirstAccount(formData: FormData) {
   const opening = Number(openingRaw);
   const safeOpening = Number.isFinite(opening) ? opening : 0;
 
+  const owner = await getOwner();
   const [created] = await db
     .insert(schema.accounts)
-    .values({ name, type, currency, institution })
+    .values({ name, type, currency, institution, ownerUserId: owner })
     .returning();
 
   if (created) {
@@ -70,6 +72,7 @@ export async function welcomeFirstAccount(formData: FormData) {
       currency,
       asOf: localToday(),
       source: "manual",
+      ownerUserId: owner,
     });
   }
   revalidatePath("/", "layout");

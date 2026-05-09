@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { and, asc, desc, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { assertAdmin } from "@/lib/auth/session";
+import { getOwner, ownedBy } from "@/lib/db/scope";
 import type { PredictionMessageRole } from "@/lib/db/schema";
 
 /**
@@ -34,9 +35,11 @@ export type PredictionStoredMessage = {
 
 export async function listPredictionSessions(): Promise<PredictionSessionRow[]> {
   await assertAdmin();
+  const owner = await getOwner();
   return db
     .select()
     .from(schema.predictionSessions)
+    .where(ownedBy(schema.predictionSessions.ownerUserId, owner))
     .orderBy(desc(schema.predictionSessions.updatedAt));
 }
 
@@ -45,10 +48,16 @@ export async function getPredictionSession(sessionId: number): Promise<{
   messages: PredictionStoredMessage[];
 } | null> {
   await assertAdmin();
+  const owner = await getOwner();
   const [session] = await db
     .select()
     .from(schema.predictionSessions)
-    .where(eq(schema.predictionSessions.id, sessionId))
+    .where(
+      and(
+        eq(schema.predictionSessions.id, sessionId),
+        ownedBy(schema.predictionSessions.ownerUserId, owner),
+      ),
+    )
     .limit(1);
   if (!session) return null;
   const rows = await db
@@ -79,9 +88,10 @@ export async function getPredictionSession(sessionId: number): Promise<{
 
 export async function createPredictionSession(): Promise<number> {
   await assertAdmin();
+  const owner = await getOwner();
   const [row] = await db
     .insert(schema.predictionSessions)
-    .values({ title: "New prediction" })
+    .values({ title: "New prediction", ownerUserId: owner })
     .returning({ id: schema.predictionSessions.id });
   return row.id;
 }
@@ -101,6 +111,19 @@ export async function upsertPredictionMessage(
   },
 ): Promise<void> {
   await assertAdmin();
+  const owner = await getOwner();
+  // Verify the session is the active owner's before writing.
+  const [session] = await db
+    .select({ id: schema.predictionSessions.id })
+    .from(schema.predictionSessions)
+    .where(
+      and(
+        eq(schema.predictionSessions.id, sessionId),
+        ownedBy(schema.predictionSessions.ownerUserId, owner),
+      ),
+    )
+    .limit(1);
+  if (!session) return;
   const existing = await db
     .select({ id: schema.predictionMessages.id })
     .from(schema.predictionMessages)
@@ -141,10 +164,16 @@ export async function maybeAutoTitlePredictionSession(
   firstUserText: string,
 ): Promise<void> {
   await assertAdmin();
+  const owner = await getOwner();
   const [session] = await db
     .select({ title: schema.predictionSessions.title })
     .from(schema.predictionSessions)
-    .where(eq(schema.predictionSessions.id, sessionId))
+    .where(
+      and(
+        eq(schema.predictionSessions.id, sessionId),
+        ownedBy(schema.predictionSessions.ownerUserId, owner),
+      ),
+    )
     .limit(1);
   if (!session) return;
   if (session.title !== "New prediction") return;
@@ -163,9 +192,15 @@ export async function deletePredictionSession(
   sessionId: number,
 ): Promise<void> {
   await assertAdmin();
+  const owner = await getOwner();
   await db
     .delete(schema.predictionSessions)
-    .where(eq(schema.predictionSessions.id, sessionId));
+    .where(
+      and(
+        eq(schema.predictionSessions.id, sessionId),
+        ownedBy(schema.predictionSessions.ownerUserId, owner),
+      ),
+    );
   revalidatePath("/projections");
 }
 
@@ -176,9 +211,15 @@ export async function renamePredictionSession(
   await assertAdmin();
   const trimmed = title.trim().slice(0, 80);
   if (!trimmed) throw new Error("Title is required.");
+  const owner = await getOwner();
   await db
     .update(schema.predictionSessions)
     .set({ title: trimmed, updatedAt: new Date().toISOString() })
-    .where(eq(schema.predictionSessions.id, sessionId));
+    .where(
+      and(
+        eq(schema.predictionSessions.id, sessionId),
+        ownedBy(schema.predictionSessions.ownerUserId, owner),
+      ),
+    );
   revalidatePath("/projections");
 }

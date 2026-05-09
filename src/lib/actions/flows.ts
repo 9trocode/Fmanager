@@ -5,6 +5,7 @@ import { and, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { flowCadences, flowKinds } from "@/lib/db/schema";
 import { assertAdmin } from "@/lib/auth/session";
+import { getOwner, ownedBy } from "@/lib/db/scope";
 import { localToday } from "@/lib/dates";
 
 function revalidate() {
@@ -80,9 +81,10 @@ export async function createFlow(formData: FormData) {
   // Seed lastPostedAt to today so the cadence-based fallback path doesn't
   // back-post months of history when nextDueAt is null and the user
   // skips immediate posting on a no-account flow.
+  const owner = await getOwner();
   const [flow] = await db
     .insert(schema.recurringFlows)
-    .values({ ...fields, lastPostedAt: today })
+    .values({ ...fields, lastPostedAt: today, ownerUserId: owner })
     .returning();
 
   // Post the first transaction immediately so the flow affects balances
@@ -100,9 +102,8 @@ export async function createFlow(formData: FormData) {
       category: flow.category,
       flowId: flow.id,
       notes: flow.notes ?? `Auto-posted from ${flow.name}`,
+      ownerUserId: owner,
     });
-    // Advance nextDueAt by one cadence past whatever just posted, so
-    // the accruer's next round picks up from the correct anchor.
     if (nextDueAt) {
       const advanced = advanceCadence(nextDueAt, fields.cadence);
       await db
@@ -146,10 +147,16 @@ export async function updateFlow(formData: FormData) {
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
   const fields = commonFields(formData);
   if (!fields.name) throw new Error("Name is required.");
+  const owner = await getOwner();
   await db
     .update(schema.recurringFlows)
     .set({ ...fields, updatedAt: new Date().toISOString() })
-    .where(eq(schema.recurringFlows.id, id));
+    .where(
+      and(
+        eq(schema.recurringFlows.id, id),
+        ownedBy(schema.recurringFlows.ownerUserId, owner),
+      ),
+    );
   revalidate();
 }
 
@@ -157,7 +164,15 @@ export async function deleteFlow(formData: FormData) {
   await assertAdmin();
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
-  await db.delete(schema.recurringFlows).where(eq(schema.recurringFlows.id, id));
+  const owner = await getOwner();
+  await db
+    .delete(schema.recurringFlows)
+    .where(
+      and(
+        eq(schema.recurringFlows.id, id),
+        ownedBy(schema.recurringFlows.ownerUserId, owner),
+      ),
+    );
   revalidate();
 }
 
@@ -176,10 +191,16 @@ export async function applyFlowNow(formData: FormData) {
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
 
+  const owner = await getOwner();
   const [flow] = await db
     .select()
     .from(schema.recurringFlows)
-    .where(eq(schema.recurringFlows.id, id))
+    .where(
+      and(
+        eq(schema.recurringFlows.id, id),
+        ownedBy(schema.recurringFlows.ownerUserId, owner),
+      ),
+    )
     .limit(1);
   if (!flow) throw new Error("Flow not found.");
   if (flow.accountId == null) {
@@ -214,6 +235,7 @@ export async function applyFlowNow(formData: FormData) {
     category: flow.category,
     flowId: flow.id,
     notes: flow.notes ?? `Manually applied from ${flow.name}`,
+    ownerUserId: owner,
   });
   // Advance nextDueAt PAST today so accrueDueFlows doesn't post a
   // second tx for the original anchored due date. Without this, a
@@ -249,9 +271,15 @@ export async function toggleFlowArchived(formData: FormData) {
   const id = Number(formData.get("id"));
   const archived = String(formData.get("archived") ?? "false") === "true";
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
+  const owner = await getOwner();
   await db
     .update(schema.recurringFlows)
     .set({ archived: !archived, updatedAt: new Date().toISOString() })
-    .where(eq(schema.recurringFlows.id, id));
+    .where(
+      and(
+        eq(schema.recurringFlows.id, id),
+        ownedBy(schema.recurringFlows.ownerUserId, owner),
+      ),
+    );
   revalidate();
 }

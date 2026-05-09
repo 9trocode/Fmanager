@@ -1,6 +1,7 @@
 import "server-only";
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
+import { getOwner, ownedBy } from "@/lib/db/scope";
 import { localToday, localYmd } from "@/lib/dates";
 
 /**
@@ -93,15 +94,19 @@ function parseYmd(s: string): Date {
  * within half an hour of midnight. Process restart resets the gate, so
  * deploys don't miss a run.
  */
-let lastAccrualAt = 0;
+// Per-tenant throttle. Tenant A's accrual must not throttle B.
+const lastAccrualByOwner = new Map<string, number>();
 const ACCRUAL_THROTTLE_MS = 30 * 60 * 1000;
 
 export async function accrueDueFlows(): Promise<{ posted: number }> {
+  const owner = await getOwner();
+  const throttleKey = owner == null ? "host" : `u${owner}`;
   const now = Date.now();
-  if (now - lastAccrualAt < ACCRUAL_THROTTLE_MS) {
+  const last = lastAccrualByOwner.get(throttleKey) ?? 0;
+  if (now - last < ACCRUAL_THROTTLE_MS) {
     return { posted: 0 };
   }
-  lastAccrualAt = now;
+  lastAccrualByOwner.set(throttleKey, now);
 
   const today = localToday();
   const todayDate = parseYmd(today);
@@ -113,6 +118,7 @@ export async function accrueDueFlows(): Promise<{ posted: number }> {
       and(
         eq(schema.recurringFlows.archived, false),
         isNotNull(schema.recurringFlows.accountId),
+        ownedBy(schema.recurringFlows.ownerUserId, owner),
       ),
     );
 
@@ -201,6 +207,7 @@ export async function accrueDueFlows(): Promise<{ posted: number }> {
           category: f.category,
           flowId: f.id,
           notes: f.notes ?? `Auto-accrued from ${f.name}`,
+          ownerUserId: owner,
         });
         mostRecentPosted = occurredAt;
         dueDate = addCadence(dueDate, f.cadence);
@@ -240,6 +247,7 @@ export async function accrueDueFlows(): Promise<{ posted: number }> {
         category: f.category,
         flowId: f.id,
         notes: f.notes ?? `Auto-accrued from ${f.name}`,
+        ownerUserId: owner,
       });
       lastPostedDate = nextDue;
       lastPosted = occurredAt;

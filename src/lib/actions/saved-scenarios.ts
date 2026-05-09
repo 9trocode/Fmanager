@@ -2,9 +2,10 @@
 
 import "server-only";
 import { revalidatePath } from "next/cache";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { assertAdmin } from "@/lib/auth/session";
+import { getOwner, ownedBy } from "@/lib/db/scope";
 import type {
   ProjectionInputs,
   ScenarioEvent,
@@ -50,9 +51,11 @@ function parseInputs(json: string): ProjectionInputs {
 
 export async function listSavedScenarios(): Promise<SavedScenarioRow[]> {
   await assertAdmin();
+  const owner = await getOwner();
   const rows = await db
     .select()
     .from(schema.savedScenarios)
+    .where(ownedBy(schema.savedScenarios.ownerUserId, owner))
     .orderBy(desc(schema.savedScenarios.updatedAt));
   return rows.map((r) => ({
     id: r.id,
@@ -75,6 +78,7 @@ export async function saveScenario(input: {
 }): Promise<{ id: number }> {
   await assertAdmin();
   if (!input.name.trim()) throw new Error("Scenario name is required.");
+  const owner = await getOwner();
   const [row] = await db
     .insert(schema.savedScenarios)
     .values({
@@ -83,6 +87,7 @@ export async function saveScenario(input: {
       inputsJson: JSON.stringify(input.inputs),
       source: input.source ?? "user",
       goalId: input.goalId ?? null,
+      ownerUserId: owner,
     })
     .returning({ id: schema.savedScenarios.id });
   revalidatePath("/projections");
@@ -113,17 +118,29 @@ export async function updateSavedScenario(input: {
   if (input.goalId !== undefined) {
     set.goalId = input.goalId;
   }
+  const owner = await getOwner();
   await db
     .update(schema.savedScenarios)
     .set(set)
-    .where(eq(schema.savedScenarios.id, input.id));
+    .where(
+      and(
+        eq(schema.savedScenarios.id, input.id),
+        ownedBy(schema.savedScenarios.ownerUserId, owner),
+      ),
+    );
   revalidatePath("/projections");
 }
 
 export async function deleteSavedScenario(id: number): Promise<void> {
   await assertAdmin();
+  const owner = await getOwner();
   await db
     .delete(schema.savedScenarios)
-    .where(eq(schema.savedScenarios.id, id));
+    .where(
+      and(
+        eq(schema.savedScenarios.id, id),
+        ownedBy(schema.savedScenarios.ownerUserId, owner),
+      ),
+    );
   revalidatePath("/projections");
 }

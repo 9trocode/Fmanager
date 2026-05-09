@@ -14,6 +14,7 @@ import {
   listTransactions,
   type TransactionFilter,
 } from "@/lib/db/queries";
+import { getOwner } from "@/lib/db/scope";
 import {
   computeBudgetStatus,
   computeCashRunway,
@@ -121,6 +122,7 @@ const createTransactionTool = tool({
     if (input.kind === "transfer" && !input.destAccountId) {
       return { error: "Transfers require destAccountId." };
     }
+    const owner = await getOwner();
     const [row] = await db
       .insert(schema.transactions)
       .values({
@@ -132,6 +134,7 @@ const createTransactionTool = tool({
         occurredAt: input.occurredAt ?? localToday(),
         category: input.category ?? null,
         notes: input.notes ?? null,
+        ownerUserId: owner,
       })
       .returning();
     return {
@@ -162,6 +165,7 @@ const createBudgetTool = tool({
     notes: z.string().optional(),
   }),
   execute: async (input) => {
+    const owner = await getOwner();
     const [row] = await db
       .insert(schema.budgets)
       .values({
@@ -170,6 +174,7 @@ const createBudgetTool = tool({
         currency: input.currency.toUpperCase(),
         accountId: input.accountId ?? null,
         notes: input.notes ?? null,
+        ownerUserId: owner,
       })
       .returning();
     return {
@@ -233,6 +238,7 @@ const createFlowTool = tool({
     const today = localToday();
     const deferToFuture =
       input.nextDueAt != null && input.nextDueAt > today;
+    const owner = await getOwner();
     const [row] = await db
       .insert(schema.recurringFlows)
       .values({
@@ -246,10 +252,9 @@ const createFlowTool = tool({
         notes: input.notes ?? null,
         lastPostedAt: today,
         nextDueAt: input.nextDueAt ?? null,
+        ownerUserId: owner,
       })
       .returning();
-    // Mirror createFlow's behaviour: post immediately unless the
-    // explicit nextDueAt is in the future.
     if (!deferToFuture) {
       await db.insert(schema.transactions).values({
         kind: row.kind,
@@ -260,6 +265,7 @@ const createFlowTool = tool({
         category: row.category,
         flowId: row.id,
         notes: row.notes ?? `Auto-posted from ${row.name}`,
+        ownerUserId: owner,
       });
     }
     return {
@@ -290,6 +296,7 @@ const createSavingsGoalTool = tool({
     notes: z.string().optional(),
   }),
   execute: async (input) => {
+    const owner = await getOwner();
     const [row] = await db
       .insert(schema.savingsGoals)
       .values({
@@ -304,6 +311,7 @@ const createSavingsGoalTool = tool({
         startedAt: localToday(),
         category: input.category ?? null,
         notes: input.notes ?? null,
+        ownerUserId: owner,
       })
       .returning();
     return {
@@ -342,6 +350,7 @@ const createAccountTool = tool({
     paymentDayOfMonth: z.number().int().min(1).max(31).optional(),
   }),
   execute: async (input) => {
+    const owner = await getOwner();
     const [acct] = await db
       .insert(schema.accounts)
       .values({
@@ -358,14 +367,15 @@ const createAccountTool = tool({
           input.type === "loan" ? (input.loanTermMonths ?? null) : null,
         paymentDayOfMonth:
           input.type === "loan" ? (input.paymentDayOfMonth ?? null) : null,
+        ownerUserId: owner,
       })
       .returning();
-    // Seed an opening snapshot so net worth picks it up immediately.
     await db.insert(schema.valueSnapshots).values({
       accountId: acct.id,
       asOf: localToday(),
       value: input.openingBalance,
       currency: input.currency.toUpperCase(),
+      ownerUserId: owner,
     });
     return {
       ok: true,

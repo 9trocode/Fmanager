@@ -11,6 +11,7 @@ import {
   listAccountsWithEffective,
   listSavingsGoals,
 } from "@/lib/db/queries";
+import { getOwner, ownedBy } from "@/lib/db/scope";
 import { convert } from "@/lib/fx";
 
 /**
@@ -32,19 +33,21 @@ import { convert } from "@/lib/fx";
 
 type AlertInsert = typeof schema.advisorAlerts.$inferInsert;
 
-// Per-process throttle. Like accrueDueFlows — every (app) page render
-// invokes us, but the underlying state only meaningfully changes a few
-// times a day. 30 minutes between runs keeps the alert state fresh
-// without firing 100 read queries per nav.
-let lastRunAt = 0;
+// Per-tenant throttle. Multi-tenant: tenant A triggering a check
+// must not throttle tenant B. Keyed by ownerUserId (or "host" for
+// the settings-admin / shared scope).
+const lastRunByOwner = new Map<string, number>();
 const RUN_THROTTLE_MS = 30 * 60 * 1000;
 
 export async function runAdvisorChecks(): Promise<{ inserted: number; resolved: number }> {
+  const owner = await getOwner();
+  const throttleKey = owner == null ? "host" : `u${owner}`;
   const now = Date.now();
-  if (now - lastRunAt < RUN_THROTTLE_MS) {
+  const last = lastRunByOwner.get(throttleKey) ?? 0;
+  if (now - last < RUN_THROTTLE_MS) {
     return { inserted: 0, resolved: 0 };
   }
-  lastRunAt = now;
+  lastRunByOwner.set(throttleKey, now);
 
   const baseCurrency = await getBaseCurrency();
   const today = new Date();
@@ -215,18 +218,16 @@ export async function runAdvisorChecks(): Promise<{ inserted: number; resolved: 
   // ── Insert (idempotent via unique dedupKey) + auto-resolve ────────
   let inserted = 0;
   if (inserts.length > 0) {
+    const stamped = inserts.map((i) => ({ ...i, ownerUserId: owner }));
     const result = await db
       .insert(schema.advisorAlerts)
-      .values(inserts)
+      .values(stamped)
       .onConflictDoNothing()
       .returning({ id: schema.advisorAlerts.id });
     inserted = result.length;
   }
 
-  // Anything currently active whose condition is no longer tripping
-  // gets resolvedAt set so the badge reflects reality. We only touch
-  // alerts whose kind we own (so a future hand-managed alert wouldn't
-  // get clobbered).
+  // Auto-resolve only the active alerts in THIS owner's scope.
   const ownedKinds = [
     "runway_critical",
     "runway_tight",
@@ -245,6 +246,7 @@ export async function runAdvisorChecks(): Promise<{ inserted: number; resolved: 
       and(
         isNull(schema.advisorAlerts.dismissedAt),
         isNull(schema.advisorAlerts.resolvedAt),
+        ownedBy(schema.advisorAlerts.ownerUserId, owner),
       ),
     );
   let resolved = 0;
@@ -263,6 +265,7 @@ export async function runAdvisorChecks(): Promise<{ inserted: number; resolved: 
 }
 
 export async function listActiveAlerts() {
+  const owner = await getOwner();
   return db
     .select()
     .from(schema.advisorAlerts)
@@ -270,15 +273,18 @@ export async function listActiveAlerts() {
       and(
         isNull(schema.advisorAlerts.dismissedAt),
         isNull(schema.advisorAlerts.resolvedAt),
+        ownedBy(schema.advisorAlerts.ownerUserId, owner),
       ),
     )
     .orderBy(desc(schema.advisorAlerts.createdAt));
 }
 
 export async function listRecentAlerts(limit = 50) {
+  const owner = await getOwner();
   return db
     .select()
     .from(schema.advisorAlerts)
+    .where(ownedBy(schema.advisorAlerts.ownerUserId, owner))
     .orderBy(desc(schema.advisorAlerts.createdAt))
     .limit(limit);
 }
@@ -305,6 +311,7 @@ export async function listAlertsInMonth(monthKey: string) {
   const start = `${monthKey}-01 00:00:00`;
   const nextMonth = month === 12 ? `${year + 1}-01` : `${year}-${String(month + 1).padStart(2, "0")}`;
   const end = `${nextMonth}-01 00:00:00`;
+  const owner = await getOwner();
   return db
     .select()
     .from(schema.advisorAlerts)
@@ -312,6 +319,7 @@ export async function listAlertsInMonth(monthKey: string) {
       and(
         sql`${schema.advisorAlerts.createdAt} >= ${start}`,
         sql`${schema.advisorAlerts.createdAt} < ${end}`,
+        ownedBy(schema.advisorAlerts.ownerUserId, owner),
       ),
     )
     .orderBy(desc(schema.advisorAlerts.createdAt));
@@ -321,6 +329,7 @@ export async function countActiveAlerts(): Promise<{
   total: number;
   critical: number;
 }> {
+  const owner = await getOwner();
   const rows = await db
     .select({
       severity: schema.advisorAlerts.severity,
@@ -331,6 +340,7 @@ export async function countActiveAlerts(): Promise<{
       and(
         isNull(schema.advisorAlerts.dismissedAt),
         isNull(schema.advisorAlerts.resolvedAt),
+        ownedBy(schema.advisorAlerts.ownerUserId, owner),
       ),
     )
     .groupBy(schema.advisorAlerts.severity);

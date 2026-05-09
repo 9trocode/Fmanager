@@ -12,6 +12,7 @@ import {
 import { db, schema } from "@/lib/db";
 import { and, desc, eq, gt, lte } from "drizzle-orm";
 import { convert, prefetchRates } from "@/lib/fx";
+import { getOwner, ownedBy } from "@/lib/db/scope";
 import { isLiability } from "@/lib/account-types";
 import { monthlyEquivalent } from "@/lib/flows";
 import {
@@ -56,17 +57,16 @@ export async function computeNetWorthAsOf(
   asOfDate: string,
   baseCurrency: string,
 ): Promise<AsOfNetWorth> {
+  // listAccounts is owner-scoped; the per-account selects below also
+  // filter so a corrupted accountId can't leak across tenants.
   const accounts = await listAccounts();
-  // Pre-resolve every (account ccy → base) rate so the per-account
-  // FX conversions don't fan out into N awaited calls in a tight
-  // loop. (Same trick as the live aggregators.)
+  const owner = await getOwner();
   const rates = await prefetchRates(
     accounts.map((a) => [a.currency, baseCurrency] as const),
   );
 
   const perAccount: AsOfNetWorth["perAccount"] = await Promise.all(
     accounts.map(async (a) => {
-      // Latest snapshot at or before asOfDate.
       const snap = await db
         .select()
         .from(schema.valueSnapshots)
@@ -74,6 +74,7 @@ export async function computeNetWorthAsOf(
           and(
             eq(schema.valueSnapshots.accountId, a.id),
             lte(schema.valueSnapshots.asOf, asOfDate),
+            ownedBy(schema.valueSnapshots.ownerUserId, owner),
           ),
         )
         .orderBy(
@@ -95,7 +96,6 @@ export async function computeNetWorthAsOf(
           inBase: 0,
         };
       }
-      // Transactions strictly after snapshot, on or before asOfDate.
       const txs = await db
         .select()
         .from(schema.transactions)
@@ -103,6 +103,7 @@ export async function computeNetWorthAsOf(
           and(
             gt(schema.transactions.occurredAt, latest.asOf),
             lte(schema.transactions.occurredAt, asOfDate),
+            ownedBy(schema.transactions.ownerUserId, owner),
           ),
         );
       let delta = 0;
