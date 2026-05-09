@@ -1,5 +1,44 @@
 # Changelog
 
+## [1.2.0](https://github.com/9trocode/Cairn/compare/v1.1.0...v1.2.0) (2026-05-09)
+
+
+### Features
+
+* **accounts:** respect month filter — view balances as of past months ([0b15f54](https://github.com/9trocode/Cairn/commit/0b15f54a44889ad0459cbff9d38db4274176157e))
+* **advisor:** "worth knowing" panel for budgets — market-anchored ([ba7c753](https://github.com/9trocode/Cairn/commit/ba7c753e7e292ee65f938623f8fd5156afe09f99))
+* **advisor:** proactive idle-cash alert + goal "worth knowing" panel ([03e8de7](https://github.com/9trocode/Cairn/commit/03e8de7d56b1fb85c3a080934dc57b94bf68fa21))
+* **auth:** admin-controlled registration for additional members ([17ea950](https://github.com/9trocode/Cairn/commit/17ea95032087f7ed87761f27227fff594b76e467))
+* **budgets,goals:** surface "Description" field as advisor context ([7c9f763](https://github.com/9trocode/Cairn/commit/7c9f76348c350a4f76742022bfa3ddcc94e20daf))
+* **db:** introduce DB adapter — keep SQLite default, leave a Postgres slot ([d691f54](https://github.com/9trocode/Cairn/commit/d691f545b1b566cb00f0cbed4613d368237726a9))
+* **exports:** branded month-on-month Excel + PDF statements ([a58e474](https://github.com/9trocode/Cairn/commit/a58e47470d797026cd0b81176033ecf9fce9c011))
+* **landing:** hero acknowledges multi-tenant deployment modes ([c69332e](https://github.com/9trocode/Cairn/commit/c69332ef1c9df27983a6fce200039715b8197ecd))
+* **month-filter:** respect filter on alerts, cash-flow, net-worth ([e1107d7](https://github.com/9trocode/Cairn/commit/e1107d761124a9c4f8b968807781ded6535ef822))
+* **multitenancy:** isolated-tenant data scoping via per-tenant SQLite ([26d0514](https://github.com/9trocode/Cairn/commit/26d0514ab27eaa572686d5d78085046d34324cd7))
+* **multitenancy:** per-tenant settings — currency, AI keys, screen lock, panic URL ([77441e3](https://github.com/9trocode/Cairn/commit/77441e3d36f5b7b62fd7c48cf46c3bcf246ee465))
+* **security:** screen lock + panic mode ([6f7bd98](https://github.com/9trocode/Cairn/commit/6f7bd98ab416bb2ba49bc6b747de2089dabc5c1e))
+* **ui:** real user identity in sidebar + dashboard greeting ([1876656](https://github.com/9trocode/Cairn/commit/1876656ffbea775ab1e534a0b37ed49c74857476))
+
+
+### Bug Fixes
+
+* **accounts:** replace flow projection with month actuals on past-month view ([a11b11c](https://github.com/9trocode/Cairn/commit/a11b11ce84af0eec9d88e2a415be90d9ad03eca5))
+* **advisor:** chat system prompt now uses scope-aware list helpers ([eb08b11](https://github.com/9trocode/Cairn/commit/eb08b11fa08e8a75e2b6481eed35b0cfbe8563ab))
+* **auth:** /api/auth/logout 500 — derive redirect URL from request ([27a2df8](https://github.com/9trocode/Cairn/commit/27a2df88f2adcf2729e7405c166bfad2664f9fb5))
+* **auth:** logout reachable + GET handler + bulletproof redirect ([2d8f36f](https://github.com/9trocode/Cairn/commit/2d8f36f543a3bbd8f542ed59c19079545bfbbb64))
+* **auth:** logout reliably clears the session cookie ([86542cf](https://github.com/9trocode/Cairn/commit/86542cf36af1c91caab7c7673839dd8eb993bb1f))
+* **brand:** logo PNGs use the actual brand charcoal, not teal ([8b8a50b](https://github.com/9trocode/Cairn/commit/8b8a50b8346fee98dbdebd48b5c01437cc717928))
+* **members:** Radix Select rejects empty string — use "0" sentinel for "Never expires" ([22a48b0](https://github.com/9trocode/Cairn/commit/22a48b0e769af686580d2e9468cc2c12741f1612))
+* **multitenancy:** close remaining isolation holes across advisor + UI ([b1b89f3](https://github.com/9trocode/Cairn/commit/b1b89f33bbddc97e5f5c5d003a5978279f48d1d2))
+* **multitenancy:** settings reads strictly per-tenant — no host fallback ([ad3e71d](https://github.com/9trocode/Cairn/commit/ad3e71d65f9e0c4ba31afeedfdbfd3825423e148))
+* **registration:** isolated tenants land in welcome flow, not host dashboard ([a50f226](https://github.com/9trocode/Cairn/commit/a50f226850ce4f513082868a87abf75e8fcb2880))
+* repair corrupted LandingPage and fix session import ([75480cf](https://github.com/9trocode/Cairn/commit/75480cf4c74a614b0c90835c1e62c6f178879b46))
+
+
+### Performance Improvements
+
+* **aggregation:** batch computeNetWorthAsOf + dedupe export passes ([1594c95](https://github.com/9trocode/Cairn/commit/1594c9595ad1cd82fce13413744201aaf516a174))
+
 ## [1.1.0](https://github.com/9trocode/Fmanager/compare/v1.0.0...v1.1.0) (2026-05-08)
 
 
