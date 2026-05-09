@@ -71,6 +71,8 @@ function createSqliteAdapter(): DbAdapter {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { drizzle } = require("drizzle-orm/better-sqlite3") as typeof import("drizzle-orm/better-sqlite3");
   // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { migrate } = require("drizzle-orm/better-sqlite3/migrator") as typeof import("drizzle-orm/better-sqlite3/migrator");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { existsSync, mkdirSync } = require("node:fs") as typeof import("node:fs");
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { dirname } = require("node:path") as typeof import("node:path");
@@ -91,9 +93,32 @@ function createSqliteAdapter(): DbAdapter {
   sqlite.pragma("synchronous = NORMAL");
   sqlite.pragma("temp_store = MEMORY");
 
+  const handle = drizzle(sqlite, { schema: sqliteSchema });
+
+  // Auto-apply pending migrations on first open. Replaces the old
+  // `predev: drizzle-kit push --force` script which:
+  //   1. ran on every `pnpm dev` even if nothing changed (slow)
+  //   2. used --force, accepting destructive ALTER TABLE plans
+  //      silently — a column rename inferred wrong could drop data
+  //   3. didn't run in production at all, so prod relied on a
+  //      separate manual step
+  // Now: dev + prod both go through the same migrations folder, no
+  // manual step, no destructive `--force`. Skipped via the env var
+  // for the rare case an operator wants full control.
+  if (process.env.DATABASE_AUTO_MIGRATE !== "0") {
+    try {
+      migrate(handle, { migrationsFolder: "drizzle" });
+    } catch (err) {
+      // Don't crash the process on migration failure during dev/HMR
+      // or when the migrations folder is missing in a checked-out
+      // copy. Log loudly so the operator notices.
+      console.error("[db] migration failed:", err);
+    }
+  }
+
   return {
     driver: "sqlite",
-    db: drizzle(sqlite, { schema: sqliteSchema }),
+    db: handle,
     schema: sqliteSchema,
     async dispose() {
       sqlite.close();

@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { MobileTopBar, Sidebar } from "@/components/app/sidebar";
 import {
   getAdminProfile,
@@ -11,7 +12,7 @@ import { RoleProvider } from "@/components/app/role-context";
 import { FloatingAdvisor } from "@/components/app/floating-advisor";
 import { ScreenLockProvider } from "@/components/app/screen-lock";
 import { accrueDueFlows } from "@/lib/flow-accrual";
-import { getSetting } from "@/lib/db/queries";
+import { getSettings } from "@/lib/db/queries";
 import {
   countActiveAlerts,
   runAdvisorChecks,
@@ -31,60 +32,53 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // First-run: no admin yet → force setup.
+  // First-run: no admin yet → force setup. The session helpers are
+  // now react/cache-wrapped — multiple calls in this render share the
+  // same cookie unpack + admin_password_hash read.
   if (!(await isAdminConfigured())) {
     redirect("/welcome?step=0");
   }
   if (!(await isAuthenticated())) redirect("/login");
-  const role = (await getRole()) ?? "admin";
 
-  // Lazy auto-accrual. Once the user is past auth, post any recurring
-  // flows whose cadence has elapsed since the last accrual — that's how
-  // a monthly salary turns into real transactions on the linked account
-  // and net worth actually reflects it. Cheap when nothing is due.
-  // Viewer role is read-only by design, so skip writes there.
+  // Everything below is independent — fan it out in parallel.
+  // Includes: role + active user, alert count for the sidebar badge,
+  // and the two screen-lock settings (combined into one getSettings
+  // call that hits the table once for both keys).
+  const [role, currentUser, countResult, lockSettings] = await Promise.all([
+    getRole().then((r) => r ?? "admin"),
+    getCurrentUser(),
+    countActiveAlerts().catch(() => ({ total: 0, critical: 0 })),
+    getSettings(["screen_lock_timeout_minutes", "panic_redirect_url"]),
+  ]);
+
+  // Lazy auto-accrual + advisor check. Both write to the DB but
+  // explicitly throttle per-tenant inside, so most renders are no-ops.
+  // Move them off the response path with `after()` so the user gets
+  // the page back even when a tenant's throttle window opens. The
+  // first navigation after a 30-min gap previously paid the full
+  // accrual + alert recompute latency before any HTML streamed.
   if (role === "admin") {
-    try {
-      await accrueDueFlows();
-    } catch (err) {
-      // Don't fail the whole layout if accrual hits a snag — log and
-      // let the user keep using the app.
-      console.error("[accrueDueFlows] failed:", err);
-    }
-    // Same throttle pattern as accrueDueFlows — runs at most every
-    // 30 minutes per process. Keeps the proactive alerts surface in
-    // sync without thrashing the DB on every nav.
-    try {
-      await runAdvisorChecks();
-    } catch (err) {
-      console.error("[runAdvisorChecks] failed:", err);
-    }
+    after(async () => {
+      try {
+        await accrueDueFlows();
+      } catch (err) {
+        console.error("[accrueDueFlows] failed:", err);
+      }
+      try {
+        await runAdvisorChecks();
+      } catch (err) {
+        console.error("[runAdvisorChecks] failed:", err);
+      }
+    });
   }
 
-  // Drives the sidebar badge. Cheap GROUP BY query — runs after the
-  // throttled check above so the count reflects the freshest state.
-  let alertCount = 0;
-  let alertCritical = 0;
-  try {
-    const c = await countActiveAlerts();
-    alertCount = c.total;
-    alertCritical = c.critical;
-  } catch {
-    // Non-fatal — render without a badge.
-  }
+  const alertCount = countResult.total;
+  const alertCritical = countResult.critical;
+  const idleMinutes = Number(lockSettings.screen_lock_timeout_minutes) || 0;
+  const panicRedirectUrl = lockSettings.panic_redirect_url || "/login";
 
-  // Screen-lock + panic settings, threaded into the client provider.
-  // Defaults: idle lock disabled, panic redirects to /login.
-  const idleMinutesRaw = await getSetting("screen_lock_timeout_minutes");
-  const idleMinutes = Number(idleMinutesRaw) || 0;
-  const panicRedirectUrl =
-    (await getSetting("panic_redirect_url")) || "/login";
-
-  // Sidebar identity: pull the active user's display label.
-  //   • settings-admin host → admin_name / admin_email
-  //   • invited or isolated user → users.name / users.email
-  // Falls back to "admin" only when nothing is set (legacy / dev).
-  const currentUser = await getCurrentUser();
+  // Sidebar identity. getCurrentUser was already part of the Promise.all
+  // above; only fetch admin profile when no user row matched (host).
   let whoami: { label: string; sub?: string | null } | null = null;
   if (currentUser) {
     const label = currentUser.name?.trim() || currentUser.email;

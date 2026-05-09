@@ -8,7 +8,7 @@ import { resolveMonthKey } from "@/lib/month-filter";
 import { EmptyState } from "@/components/app/empty-state";
 import { AddAccountDialog } from "@/components/app/add-account-dialog";
 import { AddGrantDialog } from "@/components/app/add-grant-dialog";
-import { getBaseCurrency, getSetting } from "@/lib/db/queries";
+import { getSettings } from "@/lib/db/queries";
 import { getAdminProfile, getCurrentUser } from "@/lib/auth/session";
 import { listActiveAlerts } from "@/lib/advisor-alerts";
 import {
@@ -54,21 +54,25 @@ export default async function DashboardPage({
 }: {
   searchParams: Promise<{ m?: string }>;
 }) {
-  const onboardingComplete =
-    (await getSetting("onboarding_complete")) === "true";
-  if (!onboardingComplete) {
+  // One settings query covers the redirect gate + base currency.
+  // Was: 2 sequential getSetting() calls; now 1 batched read.
+  const params = await searchParams;
+  const [settings, monthKey, currentUser] = await Promise.all([
+    getSettings(["onboarding_complete", "base_currency"]),
+    resolveMonthKey(params.m),
+    // currentUser was already memoised by the (app) layout's
+    // getCurrentUser() call → this is a cache hit, no extra query.
+    getCurrentUser(),
+  ]);
+  if (settings.onboarding_complete !== "true") {
     redirect("/welcome");
   }
-
-  const params = await searchParams;
-  const monthKey = await resolveMonthKey(params.m);
-  const baseCurrency = await getBaseCurrency();
+  const baseCurrency = settings.base_currency ?? "USD";
 
   // Two cheap-but-shared awaits up front: net worth (for empty-state)
-  // and this-month label (for the header). Both memoised.
-  // Active alerts pull alongside — the banner only renders criticals,
-  // but the query is cheap and shared with the (app) layout's count
-  // via the underlying drizzle prepared statement.
+  // and this-month label (for the header). Both memoised. Active
+  // alerts pull alongside — the banner only renders criticals, but
+  // the query is cheap and shared with the (app) layout's count.
   const [summary, month, activeAlerts] = await Promise.all([
     computeNetWorth(baseCurrency),
     computeThisMonthActuals(baseCurrency, monthKey),
@@ -79,7 +83,6 @@ export default async function DashboardPage({
   // Personalize the page title with the active user's first name —
   // pulls from `users.name` for invited/isolated accounts, falls back
   // to the host admin profile for the settings-admin session.
-  const currentUser = await getCurrentUser();
   let firstName: string | null = null;
   if (currentUser?.name) {
     firstName = currentUser.name.trim().split(/\s+/)[0] ?? null;

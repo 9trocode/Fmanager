@@ -29,42 +29,43 @@ import { AdminDataTools } from "@/components/app/admin-data-tools";
 import { DataTools } from "@/components/app/data-tools";
 import { MembersManager } from "@/components/app/members-manager";
 import { StatementExport } from "@/components/app/statement-export";
-import { getSetting, getSettings, listDecisions } from "@/lib/db/queries";
+import { getSettings, listDecisions } from "@/lib/db/queries";
 import { listActiveInvites, listUsers } from "@/lib/db/users";
 import { getAdminProfile, getCurrentUser } from "@/lib/auth/session";
 
 export default async function SettingsPage() {
-  const [
-    settings,
-    decisions,
-    fxLastRefresh,
-    idleMinutesRaw,
-    panicUrl,
-    registrationModeRaw,
-    members,
-    invites,
-    ownerProfile,
-  ] = await Promise.all([
-    getSettings([
-      "base_currency",
-      "advisor_provider",
-      "advisor_model",
-      "anthropic_api_key",
-      "openai_api_key",
-      "google_api_key",
-    ]),
-    listDecisions(),
-    getSetting("fx_last_refresh"),
-    getSetting("screen_lock_timeout_minutes"),
-    getSetting("panic_redirect_url"),
-    getSetting("registration_mode"),
-    listUsers(),
-    listActiveInvites(),
-    getAdminProfile(),
-  ]);
+  // One getSettings() collapses every setting key the page needs into
+  // a single SQLite query (was 4 separate getSetting() calls + the
+  // bigger getSettings() — now all keys travel together). Reduces the
+  // settings-table reads from 5 queries to 1.
+  const [allSettings, decisions, members, invites, ownerProfile, currentUser] =
+    await Promise.all([
+      getSettings([
+        "base_currency",
+        "advisor_provider",
+        "advisor_model",
+        "anthropic_api_key",
+        "openai_api_key",
+        "google_api_key",
+        "fx_last_refresh",
+        "screen_lock_timeout_minutes",
+        "panic_redirect_url",
+        "registration_mode",
+      ]),
+      listDecisions(),
+      listUsers(),
+      listActiveInvites(),
+      getAdminProfile(),
+      getCurrentUser(),
+    ]);
+  const settings = allSettings;
+  const fxLastRefresh = allSettings.fx_last_refresh;
+  const idleMinutesRaw = allSettings.screen_lock_timeout_minutes;
+  const panicUrl = allSettings.panic_redirect_url;
+  const registrationModeRaw = allSettings.registration_mode;
+
   // Isolated tenants are admins of their own silo only — they shouldn't
   // see the host's Members panel or sample-data tools.
-  const currentUser = await getCurrentUser();
   const isHost = !currentUser || currentUser.dataScope === "shared";
   const registrationMode: "closed" | "invite" | "open" =
     registrationModeRaw === "invite" || registrationModeRaw === "open"

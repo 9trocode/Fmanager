@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import {
   createHmac,
   randomBytes,
@@ -22,14 +23,18 @@ type HostSettingKey =
   | "admin_password_hash"
   | "registration_mode";
 
-async function getHostSetting(key: HostSettingKey): Promise<string | null> {
+// Per-request memo. The (app) layout walks isAdminConfigured →
+// isAuthenticated → getRole → getCurrentUser, and each independently
+// asked for admin_email / admin_password_hash. Without a cache, that's
+// 4 redundant SQLite reads of the same key per layout render.
+const getHostSetting = cache(async (key: HostSettingKey): Promise<string | null> => {
   const row = await hostDb
     .select()
     .from(schema.settings)
     .where(eq(schema.settings.key, key))
     .limit(1);
   return row[0]?.value ?? null;
-}
+});
 
 async function setHostSetting(key: HostSettingKey, value: string | null) {
   if (value == null || value === "") {
@@ -167,24 +172,24 @@ function constantTimeStringEq(a: string, b: string): boolean {
  *  - DB has a stored admin_password_hash, OR
  *  - env ADMIN_PASSWORD is set (legacy / break-glass).
  */
-export async function isAdminConfigured(): Promise<boolean> {
+export const isAdminConfigured = cache(async (): Promise<boolean> => {
   if (process.env.ADMIN_PASSWORD) return true;
   const hash = await getHostSetting("admin_password_hash");
   return Boolean(hash);
-}
+});
 
 export type AdminProfile = {
   email: string | null;
   name: string | null;
 };
 
-export async function getAdminProfile(): Promise<AdminProfile> {
+export const getAdminProfile = cache(async (): Promise<AdminProfile> => {
   const [email, name] = await Promise.all([
     getHostSetting("admin_email"),
     getHostSetting("admin_name"),
   ]);
   return { email, name };
-}
+});
 
 export type SetupAdminInput = {
   email: string;
@@ -312,27 +317,36 @@ export async function destroySession() {
   });
 }
 
-/** True only when a configured admin exists AND a valid session cookie is present. */
-export async function isAuthenticated(): Promise<boolean> {
-  if (!(await isAdminConfigured())) return true; // dev mode passthrough
+// Per-request cookie + token unpack memo. The (app) layout calls
+// isAuthenticated, getRole, getCurrentUser, getActiveOwnerUserId
+// in sequence — without this each one re-runs `await cookies()` +
+// the HMAC verify in `unpack()`. Tiny on its own, ~free to dedupe.
+const getUnpackedToken = cache(async (): Promise<{
+  role: Role;
+  userId: number | null;
+  expiresAt: number;
+} | null> => {
   const jar = await cookies();
   const token = jar.get(COOKIE_NAME)?.value;
-  if (!token) return false;
-  return unpack(token) !== null;
-}
+  if (!token) return null;
+  return unpack(token);
+});
+
+/** True only when a configured admin exists AND a valid session cookie is present. */
+export const isAuthenticated = cache(async (): Promise<boolean> => {
+  if (!(await isAdminConfigured())) return true; // dev mode passthrough
+  return (await getUnpackedToken()) !== null;
+});
 
 /**
  * Returns the active role, or null if unauthenticated.
  * In dev (no admin configured) returns "admin" so the dev experience is unchanged.
  */
-export async function getRole(): Promise<Role | null> {
+export const getRole = cache(async (): Promise<Role | null> => {
   if (!(await isAdminConfigured())) return "admin";
-  const jar = await cookies();
-  const token = jar.get(COOKIE_NAME)?.value;
-  if (!token) return null;
-  const unpacked = unpack(token);
+  const unpacked = await getUnpackedToken();
   return unpacked ? unpacked.role : null;
-}
+});
 
 export async function isAdmin(): Promise<boolean> {
   return (await getRole()) === "admin";
@@ -347,12 +361,9 @@ export async function isViewer(): Promise<boolean> {
  * `users` table. Returns null for the implicit settings-admin and
  * for env-based viewer/admin sessions.
  */
-export async function getCurrentUser() {
+export const getCurrentUser = cache(async () => {
   if (!(await isAdminConfigured())) return null;
-  const jar = await cookies();
-  const token = jar.get(COOKIE_NAME)?.value;
-  if (!token) return null;
-  const unpacked = unpack(token);
+  const unpacked = await getUnpackedToken();
   if (!unpacked || unpacked.userId == null) return null;
   const rows = await hostDb
     .select()
@@ -360,7 +371,7 @@ export async function getCurrentUser() {
     .where(eq(schema.users.id, unpacked.userId))
     .limit(1);
   return rows[0] ?? null;
-}
+});
 
 /**
  * The "data scope" for the active session. Returns null for the host
@@ -371,11 +382,11 @@ export async function getCurrentUser() {
  * Threaded through every query that touches owned tables so SQL-level
  * filters enforce data isolation in a single shared SQLite file.
  */
-export async function getActiveOwnerUserId(): Promise<number | null> {
+export const getActiveOwnerUserId = cache(async (): Promise<number | null> => {
   const user = await getCurrentUser();
   if (!user) return null;
   return user.dataScope === "isolated" ? user.id : null;
-}
+});
 
 /** Throws if the caller is not admin. Use at the top of mutation server actions. */
 export async function assertAdmin(): Promise<void> {
