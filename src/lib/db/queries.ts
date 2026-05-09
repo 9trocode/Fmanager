@@ -1,7 +1,8 @@
 import "server-only";
 import { cache } from "react";
 import { and, asc, desc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
-import { db, hostDb, schema } from "@/lib/db";
+import { db, schema } from "@/lib/db";
+import { getOwner, ownedBy } from "@/lib/db/scope";
 import { convert } from "@/lib/fx";
 import { localToday } from "@/lib/dates";
 import type { AccountType, TransactionKind } from "@/lib/db/schema";
@@ -89,9 +90,13 @@ export const getBaseCurrency = cache(async (): Promise<string> => {
 });
 
 export async function listDecisions(opts: { onlyOpen?: boolean } = {}) {
+  const owner = await getOwner();
   const where = opts.onlyOpen
-    ? eq(schema.decisions.status, "open")
-    : undefined;
+    ? and(
+        eq(schema.decisions.status, "open"),
+        ownedBy(schema.decisions.ownerUserId, owner),
+      )
+    : ownedBy(schema.decisions.ownerUserId, owner);
   return db
     .select()
     .from(schema.decisions)
@@ -100,46 +105,78 @@ export async function listDecisions(opts: { onlyOpen?: boolean } = {}) {
 }
 
 export async function getDecision(id: number) {
+  const owner = await getOwner();
   const rows = await db
     .select()
     .from(schema.decisions)
-    .where(eq(schema.decisions.id, id))
+    .where(
+      and(
+        eq(schema.decisions.id, id),
+        ownedBy(schema.decisions.ownerUserId, owner),
+      ),
+    )
     .limit(1);
   return rows[0] ?? null;
 }
 
 export async function listAccounts(opts: { includeArchived?: boolean } = {}) {
+  const owner = await getOwner();
   return db
     .select()
     .from(schema.accounts)
-    .where(opts.includeArchived ? undefined : eq(schema.accounts.archived, false))
+    .where(
+      opts.includeArchived
+        ? ownedBy(schema.accounts.ownerUserId, owner)
+        : and(
+            eq(schema.accounts.archived, false),
+            ownedBy(schema.accounts.ownerUserId, owner),
+          ),
+    )
     .orderBy(desc(schema.accounts.createdAt));
 }
 
 export async function getAccount(id: number) {
+  const owner = await getOwner();
   const rows = await db
     .select()
     .from(schema.accounts)
-    .where(eq(schema.accounts.id, id))
+    .where(
+      and(
+        eq(schema.accounts.id, id),
+        ownedBy(schema.accounts.ownerUserId, owner),
+      ),
+    )
     .limit(1);
   return rows[0] ?? null;
 }
 
 export async function getLatestSnapshot(accountId: number) {
+  const owner = await getOwner();
   const rows = await db
     .select()
     .from(schema.valueSnapshots)
-    .where(eq(schema.valueSnapshots.accountId, accountId))
+    .where(
+      and(
+        eq(schema.valueSnapshots.accountId, accountId),
+        ownedBy(schema.valueSnapshots.ownerUserId, owner),
+      ),
+    )
     .orderBy(desc(schema.valueSnapshots.asOf), desc(schema.valueSnapshots.id))
     .limit(1);
   return rows[0] ?? null;
 }
 
 export async function listSnapshots(accountId: number) {
+  const owner = await getOwner();
   return db
     .select()
     .from(schema.valueSnapshots)
-    .where(eq(schema.valueSnapshots.accountId, accountId))
+    .where(
+      and(
+        eq(schema.valueSnapshots.accountId, accountId),
+        ownedBy(schema.valueSnapshots.ownerUserId, owner),
+      ),
+    )
     .orderBy(desc(schema.valueSnapshots.asOf), desc(schema.valueSnapshots.id));
 }
 
@@ -171,9 +208,7 @@ export async function getEffectiveBalance(
   latestAsOf: string | null;
 }> {
   const upperBound = asOfDate ?? localToday();
-  // Latest snapshot AT OR BEFORE the upper bound. For asOfDate=today
-  // this is the same as getLatestSnapshot; for past dates it picks
-  // whatever snapshot was current then.
+  const owner = await getOwner();
   const snapRows = await db
     .select()
     .from(schema.valueSnapshots)
@@ -181,6 +216,7 @@ export async function getEffectiveBalance(
       and(
         eq(schema.valueSnapshots.accountId, accountId),
         lte(schema.valueSnapshots.asOf, upperBound),
+        ownedBy(schema.valueSnapshots.ownerUserId, owner),
       ),
     )
     .orderBy(
@@ -222,6 +258,7 @@ export async function getEffectiveBalance(
             eq(schema.transactions.kind, "transfer"),
           ),
         ),
+        ownedBy(schema.transactions.ownerUserId, owner),
       ),
     );
 
@@ -272,12 +309,10 @@ export async function listAccountsWithEffective(
 
   const ids = accounts.map((a) => a.id);
   const upperBound = opts.asOfDate ?? localToday();
+  const owner = await getOwner();
 
-  // Latest snapshot per account at or before upperBound. Subquery
-  // bounds asOf by upperBound so a "view as of last March" picks
-  // the snapshot that was current then, not today's. The
-  // (account_id, as_of) composite index makes this a b-tree walk
-  // per account, not a scan.
+  // Snapshots are scoped via the parent account list (ids belong only
+  // to the active owner). Belt-and-braces: keep the column filter too.
   const latestSnapshots = await db
     .select()
     .from(schema.valueSnapshots)
@@ -285,6 +320,7 @@ export async function listAccountsWithEffective(
       and(
         inArray(schema.valueSnapshots.accountId, ids),
         lte(schema.valueSnapshots.asOf, upperBound),
+        ownedBy(schema.valueSnapshots.ownerUserId, owner),
         sql`(${schema.valueSnapshots.accountId}, ${schema.valueSnapshots.asOf}, ${schema.valueSnapshots.id}) IN (
           SELECT account_id, MAX(as_of), MAX(id)
           FROM value_snapshots
@@ -322,6 +358,7 @@ export async function listAccountsWithEffective(
             ),
             gte(schema.transactions.occurredAt, earliestAsOf),
             lte(schema.transactions.occurredAt, upperBound),
+            ownedBy(schema.transactions.ownerUserId, owner),
           ),
         )
     : [];
@@ -376,38 +413,56 @@ export async function listAccountsWithEffective(
 }
 
 export async function listGrants() {
+  const owner = await getOwner();
   return db
     .select()
     .from(schema.equityGrants)
+    .where(ownedBy(schema.equityGrants.ownerUserId, owner))
     .orderBy(desc(schema.equityGrants.createdAt));
 }
 
 export async function getGrant(id: number) {
+  const owner = await getOwner();
   const rows = await db
     .select()
     .from(schema.equityGrants)
-    .where(eq(schema.equityGrants.id, id))
+    .where(
+      and(
+        eq(schema.equityGrants.id, id),
+        ownedBy(schema.equityGrants.ownerUserId, owner),
+      ),
+    )
     .limit(1);
   return rows[0] ?? null;
 }
 
 export async function listFlows(opts: { includeArchived?: boolean } = {}) {
+  const owner = await getOwner();
   return db
     .select()
     .from(schema.recurringFlows)
     .where(
       opts.includeArchived
-        ? undefined
-        : eq(schema.recurringFlows.archived, false),
+        ? ownedBy(schema.recurringFlows.ownerUserId, owner)
+        : and(
+            eq(schema.recurringFlows.archived, false),
+            ownedBy(schema.recurringFlows.ownerUserId, owner),
+          ),
     )
     .orderBy(desc(schema.recurringFlows.createdAt));
 }
 
 export async function getFlow(id: number) {
+  const owner = await getOwner();
   const rows = await db
     .select()
     .from(schema.recurringFlows)
-    .where(eq(schema.recurringFlows.id, id))
+    .where(
+      and(
+        eq(schema.recurringFlows.id, id),
+        ownedBy(schema.recurringFlows.ownerUserId, owner),
+      ),
+    )
     .limit(1);
   return rows[0] ?? null;
 }
@@ -421,15 +476,20 @@ export async function listAccountFlows(
   accountId: number,
   opts: { includeArchived?: boolean } = {},
 ) {
+  const owner = await getOwner();
   return db
     .select()
     .from(schema.recurringFlows)
     .where(
       opts.includeArchived
-        ? eq(schema.recurringFlows.accountId, accountId)
+        ? and(
+            eq(schema.recurringFlows.accountId, accountId),
+            ownedBy(schema.recurringFlows.ownerUserId, owner),
+          )
         : and(
             eq(schema.recurringFlows.accountId, accountId),
             eq(schema.recurringFlows.archived, false),
+            ownedBy(schema.recurringFlows.ownerUserId, owner),
           ),
     )
     .orderBy(desc(schema.recurringFlows.createdAt));
@@ -437,6 +497,7 @@ export async function listAccountFlows(
 
 export async function accountsByTypes(types: AccountType[]) {
   if (types.length === 0) return [];
+  const owner = await getOwner();
   return db
     .select()
     .from(schema.accounts)
@@ -444,27 +505,38 @@ export async function accountsByTypes(types: AccountType[]) {
       and(
         eq(schema.accounts.archived, false),
         inArray(schema.accounts.type, types),
+        ownedBy(schema.accounts.ownerUserId, owner),
       ),
     );
 }
 
 export async function listSavingsGoals(opts: { includeArchived?: boolean } = {}) {
+  const owner = await getOwner();
   return db
     .select()
     .from(schema.savingsGoals)
     .where(
       opts.includeArchived
-        ? undefined
-        : eq(schema.savingsGoals.archived, false),
+        ? ownedBy(schema.savingsGoals.ownerUserId, owner)
+        : and(
+            eq(schema.savingsGoals.archived, false),
+            ownedBy(schema.savingsGoals.ownerUserId, owner),
+          ),
     )
     .orderBy(desc(schema.savingsGoals.createdAt));
 }
 
 export async function getSavingsGoal(id: number) {
+  const owner = await getOwner();
   const rows = await db
     .select()
     .from(schema.savingsGoals)
-    .where(eq(schema.savingsGoals.id, id))
+    .where(
+      and(
+        eq(schema.savingsGoals.id, id),
+        ownedBy(schema.savingsGoals.ownerUserId, owner),
+      ),
+    )
     .limit(1);
   return rows[0] ?? null;
 }
@@ -479,14 +551,14 @@ export type TransactionFilter = {
 };
 
 export async function listTransactions(filter: TransactionFilter = {}) {
-  const conditions = [];
+  const owner = await getOwner();
+  const conditions = [ownedBy(schema.transactions.ownerUserId, owner)];
   if (filter.accountId != null && Number.isFinite(filter.accountId)) {
-    // Match either source or destination so transfers show on both sides.
     conditions.push(
       or(
         eq(schema.transactions.accountId, filter.accountId),
         eq(schema.transactions.destAccountId, filter.accountId),
-      ),
+      )!,
     );
   }
   if (filter.category) {
@@ -502,11 +574,10 @@ export async function listTransactions(filter: TransactionFilter = {}) {
     conditions.push(lte(schema.transactions.occurredAt, filter.dateTo));
   }
 
-  const where = conditions.length ? and(...conditions) : undefined;
   const baseQuery = db
     .select()
     .from(schema.transactions)
-    .where(where)
+    .where(and(...conditions))
     .orderBy(desc(schema.transactions.occurredAt), desc(schema.transactions.id));
 
   if (filter.limit && filter.limit > 0) {
@@ -516,18 +587,26 @@ export async function listTransactions(filter: TransactionFilter = {}) {
 }
 
 export async function getTransaction(id: number) {
+  const owner = await getOwner();
   const rows = await db
     .select()
     .from(schema.transactions)
-    .where(eq(schema.transactions.id, id))
+    .where(
+      and(
+        eq(schema.transactions.id, id),
+        ownedBy(schema.transactions.ownerUserId, owner),
+      ),
+    )
     .limit(1);
   return rows[0] ?? null;
 }
 
 export async function listTransactionCategories(): Promise<string[]> {
+  const owner = await getOwner();
   const rows = await db
     .selectDistinct({ category: schema.transactions.category })
     .from(schema.transactions)
+    .where(ownedBy(schema.transactions.ownerUserId, owner))
     .orderBy(asc(schema.transactions.category));
   return rows
     .map((r) => r.category)
@@ -542,9 +621,13 @@ export async function listAccountTransactions(
   accountId: number,
   limit?: number,
 ) {
-  const where = or(
-    eq(schema.transactions.accountId, accountId),
-    eq(schema.transactions.destAccountId, accountId),
+  const owner = await getOwner();
+  const where = and(
+    or(
+      eq(schema.transactions.accountId, accountId),
+      eq(schema.transactions.destAccountId, accountId),
+    ),
+    ownedBy(schema.transactions.ownerUserId, owner),
   );
   const baseQuery = db
     .select()
@@ -557,10 +640,6 @@ export async function listAccountTransactions(
 
 /**
  * Transactions in the last `days` days. Used by the advisor system prompt.
- *
- * Local-time bounds — `toISOString().slice(0,10)` would skew by a day
- * for users in non-UTC zones near midnight, dropping yesterday's
- * transactions out of "recent" or pulling tomorrow's in.
  */
 export async function listRecentTransactions(days = 30) {
   const since = new Date();
@@ -569,10 +648,16 @@ export async function listRecentTransactions(days = 30) {
   const m = String(since.getMonth() + 1).padStart(2, "0");
   const d = String(since.getDate()).padStart(2, "0");
   const sinceLocal = `${y}-${m}-${d}`;
+  const owner = await getOwner();
   return db
     .select()
     .from(schema.transactions)
-    .where(gte(schema.transactions.occurredAt, sinceLocal))
+    .where(
+      and(
+        gte(schema.transactions.occurredAt, sinceLocal),
+        ownedBy(schema.transactions.ownerUserId, owner),
+      ),
+    )
     .orderBy(desc(schema.transactions.occurredAt), desc(schema.transactions.id));
 }
 
@@ -580,9 +665,11 @@ export async function listRecentTransactions(days = 30) {
  * Latest N transactions across all accounts.
  */
 export async function listLatestTransactions(limit = 10) {
+  const owner = await getOwner();
   return db
     .select()
     .from(schema.transactions)
+    .where(ownedBy(schema.transactions.ownerUserId, owner))
     .orderBy(desc(schema.transactions.occurredAt), desc(schema.transactions.id))
     .limit(limit);
 }
@@ -594,6 +681,7 @@ export async function listTransactionsBetween(
   startIso: string,
   endIso: string,
 ) {
+  const owner = await getOwner();
   return db
     .select()
     .from(schema.transactions)
@@ -601,15 +689,18 @@ export async function listTransactionsBetween(
       and(
         gte(schema.transactions.occurredAt, startIso),
         lte(schema.transactions.occurredAt, endIso),
+        ownedBy(schema.transactions.ownerUserId, owner),
       ),
     )
     .orderBy(desc(schema.transactions.occurredAt), desc(schema.transactions.id));
 }
 
 export async function listBudgets() {
+  const owner = await getOwner();
   return db
     .select()
     .from(schema.budgets)
+    .where(ownedBy(schema.budgets.ownerUserId, owner))
     .orderBy(asc(schema.budgets.category));
 }
 

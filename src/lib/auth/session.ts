@@ -351,12 +351,15 @@ export async function getCurrentUser() {
 }
 
 /**
- * The active tenant id for the current request — null for the host
- * session (settings-admin or shared-scope user), or a user id for an
- * isolated-scope user. Used to bind the AsyncLocalStorage tenant
- * context at the layout / route boundary.
+ * The "data scope" for the active session. Returns null for the host
+ * (settings-admin or shared-scope user — they read/write rows where
+ * `owner_user_id IS NULL`), or the user's id for isolated-scope users
+ * (they read/write rows where `owner_user_id = <id>`).
+ *
+ * Threaded through every query that touches owned tables so SQL-level
+ * filters enforce data isolation in a single shared SQLite file.
  */
-export async function getActiveTenantId(): Promise<number | null> {
+export async function getActiveOwnerUserId(): Promise<number | null> {
   const user = await getCurrentUser();
   if (!user) return null;
   return user.dataScope === "isolated" ? user.id : null;

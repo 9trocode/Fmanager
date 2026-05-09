@@ -2,9 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { assertAdmin } from "@/lib/auth/session";
+import { getOwner, ownedBy } from "@/lib/db/scope";
 
 const GRANT_TYPES = ["iso", "nso", "rsu", "founder_shares", "safe", "other"] as const;
 type GrantType = (typeof GRANT_TYPES)[number];
@@ -75,7 +76,10 @@ export async function createGrant(formData: FormData) {
   if (fields.vestedShares > fields.totalShares) {
     throw new Error("Vested shares cannot exceed total shares.");
   }
-  await db.insert(schema.equityGrants).values(fields);
+  const owner = await getOwner();
+  await db
+    .insert(schema.equityGrants)
+    .values({ ...fields, ownerUserId: owner });
   revalidate();
 }
 
@@ -88,10 +92,16 @@ export async function updateGrant(formData: FormData) {
   if (fields.vestedShares > fields.totalShares) {
     throw new Error("Vested shares cannot exceed total shares.");
   }
+  const owner = await getOwner();
   await db
     .update(schema.equityGrants)
     .set({ ...fields, updatedAt: new Date().toISOString() })
-    .where(eq(schema.equityGrants.id, id));
+    .where(
+      and(
+        eq(schema.equityGrants.id, id),
+        ownedBy(schema.equityGrants.ownerUserId, owner),
+      ),
+    );
   revalidate(id);
 }
 
@@ -99,7 +109,15 @@ export async function deleteGrant(formData: FormData) {
   await assertAdmin();
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
-  await db.delete(schema.equityGrants).where(eq(schema.equityGrants.id, id));
+  const owner = await getOwner();
+  await db
+    .delete(schema.equityGrants)
+    .where(
+      and(
+        eq(schema.equityGrants.id, id),
+        ownedBy(schema.equityGrants.ownerUserId, owner),
+      ),
+    );
   revalidate();
   redirect("/equity");
 }

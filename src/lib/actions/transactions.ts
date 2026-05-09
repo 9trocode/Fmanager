@@ -1,10 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { transactionKinds } from "@/lib/db/schema";
 import { assertAdmin } from "@/lib/auth/session";
+import { getOwner, ownedBy } from "@/lib/db/scope";
 import { localToday } from "@/lib/dates";
 
 function revalidate(accountId?: number) {
@@ -102,7 +103,10 @@ function commonFields(formData: FormData) {
 export async function createTransaction(formData: FormData) {
   await assertAdmin();
   const fields = commonFields(formData);
-  await db.insert(schema.transactions).values(fields);
+  const owner = await getOwner();
+  await db
+    .insert(schema.transactions)
+    .values({ ...fields, ownerUserId: owner });
   revalidate(fields.accountId);
 }
 
@@ -111,10 +115,16 @@ export async function updateTransaction(formData: FormData) {
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
   const fields = commonFields(formData);
+  const owner = await getOwner();
   await db
     .update(schema.transactions)
     .set({ ...fields, updatedAt: new Date().toISOString() })
-    .where(eq(schema.transactions.id, id));
+    .where(
+      and(
+        eq(schema.transactions.id, id),
+        ownedBy(schema.transactions.ownerUserId, owner),
+      ),
+    );
   revalidate(fields.accountId);
 }
 
@@ -122,12 +132,24 @@ export async function deleteTransaction(formData: FormData) {
   await assertAdmin();
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
-  // Read the row first so we can target revalidation precisely.
+  const owner = await getOwner();
   const existing = await db
     .select()
     .from(schema.transactions)
-    .where(eq(schema.transactions.id, id))
+    .where(
+      and(
+        eq(schema.transactions.id, id),
+        ownedBy(schema.transactions.ownerUserId, owner),
+      ),
+    )
     .limit(1);
-  await db.delete(schema.transactions).where(eq(schema.transactions.id, id));
+  await db
+    .delete(schema.transactions)
+    .where(
+      and(
+        eq(schema.transactions.id, id),
+        ownedBy(schema.transactions.ownerUserId, owner),
+      ),
+    );
   revalidate(existing[0]?.accountId);
 }

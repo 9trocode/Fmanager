@@ -1,9 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { assertAdmin } from "@/lib/auth/session";
+import { getOwner, ownedBy } from "@/lib/db/scope";
 
 function revalidate() {
   revalidatePath("/", "layout");
@@ -42,7 +43,8 @@ function commonFields(formData: FormData) {
 export async function createBudget(formData: FormData) {
   await assertAdmin();
   const fields = commonFields(formData);
-  await db.insert(schema.budgets).values(fields);
+  const owner = await getOwner();
+  await db.insert(schema.budgets).values({ ...fields, ownerUserId: owner });
   revalidate();
 }
 
@@ -51,10 +53,13 @@ export async function updateBudget(formData: FormData) {
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
   const fields = commonFields(formData);
+  const owner = await getOwner();
   await db
     .update(schema.budgets)
     .set({ ...fields, updatedAt: new Date().toISOString() })
-    .where(eq(schema.budgets.id, id));
+    .where(
+      and(eq(schema.budgets.id, id), ownedBy(schema.budgets.ownerUserId, owner)),
+    );
   revalidate();
 }
 
@@ -62,6 +67,11 @@ export async function deleteBudget(formData: FormData) {
   await assertAdmin();
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
-  await db.delete(schema.budgets).where(eq(schema.budgets.id, id));
+  const owner = await getOwner();
+  await db
+    .delete(schema.budgets)
+    .where(
+      and(eq(schema.budgets.id, id), ownedBy(schema.budgets.ownerUserId, owner)),
+    );
   revalidate();
 }

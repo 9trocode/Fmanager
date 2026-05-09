@@ -2,10 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { accountTypes } from "@/lib/db/schema";
 import { assertAdmin } from "@/lib/auth/session";
+import { getOwner, ownedBy } from "@/lib/db/scope";
 import { localToday } from "@/lib/dates";
 
 function revalidate(path?: string) {
@@ -79,9 +80,18 @@ export async function createAccount(formData: FormData) {
     localToday();
   const details = parseDetailFields(formData);
 
+  const owner = await getOwner();
   const [created] = await db
     .insert(schema.accounts)
-    .values({ name, type, currency, institution, notes, ...details })
+    .values({
+      name,
+      type,
+      currency,
+      institution,
+      notes,
+      ...details,
+      ownerUserId: owner,
+    })
     .returning();
 
   if (created) {
@@ -91,6 +101,7 @@ export async function createAccount(formData: FormData) {
       currency,
       asOf,
       source: "manual",
+      ownerUserId: owner,
     });
   }
 
@@ -108,6 +119,7 @@ export async function updateAccount(formData: FormData) {
   const institution = String(formData.get("institution") ?? "").trim() || null;
   const notes = String(formData.get("notes") ?? "").trim() || null;
   const details = parseDetailFields(formData);
+  const owner = await getOwner();
 
   await db
     .update(schema.accounts)
@@ -120,7 +132,12 @@ export async function updateAccount(formData: FormData) {
       ...details,
       updatedAt: new Date().toISOString(),
     })
-    .where(eq(schema.accounts.id, id));
+    .where(
+      and(
+        eq(schema.accounts.id, id),
+        ownedBy(schema.accounts.ownerUserId, owner),
+      ),
+    );
 
   revalidate(`/accounts/${id}`);
 }
@@ -129,10 +146,16 @@ export async function archiveAccount(formData: FormData) {
   await assertAdmin();
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
+  const owner = await getOwner();
   await db
     .update(schema.accounts)
     .set({ archived: true, updatedAt: new Date().toISOString() })
-    .where(eq(schema.accounts.id, id));
+    .where(
+      and(
+        eq(schema.accounts.id, id),
+        ownedBy(schema.accounts.ownerUserId, owner),
+      ),
+    );
   revalidate();
   redirect("/accounts");
 }
@@ -141,10 +164,16 @@ export async function unarchiveAccount(formData: FormData) {
   await assertAdmin();
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
+  const owner = await getOwner();
   await db
     .update(schema.accounts)
     .set({ archived: false, updatedAt: new Date().toISOString() })
-    .where(eq(schema.accounts.id, id));
+    .where(
+      and(
+        eq(schema.accounts.id, id),
+        ownedBy(schema.accounts.ownerUserId, owner),
+      ),
+    );
   revalidate(`/accounts/${id}`);
 }
 
@@ -152,7 +181,15 @@ export async function deleteAccount(formData: FormData) {
   await assertAdmin();
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
-  await db.delete(schema.accounts).where(eq(schema.accounts.id, id));
+  const owner = await getOwner();
+  await db
+    .delete(schema.accounts)
+    .where(
+      and(
+        eq(schema.accounts.id, id),
+        ownedBy(schema.accounts.ownerUserId, owner),
+      ),
+    );
   revalidate();
   redirect("/accounts");
 }
@@ -166,6 +203,7 @@ export async function addSnapshot(formData: FormData) {
   const asOf =
     String(formData.get("as_of") ?? "").trim() ||
     localToday();
+  const owner = await getOwner();
 
   await db.insert(schema.valueSnapshots).values({
     accountId,
@@ -173,6 +211,7 @@ export async function addSnapshot(formData: FormData) {
     currency,
     asOf,
     source: "manual",
+    ownerUserId: owner,
   });
   revalidate(`/accounts/${accountId}`);
 }
@@ -182,6 +221,14 @@ export async function deleteSnapshot(formData: FormData) {
   const id = Number(formData.get("id"));
   const accountId = Number(formData.get("account_id"));
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
-  await db.delete(schema.valueSnapshots).where(eq(schema.valueSnapshots.id, id));
+  const owner = await getOwner();
+  await db
+    .delete(schema.valueSnapshots)
+    .where(
+      and(
+        eq(schema.valueSnapshots.id, id),
+        ownedBy(schema.valueSnapshots.ownerUserId, owner),
+      ),
+    );
   revalidate(Number.isFinite(accountId) ? `/accounts/${accountId}` : undefined);
 }

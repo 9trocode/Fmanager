@@ -18,6 +18,21 @@ const updatedAt = () =>
     .notNull()
     .default(sql`(CURRENT_TIMESTAMP)`);
 
+/**
+ * Owner-scoping column on every user-owned table. NULL = "belongs to
+ * the host" (the implicit settings-admin and every shared-scope user
+ * read/write these rows). A concrete user id pins the row to that
+ * user's isolated tenant.
+ *
+ * Forward-referenced via thunk so the helper can sit above the users
+ * table definition. `onDelete: cascade` so removing an isolated user
+ * cleans up their data.
+ */
+const ownerUserId = () =>
+  integer("owner_user_id").references((): any => users.id, {
+    onDelete: "cascade",
+  });
+
 export const accountTypes = [
   "cash",
   "brokerage",
@@ -64,13 +79,13 @@ export const accounts = sqliteTable(
     loanTermMonths: integer("loan_term_months"),
     paymentDayOfMonth: integer("payment_day_of_month"),
     archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+    ownerUserId: ownerUserId(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => ({
-    // listAccounts() filters by archived everywhere except the
-    // includeArchived path; small cardinality but the index is free.
     archivedIdx: index("accounts_archived_idx").on(t.archived),
+    ownerIdx: index("accounts_owner_idx").on(t.ownerUserId),
   }),
 );
 
@@ -85,16 +100,15 @@ export const valueSnapshots = sqliteTable(
     currency: text("currency").notNull(),
     asOf: text("as_of").notNull(),
     source: text("source").notNull().default("manual"),
+    ownerUserId: ownerUserId(),
     createdAt: createdAt(),
   },
   (t) => ({
-    // Hot path: getLatestSnapshot / getEffectiveBalance read by
-    // accountId ordered by as_of desc. Covering both columns avoids a
-    // re-sort.
     accountAsOfIdx: index("value_snapshots_account_as_of_idx").on(
       t.accountId,
       t.asOf,
     ),
+    ownerIdx: index("value_snapshots_owner_idx").on(t.ownerUserId),
   }),
 );
 
@@ -124,11 +138,13 @@ export const equityGrants = sqliteTable(
     taxRatePct: real("tax_rate_pct"),
     vestingNotes: text("vesting_notes"),
     grantedAt: text("granted_at"),
+    ownerUserId: ownerUserId(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => ({
     accountIdx: index("equity_grants_account_idx").on(t.accountId),
+    ownerIdx: index("equity_grants_owner_idx").on(t.ownerUserId),
   }),
 );
 
@@ -166,12 +182,13 @@ export const decisions = sqliteTable(
       .default("open"),
     decidedAt: text("decided_at"),
     outcome: text("outcome"),
+    ownerUserId: ownerUserId(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => ({
-    // listDecisions({ onlyOpen: true }) is the dominant pattern.
     statusIdx: index("decisions_status_idx").on(t.status),
+    ownerIdx: index("decisions_owner_idx").on(t.ownerUserId),
   }),
 );
 
@@ -225,14 +242,14 @@ export const recurringFlows = sqliteTable(
   nextDueAt: text("next_due_at"),
   archived: integer("archived", { mode: "boolean" }).notNull().default(false),
   notes: text("notes"),
+  ownerUserId: ownerUserId(),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
   },
   (t) => ({
-    // accrueDueFlows() filters by archived=false + accountId not null;
-    // listAccountFlows reads by accountId. Index covers both.
     accountIdx: index("recurring_flows_account_idx").on(t.accountId),
     archivedIdx: index("recurring_flows_archived_idx").on(t.archived),
+    ownerIdx: index("recurring_flows_owner_idx").on(t.ownerUserId),
   }),
 );
 
@@ -287,12 +304,14 @@ export const savingsGoals = sqliteTable(
     }),
     notes: text("notes"),
     archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+    ownerUserId: ownerUserId(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => ({
     archivedIdx: index("savings_goals_archived_idx").on(t.archived),
     accountIdx: index("savings_goals_account_idx").on(t.accountId),
+    ownerIdx: index("savings_goals_owner_idx").on(t.ownerUserId),
   }),
 );
 
@@ -314,15 +333,13 @@ export const budgets = sqliteTable(
       onDelete: "set null",
     }),
     notes: text("notes"),
+    ownerUserId: ownerUserId(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => ({
-    uniqueCategoryCurrency: uniqueIndex("budgets_category_currency").on(
-      t.category,
-      t.currency,
-    ),
     accountIdx: index("budgets_account_idx").on(t.accountId),
+    ownerIdx: index("budgets_owner_idx").on(t.ownerUserId),
   }),
 );
 
@@ -346,28 +363,21 @@ export const transactions = sqliteTable(
     flowId: integer("flow_id").references(() => recurringFlows.id, {
       onDelete: "set null",
     }),
+    ownerUserId: ownerUserId(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => ({
-    // Hot-path indexes. Without these, every "this month spend",
-    // "last 30 days", "by category", "by account" query scans the whole
-    // table — fine at 100 rows, painful at 10k.
     occurredAtIdx: index("transactions_occurred_at_idx").on(t.occurredAt),
     accountIdx: index("transactions_account_idx").on(t.accountId),
     destAccountIdx: index("transactions_dest_account_idx").on(t.destAccountId),
     categoryIdx: index("transactions_category_idx").on(t.category),
     flowIdx: index("transactions_flow_idx").on(t.flowId),
-    // Composite for the very common "transactions on account X since
-    // date Y" pattern used by getEffectiveBalance.
     accountOccurredIdx: index("transactions_account_occurred_idx").on(
       t.accountId,
       t.occurredAt,
     ),
-    // Enforces flow-accrual idempotency: at most one auto-posted tx
-    // per (flow, occurred_at) pair. Manual transactions (flow_id null)
-    // are unaffected via the partial WHERE clause. Lets the accruer
-    // crash + retry without double-posting periods that already landed.
+    ownerIdx: index("transactions_owner_idx").on(t.ownerUserId),
     flowOccurredUniq: uniqueIndex("transactions_flow_occurred_uniq")
       .on(t.flowId, t.occurredAt)
       .where(sql`${t.flowId} IS NOT NULL`),
@@ -388,12 +398,19 @@ export const transactions = sqliteTable(
  * UIMessage. JSON-blob the whole ChatMessage shape so the UI's
  * client-side type can evolve without migrations.
  */
-export const predictionSessions = sqliteTable("prediction_sessions", {
-  id: id(),
-  title: text("title").notNull().default("New prediction"),
-  createdAt: createdAt(),
-  updatedAt: updatedAt(),
-});
+export const predictionSessions = sqliteTable(
+  "prediction_sessions",
+  {
+    id: id(),
+    title: text("title").notNull().default("New prediction"),
+    ownerUserId: ownerUserId(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    ownerIdx: index("prediction_sessions_owner_idx").on(t.ownerUserId),
+  }),
+);
 
 export const predictionMessageRoles = ["user", "advisor", "error"] as const;
 export type PredictionMessageRole = (typeof predictionMessageRoles)[number];
@@ -424,12 +441,19 @@ export const predictionMessages = sqliteTable(
   }),
 );
 
-export const chatSessions = sqliteTable("chat_sessions", {
-  id: id(),
-  title: text("title").notNull().default("New conversation"),
-  createdAt: createdAt(),
-  updatedAt: updatedAt(),
-});
+export const chatSessions = sqliteTable(
+  "chat_sessions",
+  {
+    id: id(),
+    title: text("title").notNull().default("New conversation"),
+    ownerUserId: ownerUserId(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    ownerIdx: index("chat_sessions_owner_idx").on(t.ownerUserId),
+  }),
+);
 
 /**
  * User-saved projection scenarios. Each row is one named projection
@@ -457,12 +481,14 @@ export const savedScenarios = sqliteTable(
     goalId: integer("goal_id").references(() => savingsGoals.id, {
       onDelete: "set null",
     }),
+    ownerUserId: ownerUserId(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => ({
     createdIdx: index("saved_scenarios_created_idx").on(t.createdAt),
     goalIdx: index("saved_scenarios_goal_idx").on(t.goalId),
+    ownerIdx: index("saved_scenarios_owner_idx").on(t.ownerUserId),
   }),
 );
 
@@ -496,13 +522,20 @@ export const advisorAlerts = sqliteTable(
      * detection loop INSERT … ON CONFLICT DO NOTHING and moves on.
      */
     dedupKey: text("dedup_key").notNull(),
+    ownerUserId: ownerUserId(),
     createdAt: createdAt(),
     dismissedAt: text("dismissed_at"),
     /** Set when the underlying condition is no longer true (auto-resolution). */
     resolvedAt: text("resolved_at"),
   },
   (t) => ({
-    dedupUniq: uniqueIndex("advisor_alerts_dedup_uniq").on(t.dedupKey),
+    // Per-owner uniqueness — same dedup_key can exist across different
+    // tenants (each computes runway/budget alerts independently).
+    dedupUniq: uniqueIndex("advisor_alerts_dedup_uniq").on(
+      t.ownerUserId,
+      t.dedupKey,
+    ),
+    ownerIdx: index("advisor_alerts_owner_idx").on(t.ownerUserId),
     // Hot path: "give me the active alerts" — neither dismissed nor resolved.
     activeIdx: index("advisor_alerts_active_idx").on(
       t.dismissedAt,
