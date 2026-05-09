@@ -134,7 +134,7 @@ function Hero({
       <div className="max-w-5xl mx-auto px-6 pt-20 pb-16 text-center">
         <Badge variant="outline" className="mb-6 font-mono text-[11px] gap-1.5">
           <span className="size-1.5 rounded-full bg-emerald-400" />
-          v0.1 — open source · self-hosted
+          v0.1 — open source · self-hosted · multi-tenant
         </Badge>
         <h1 className="text-4xl md:text-6xl font-semibold tracking-tight text-balance leading-[1.05]">
           Personal finance for{" "}
@@ -166,12 +166,55 @@ function Hero({
         <p className="mt-6 text-xs text-muted-foreground font-mono">
           BYO Anthropic key · BYO infrastructure · no premium tier exists
         </p>
+
+        {/*
+          Deployment modes. One Cairn binary, three ways to run it —
+          worth saying out loud since most self-hosted finance apps
+          assume a single user.
+        */}
+        <div className="mt-10 grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-3xl mx-auto text-left">
+          <DeployMode
+            label="Solo"
+            title="Just you"
+            body="Run it on your own box. One login, all your data, never leaves the machine."
+          />
+          <DeployMode
+            label="Family / co-founders"
+            title="Share the same view"
+            body="Invite a partner or co-founder. They sign in with their own password and read or write your shared finances."
+          />
+          <DeployMode
+            label="Host for others"
+            title="Each tenant siloed"
+            body="Open registration creates isolated workspaces — every user gets their own accounts, budgets, equity. Resell-ready."
+          />
+        </div>
       </div>
 
       <div className="max-w-6xl mx-auto px-6 pb-20">
         <ScenarioPreview />
       </div>
     </section>
+  );
+}
+
+function DeployMode({
+  label,
+  title,
+  body,
+}: {
+  label: string;
+  title: string;
+  body: string;
+}) {
+  return (
+    <div className="rounded-xl border border-border bg-card/50 p-4 space-y-1.5">
+      <div className="text-[10px] font-mono uppercase tracking-wide text-muted-foreground">
+        {label}
+      </div>
+      <div className="text-sm font-medium">{title}</div>
+      <p className="text-xs text-muted-foreground leading-relaxed">{body}</p>
+    </div>
   );
 }
 
