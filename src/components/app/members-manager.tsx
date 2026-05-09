@@ -213,7 +213,7 @@ function NewInviteCard() {
                   <SelectItem value="24">1 day</SelectItem>
                   <SelectItem value="168">7 days</SelectItem>
                   <SelectItem value="720">30 days</SelectItem>
-                  <SelectItem value="">Never</SelectItem>
+                  <SelectItem value="0">Never</SelectItem>
                 </SelectContent>
               </Select>
             </div>
