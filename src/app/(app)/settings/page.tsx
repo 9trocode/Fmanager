@@ -28,6 +28,7 @@ import { SecuritySettings } from "@/components/app/security-settings";
 import { AdminDataTools } from "@/components/app/admin-data-tools";
 import { DataTools } from "@/components/app/data-tools";
 import { MembersManager } from "@/components/app/members-manager";
+import { StatementExport } from "@/components/app/statement-export";
 import { getSetting, getSettings, listDecisions } from "@/lib/db/queries";
 import { listActiveInvites, listUsers } from "@/lib/db/users";
 import { getAdminProfile } from "@/lib/auth/session";
@@ -276,6 +277,10 @@ export default async function SettingsPage() {
               )}
             </CardContent>
           </Card>
+
+          <Separator />
+
+          <StatementExport baseCurrency={settings.base_currency ?? "USD"} />
 
           <Separator />
 
