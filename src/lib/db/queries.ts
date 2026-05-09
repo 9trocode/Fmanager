@@ -29,7 +29,14 @@ export type SettingKey =
    * — somewhere innocuous like google.com. Defaults to /login when
    * unset.
    */
-  | "panic_redirect_url";
+  | "panic_redirect_url"
+  /**
+   * "1" allows anyone with a valid invite code to create an account
+   * (default). "open" allows registration WITHOUT a code — useful
+   * when admin trusts everyone who can reach the URL. Anything else
+   * (including unset) means registration is closed.
+   */
+  | "registration_mode";
 
 const DEFAULTS: Partial<Record<SettingKey, string>> = {
   base_currency: "USD",

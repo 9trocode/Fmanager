@@ -512,6 +512,64 @@ export const advisorAlerts = sqliteTable(
   }),
 );
 
+/**
+ * Additional members the admin has invited (family, partner, etc.).
+ *
+ * The original "settings-based admin" still exists and remains the
+ * implicit owner of this instance — see `auth/session.ts`. Rows here
+ * are *additional* accounts the owner has provisioned; they sign in
+ * with their own email/password and carry a per-row role.
+ *
+ * Single-user installs that never invite anyone leave this table empty.
+ */
+export const userRoles = ["admin", "viewer"] as const;
+export type UserRole = (typeof userRoles)[number];
+
+export const users = sqliteTable(
+  "users",
+  {
+    id: id(),
+    email: text("email").notNull(),
+    name: text("name"),
+    passwordHash: text("password_hash").notNull(),
+    role: text("role", { enum: userRoles }).notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    emailUniq: uniqueIndex("users_email_uniq").on(t.email),
+  }),
+);
+
+/**
+ * One-time codes the admin generates so a specific person can register.
+ *
+ * The admin can also flip "registration_enabled" to allow open signup
+ * without a code — invites are the safer default though, since the app
+ * is internet-reachable when self-hosted.
+ *
+ * On successful signup the row's `usedAt` is stamped and `usedByUserId`
+ * is set. Codes are single-use.
+ */
+export const invites = sqliteTable(
+  "invites",
+  {
+    id: id(),
+    code: text("code").notNull(),
+    email: text("email"),
+    role: text("role", { enum: userRoles }).notNull(),
+    expiresAt: text("expires_at"),
+    usedAt: text("used_at"),
+    usedByUserId: integer("used_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    codeUniq: uniqueIndex("invites_code_uniq").on(t.code),
+  }),
+);
+
 export const chatMessages = sqliteTable(
   "chat_messages",
   {

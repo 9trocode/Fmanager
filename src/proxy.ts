@@ -9,6 +9,7 @@ const PUBLIC_PATHS = [
   "/",
   "/login",
   "/welcome",
+  "/register",
   "/api/auth/login",
   // Logout must always be reachable, even with a bad/stale session
   // cookie. Otherwise the proxy redirects /api/auth/logout to

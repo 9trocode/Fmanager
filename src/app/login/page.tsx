@@ -17,6 +17,7 @@ import {
   isAuthenticated,
   getAdminProfile,
 } from "@/lib/auth/session";
+import { getSetting } from "@/lib/db/queries";
 import { loginWithCredentials } from "@/lib/actions/auth";
 
 // Reads admin state from DB + auth cookie on every request.
@@ -37,8 +38,14 @@ export default async function LoginPage({
 
   const params = await searchParams;
   const hasError = params.error === "1";
+  const closedError = params.error === "registration_closed";
   const next = params.next ?? "/dashboard";
-  const profile = await getAdminProfile();
+  const [profile, registrationModeRaw] = await Promise.all([
+    getAdminProfile(),
+    getSetting("registration_mode"),
+  ]);
+  const registrationOpen =
+    registrationModeRaw === "invite" || registrationModeRaw === "open";
 
   return (
     <main className="min-h-screen grid place-items-center px-4 bg-background">
@@ -100,6 +107,14 @@ export default async function LoginPage({
                   </AlertDescription>
                 </Alert>
               ) : null}
+              {closedError ? (
+                <Alert>
+                  <AlertDescription>
+                    Registration is closed on this instance. Ask the owner to
+                    enable it or send you an invite.
+                  </AlertDescription>
+                </Alert>
+              ) : null}
               <SubmitButton
                 className="w-full"
                 size="lg"
@@ -111,15 +126,17 @@ export default async function LoginPage({
           </CardContent>
         </Card>
 
-        <p className="text-center text-xs text-muted-foreground">
-          New here?{" "}
-          <Link
-            href="/welcome"
-            className="underline underline-offset-2 hover:text-foreground"
-          >
-            Set up your account
-          </Link>
-        </p>
+        {registrationOpen ? (
+          <p className="text-center text-xs text-muted-foreground">
+            Have an invite or new here?{" "}
+            <Link
+              href="/register"
+              className="underline underline-offset-2 hover:text-foreground"
+            >
+              Create an account
+            </Link>
+          </p>
+        ) : null}
       </div>
     </main>
   );

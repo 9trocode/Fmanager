@@ -45,10 +45,10 @@ export async function loginWithCredentials(formData: FormData) {
     redirect("/welcome?step=0");
   }
 
-  const role = await verifyCredentials({ email, password });
-  if (!role) {
+  const result = await verifyCredentials({ email, password });
+  if (!result) {
     redirect(`/login?error=1&next=${encodeURIComponent(next)}`);
   }
-  await createSession(role);
+  await createSession(result.role, result.userId);
   redirect(next || "/dashboard");
 }

@@ -27,7 +27,10 @@ import { FxRefreshButton } from "@/components/app/fx-refresh-button";
 import { SecuritySettings } from "@/components/app/security-settings";
 import { AdminDataTools } from "@/components/app/admin-data-tools";
 import { DataTools } from "@/components/app/data-tools";
+import { MembersManager } from "@/components/app/members-manager";
 import { getSetting, getSettings, listDecisions } from "@/lib/db/queries";
+import { listActiveInvites, listUsers } from "@/lib/db/users";
+import { getAdminProfile } from "@/lib/auth/session";
 
 export default async function SettingsPage() {
   const [
@@ -36,6 +39,10 @@ export default async function SettingsPage() {
     fxLastRefresh,
     idleMinutesRaw,
     panicUrl,
+    registrationModeRaw,
+    members,
+    invites,
+    ownerProfile,
   ] = await Promise.all([
     getSettings([
       "base_currency",
@@ -49,7 +56,15 @@ export default async function SettingsPage() {
     getSetting("fx_last_refresh"),
     getSetting("screen_lock_timeout_minutes"),
     getSetting("panic_redirect_url"),
+    getSetting("registration_mode"),
+    listUsers(),
+    listActiveInvites(),
+    getAdminProfile(),
   ]);
+  const registrationMode: "closed" | "invite" | "open" =
+    registrationModeRaw === "invite" || registrationModeRaw === "open"
+      ? registrationModeRaw
+      : "closed";
   const idleMinutes = Number(idleMinutesRaw) || 0;
 
   const provider = ((settings.advisor_provider as string) ??
@@ -79,6 +94,14 @@ export default async function SettingsPage() {
             </span>
           </TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
+          <TabsTrigger value="members">
+            Members
+            {members.length > 0 ? (
+              <span className="ml-1.5 text-[10px] font-mono bg-secondary px-1.5 rounded">
+                {members.length + 1}
+              </span>
+            ) : null}
+          </TabsTrigger>
           <TabsTrigger value="admin">Admin</TabsTrigger>
         </TabsList>
 
@@ -186,6 +209,15 @@ export default async function SettingsPage() {
           <SecuritySettings
             initialIdleMinutes={idleMinutes}
             initialPanicUrl={panicUrl ?? ""}
+          />
+        </TabsContent>
+
+        <TabsContent value="members" className="space-y-4">
+          <MembersManager
+            mode={registrationMode}
+            users={members}
+            invites={invites}
+            ownerEmail={ownerProfile.email}
           />
         </TabsContent>
 

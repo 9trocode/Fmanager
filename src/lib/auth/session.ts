@@ -7,6 +7,8 @@ import {
 } from "node:crypto";
 import { promisify } from "node:util";
 import { cookies } from "next/headers";
+import { eq } from "drizzle-orm";
+import { db, schema } from "@/lib/db";
 import { getSetting, setSetting } from "@/lib/db/queries";
 
 const scrypt = promisify(scryptCallback) as (
@@ -32,12 +34,14 @@ function sign(value: string): string {
   return createHmac("sha256", getSecret()).update(value).digest("hex");
 }
 
-function pack(role: Role, expiresAt: number): string {
-  const payload = `${role}.${expiresAt}`;
+function pack(role: Role, expiresAt: number, userId: number | null): string {
+  // userId is encoded as a string ("0" for the implicit settings-admin).
+  const uid = userId == null ? "0" : String(userId);
+  const payload = `${role}.${uid}.${expiresAt}`;
   return `${payload}.${sign(payload)}`;
 }
 
-type Unpacked = { role: Role; expiresAt: number };
+type Unpacked = { role: Role; userId: number | null; expiresAt: number };
 
 function safeEqHex(a: string, b: string): boolean {
   const ab = Buffer.from(a, "hex");
@@ -48,7 +52,20 @@ function safeEqHex(a: string, b: string): boolean {
 
 function unpack(token: string): Unpacked | null {
   const parts = token.split(".");
-  // New format: role.expiresAt.mac (3 parts)
+  // Newest format: role.userId.expiresAt.mac (4 parts)
+  if (parts.length === 4) {
+    const [role, userIdStr, expiresAtStr, mac] = parts;
+    if (role !== "admin" && role !== "viewer") return null;
+    if (!userIdStr || !expiresAtStr || !mac) return null;
+    const payload = `${role}.${userIdStr}.${expiresAtStr}`;
+    if (!safeEqHex(mac, sign(payload))) return null;
+    const expiresAt = Number(expiresAtStr);
+    if (!Number.isFinite(expiresAt) || expiresAt < Date.now()) return null;
+    const userIdNum = Number(userIdStr);
+    const userId = Number.isFinite(userIdNum) && userIdNum > 0 ? userIdNum : null;
+    return { role: role as Role, userId, expiresAt };
+  }
+  // Old format: role.expiresAt.mac (3 parts) — implicit settings-admin.
   if (parts.length === 3) {
     const [role, expiresAtStr, mac] = parts;
     if (role !== "admin" && role !== "viewer") return null;
@@ -57,7 +74,7 @@ function unpack(token: string): Unpacked | null {
     if (!safeEqHex(mac, sign(payload))) return null;
     const expiresAt = Number(expiresAtStr);
     if (!Number.isFinite(expiresAt) || expiresAt < Date.now()) return null;
-    return { role: role as Role, expiresAt };
+    return { role: role as Role, userId: null, expiresAt };
   }
   // Legacy format: expiresAt.mac (2 parts) — treat as admin (back-compat).
   if (parts.length === 2) {
@@ -66,7 +83,7 @@ function unpack(token: string): Unpacked | null {
     if (!safeEqHex(mac, sign(expiresAtStr))) return null;
     const expiresAt = Number(expiresAtStr);
     if (!Number.isFinite(expiresAt) || expiresAt < Date.now()) return null;
-    return { role: "admin", expiresAt };
+    return { role: "admin", userId: null, expiresAt };
   }
   return null;
 }
@@ -159,24 +176,40 @@ export async function setupAdminAccount(input: SetupAdminInput): Promise<void> {
 
 export type LoginInput = { email?: string | null; password: string };
 
+export type AuthResult = { role: Role; userId: number | null };
+
 /**
- * Returns the role that the input matches, or null.
+ * Returns the matching role + user id, or null on failure.
  *
  * Auth source order:
- *   1. DB-stored admin (email + password). If admin_password_hash exists,
- *      this is the canonical credential.
- *   2. env ADMIN_PASSWORD as a fallback (matches by password only). Useful
- *      for first-run / break-glass when DB has no admin yet.
- *   3. env VIEWER_PASSWORD for the read-only viewer role.
+ *   1. `users` table (email + password). Each row carries its own role.
+ *   2. DB-stored settings admin (email + password) — the original owner.
+ *      `userId` is null in this case (it's the implicit settings admin).
+ *   3. env ADMIN_PASSWORD as a fallback (matches by password only).
+ *   4. env VIEWER_PASSWORD for the read-only viewer role.
  *
  * In dev mode (no env passwords AND no DB admin) anything matches as admin.
  */
 export async function verifyCredentials(
   input: LoginInput,
-): Promise<Role | null> {
+): Promise<AuthResult | null> {
   const password = input.password;
   const inputEmail = input.email?.trim().toLowerCase() ?? "";
 
+  // 1. users table — covers invited members + future migrated admins.
+  if (inputEmail) {
+    const rows = await db
+      .select()
+      .from(schema.users)
+      .where(eq(schema.users.email, inputEmail))
+      .limit(1);
+    const u = rows[0];
+    if (u && (await verifyPasswordHash(password, u.passwordHash))) {
+      return { role: u.role, userId: u.id };
+    }
+  }
+
+  // 2. settings-based admin — the original owner.
   const dbHash = await getSetting("admin_password_hash");
   const dbEmail = (await getSetting("admin_email")) ?? "";
 
@@ -187,32 +220,39 @@ export async function verifyCredentials(
       constantTimeStringEq(inputEmail, dbEmail) &&
       (await verifyPasswordHash(password, dbHash))
     ) {
-      return "admin";
+      return { role: "admin", userId: null };
     }
     // Fall through to viewer check; do NOT fall back to env ADMIN_PASSWORD
     // when DB has admin set — DB is canonical at that point.
   } else {
     const envAdmin = process.env.ADMIN_PASSWORD ?? "";
     if (envAdmin) {
-      if (constantTimeStringEq(password, envAdmin)) return "admin";
+      if (constantTimeStringEq(password, envAdmin)) {
+        return { role: "admin", userId: null };
+      }
     } else {
       // No DB admin and no env admin → dev mode, anything is admin.
-      return "admin";
+      return { role: "admin", userId: null };
     }
   }
 
   const viewer = process.env.VIEWER_PASSWORD ?? "";
-  if (viewer && constantTimeStringEq(password, viewer)) return "viewer";
+  if (viewer && constantTimeStringEq(password, viewer)) {
+    return { role: "viewer", userId: null };
+  }
 
   return null;
 }
 
 // ─── session lifecycle ───────────────────────────────────────────────────────
 
-export async function createSession(role: Role) {
+export async function createSession(
+  role: Role,
+  userId: number | null = null,
+) {
   const expiresAt = Date.now() + SESSION_TTL_MS;
   const jar = await cookies();
-  jar.set(COOKIE_NAME, pack(role, expiresAt), {
+  jar.set(COOKIE_NAME, pack(role, expiresAt, userId), {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
@@ -256,6 +296,26 @@ export async function isViewer(): Promise<boolean> {
   return (await getRole()) === "viewer";
 }
 
+/**
+ * The active user row, when the session belongs to a user from the
+ * `users` table. Returns null for the implicit settings-admin and
+ * for env-based viewer/admin sessions.
+ */
+export async function getCurrentUser() {
+  if (!(await isAdminConfigured())) return null;
+  const jar = await cookies();
+  const token = jar.get(COOKIE_NAME)?.value;
+  if (!token) return null;
+  const unpacked = unpack(token);
+  if (!unpacked || unpacked.userId == null) return null;
+  const rows = await db
+    .select()
+    .from(schema.users)
+    .where(eq(schema.users.id, unpacked.userId))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
 /** Throws if the caller is not admin. Use at the top of mutation server actions. */
 export async function assertAdmin(): Promise<void> {
   const role = await getRole();
@@ -274,7 +334,8 @@ export function authDisabled(): boolean {
  * haven't been migrated to `verifyCredentials`. Prefer the new API.
  */
 export async function verifyPassword(input: string): Promise<Role | null> {
-  return verifyCredentials({ password: input });
+  const result = await verifyCredentials({ password: input });
+  return result?.role ?? null;
 }
 
 export function isValidSessionToken(token: string | undefined): boolean {
