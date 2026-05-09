@@ -18,112 +18,46 @@ import {
   Sparkles,
   Target,
   TrendingUp,
+  Users,
   Users2,
   Wallet,
   Wrench,
   Zap,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
-import { isAuthenticated } from "@/lib/auth/session";
-import { CairnMark } from "@/components/app/cairn-mark";
 
-// `isAuthenticated()` reads cookies (request-scoped) and indirectly hits
-// the SQLite settings table — both forbid prerender. Force dynamic so the
-// build doesn't try to evaluate this page against an empty Docker DB.
-export const dynamic = "force-dynamic";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { CairnMark } from "@/components/app/cairn-mark";
+import { isAuthenticated } from "@/lib/auth/session";
 
 export default async function LandingPage() {
   const authed = await isAuthenticated();
+
   const primaryCta = authed
-    ? { href: "/dashboard", label: "Open dashboard" }
-    : { href: "/welcome", label: "Get started" };
+    ? { label: "Go to dashboard", href: "/dashboard" }
+    : { label: "Get started", href: "/welcome" };
 
   return (
-    <div className="min-h-screen flex flex-col bg-background text-foreground">
-      <Header authed={authed} />
-      <main className="flex-1">
-        {/*
-          Section order, after a tightening pass:
-          - Hero (with three-scenario preview)
-          - DashboardPreview
-          - BudgetsPreview
-          - FeatureGrid (compressed)
-          - AdvisorPitch (chat + tool-call snapshot)
-          - SelfHostedPitch
-          - FinalCta
-          ScenarioDeepDive was redundant with the Hero scenario preview;
-          SmartCapture's content lives inline as a feature pill in
-          FeatureGrid now. Cuts ~600px of vertical scroll.
-        */}
-        <Hero primaryCta={primaryCta} authed={authed} />
-        <DashboardPreview />
-        <BudgetsPreview />
-        <FeatureGrid />
-        <AdvisorPitch />
-        <SelfHostedPitch />
-        <FinalCta primaryCta={primaryCta} />
-      </main>
+    <div className="flex flex-col min-h-screen">
+      <Hero authed={authed} primaryCta={primaryCta} />
+      <DashboardPreview />
+      <BudgetsPreview />
+      <FeatureGrid />
+      <AdvisorPitch />
+      <SelfHostedPitch />
+      <FinalCta primaryCta={primaryCta} />
       <Footer />
     </div>
   );
 }
 
-function Header({ authed }: { authed: boolean }) {
-  return (
-    <header className="border-b border-border/60 bg-background/80 backdrop-blur sticky top-0 z-30">
-      <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2.5 group">
-          <div className="size-9 rounded-lg bg-gradient-to-br from-primary to-primary/70 text-primary-foreground grid place-items-center">
-            <CairnMark size={20} bare className="text-primary-foreground" />
-          </div>
-          <div className="leading-tight">
-            <div className="text-sm font-semibold tracking-tight">
-              Cairn
-            </div>
-            <div className="text-[10px] text-muted-foreground">
-              stack the truths
-            </div>
-          </div>
-        </Link>
-        <nav className="flex items-center gap-2">
-          <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
-            <a href="#features">Features</a>
-          </Button>
-          <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
-            <a href="#self-hosted">Self-host</a>
-          </Button>
-          {authed ? (
-            <Button asChild size="sm">
-              <Link href="/dashboard">
-                Open dashboard <ArrowRight className="size-4" />
-              </Link>
-            </Button>
-          ) : (
-            <>
-              <Button asChild variant="ghost" size="sm">
-                <Link href="/login">Sign in</Link>
-              </Button>
-              <Button asChild size="sm">
-                <Link href="/welcome">
-                  Get started <ArrowRight className="size-4" />
-                </Link>
-              </Button>
-            </>
-          )}
-        </nav>
-      </div>
-    </header>
-  );
-}
-
 function Hero({
-  primaryCta,
   authed,
+  primaryCta,
 }: {
-  primaryCta: { href: string; label: string };
   authed: boolean;
+  primaryCta: { href: string; label: string };
 }) {
   return (
     <section className="relative overflow-hidden">
@@ -139,7 +73,7 @@ function Hero({
         <h1 className="text-4xl md:text-6xl font-semibold tracking-tight text-balance leading-[1.05]">
           Personal finance for{" "}
           <span className="bg-gradient-to-br from-foreground to-foreground/60 bg-clip-text text-transparent">
-            co-founders
+            professionals
           </span>
           ,{" "}
           <span className="text-muted-foreground">
@@ -674,7 +608,7 @@ function FeatureGrid() {
           icon: Mic,
           title: "Speak a transaction",
           body:
-            '"Spent ₦12,000 on dinner with Tunde." Web Speech captures, Claude parses, you review and submit. No typing required.',
+            '\"Spent ₦12,000 on dinner with Tunde.\" Web Speech captures, Claude parses, you review and submit. No typing required.',
         },
       ],
     },
@@ -1005,8 +939,4 @@ function Footer() {
       </div>
     </footer>
   );
-}
-oter>
-  );
-}
 }
