@@ -8,8 +8,10 @@ import {
 import { computeGoalState, type Goal } from "@/lib/goals";
 import {
   getBaseCurrency,
+  listAccountsWithEffective,
   listSavingsGoals,
 } from "@/lib/db/queries";
+import { convert } from "@/lib/fx";
 
 /**
  * Proactive advisor alerts.
@@ -159,6 +161,57 @@ export async function runAdvisorChecks(): Promise<{ inserted: number; resolved: 
     }
   }
 
+  // ── 4. Idle cash sitting in a low-yield account ───────────────────
+  //
+  // When a CASH-type account holds materially more than a few months
+  // of expenses, that money is leaking purchasing power to inflation.
+  // Surface a one-line nudge with concrete instrument suggestions.
+  // Only fires for cash accounts (brokerage / retirement accounts are
+  // already in some yield vehicle by definition); only when the user
+  // has recurring expenses to compare against (no expenses = no
+  // meaningful "idle" definition).
+  if (runway.monthlyExpenses > 0) {
+    const accounts = await listAccountsWithEffective();
+    const monthsThreshold = 6; // > 6 months of burn parked in cash = clearly idle
+    for (const a of accounts) {
+      if (a.type !== "cash") continue;
+      if (a.archived) continue;
+      if (a.effectiveValue == null || a.effectiveValue <= 0) continue;
+      // Convert balance to base for the burn comparison.
+      const inBase =
+        a.currency === baseCurrency
+          ? a.effectiveValue
+          : await convert(a.effectiveValue, a.currency, baseCurrency);
+      const monthsCovered = inBase / runway.monthlyExpenses;
+      if (monthsCovered <= monthsThreshold) continue;
+      const dedup = `idle_cash_${a.id}_${yyyyMm}`;
+      stillActive.add(dedup);
+      // Per-currency instrument hints. Naira → MMF / T-bills / Bamboo
+      // for USD exposure. USD → high-yield savings, T-bills, brokerage.
+      // Generic fallback otherwise.
+      const hints =
+        a.currency === "NGN"
+          ? "Move the surplus into a money market fund (~12% APY), Treasury bills (~17% APR), or Bamboo for USD-denominated equity."
+          : a.currency === "USD"
+            ? "Move the surplus into a high-yield savings account (~4% APY), short-duration Treasuries, or a brokerage."
+            : "Consider moving the surplus into a money market fund, Treasuries, or a brokerage account.";
+      inserts.push({
+        kind: "idle_cash",
+        severity: "info",
+        title: `${a.name}: ${monthsCovered.toFixed(0)}mo of expenses sitting idle`,
+        body: `${inBase.toFixed(0)} ${baseCurrency} (${a.currency} ${a.effectiveValue.toFixed(0)}) covers ${monthsCovered.toFixed(0)} months of expenses — well past a normal emergency cushion. ${hints}`,
+        actionUrl: `/accounts/${a.id}`,
+        contextJson: JSON.stringify({
+          accountId: a.id,
+          balance: a.effectiveValue,
+          currency: a.currency,
+          monthsCovered,
+        }),
+        dedupKey: dedup,
+      });
+    }
+  }
+
   // ── Insert (idempotent via unique dedupKey) + auto-resolve ────────
   let inserted = 0;
   if (inserts.length > 0) {
@@ -174,7 +227,13 @@ export async function runAdvisorChecks(): Promise<{ inserted: number; resolved: 
   // gets resolvedAt set so the badge reflects reality. We only touch
   // alerts whose kind we own (so a future hand-managed alert wouldn't
   // get clobbered).
-  const ownedKinds = ["runway_critical", "runway_tight", "budget_over", "goal_off_pace"];
+  const ownedKinds = [
+    "runway_critical",
+    "runway_tight",
+    "budget_over",
+    "goal_off_pace",
+    "idle_cash",
+  ];
   const active = await db
     .select({
       id: schema.advisorAlerts.id,

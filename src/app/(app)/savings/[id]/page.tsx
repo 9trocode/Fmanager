@@ -23,6 +23,7 @@ import {
 import { PageHeader } from "@/components/app/page-header";
 import { EditSavingsGoalDialog } from "@/components/app/edit-savings-goal-dialog";
 import { SavingsProjectionChart } from "@/components/app/savings-projection-chart";
+import { GoalNuggets } from "@/components/app/goal-nuggets";
 import {
   archiveSavingsGoal,
   deleteSavingsGoal,
@@ -282,6 +283,10 @@ export default async function SavingsGoalDetailPage({
           <SavingsProjectionChart goal={goal} currency={goal.currency} />
         </CardContent>
       </Card>
+
+      <div className="mb-6">
+        <GoalNuggets goalId={goal.id} />
+      </div>
 
       {nwAtEnd ? (
         <Card className="mb-6">
