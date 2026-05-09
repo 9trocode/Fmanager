@@ -10,8 +10,8 @@ import {
   listTransactionsBetween,
 } from "@/lib/db/queries";
 import { db, schema } from "@/lib/db";
-import { and, desc, eq, gt, lte } from "drizzle-orm";
-import { convert, prefetchRates } from "@/lib/fx";
+import { and, gt, inArray, lte, or, sql } from "drizzle-orm";
+import { prefetchRates } from "@/lib/fx";
 import { getOwner, ownedBy } from "@/lib/db/scope";
 import { isLiability } from "@/lib/account-types";
 import { monthlyEquivalent } from "@/lib/flows";
@@ -57,87 +57,139 @@ export async function computeNetWorthAsOf(
   asOfDate: string,
   baseCurrency: string,
 ): Promise<AsOfNetWorth> {
-  // listAccounts is owner-scoped; the per-account selects below also
-  // filter so a corrupted accountId can't leak across tenants.
+  // listAccounts is owner-scoped; the batched selects below inherit
+  // the scope via the account-id filter.
   const accounts = await listAccounts();
+  if (accounts.length === 0) {
+    return { asOf: asOfDate, baseCurrency, total: 0, perAccount: [] };
+  }
   const owner = await getOwner();
-  const rates = await prefetchRates(
-    accounts.map((a) => [a.currency, baseCurrency] as const),
+  const ids = accounts.map((a) => a.id);
+
+  // ── Batch snapshot fetch ────────────────────────────────────────
+  // Was: N separate "latest snapshot for account X at or before Y"
+  // queries. The export feature loops this 12× per call → 12N queries
+  // per export. Now: one query that picks the latest (asOf, id) per
+  // account via the same window-style subquery used by
+  // listAccountsWithEffective. (account_id, as_of) composite index
+  // makes each per-account pick a b-tree walk, not a scan.
+  const latestSnapshots = await db
+    .select()
+    .from(schema.valueSnapshots)
+    .where(
+      and(
+        inArray(schema.valueSnapshots.accountId, ids),
+        lte(schema.valueSnapshots.asOf, asOfDate),
+        ownedBy(schema.valueSnapshots.ownerUserId, owner),
+        sql`(${schema.valueSnapshots.accountId}, ${schema.valueSnapshots.asOf}, ${schema.valueSnapshots.id}) IN (
+          SELECT account_id, MAX(as_of), MAX(id)
+          FROM value_snapshots
+          WHERE account_id IN ${ids}
+            AND as_of <= ${asOfDate}
+          GROUP BY account_id, as_of
+        )`,
+      ),
+    );
+  const latestByAccount = new Map(
+    latestSnapshots.map((s) => [s.accountId, s]),
   );
 
-  const perAccount: AsOfNetWorth["perAccount"] = await Promise.all(
-    accounts.map(async (a) => {
-      const snap = await db
-        .select()
-        .from(schema.valueSnapshots)
-        .where(
-          and(
-            eq(schema.valueSnapshots.accountId, a.id),
-            lte(schema.valueSnapshots.asOf, asOfDate),
-            ownedBy(schema.valueSnapshots.ownerUserId, owner),
-          ),
-        )
-        .orderBy(
-          desc(schema.valueSnapshots.asOf),
-          desc(schema.valueSnapshots.id),
-        )
-        .limit(1);
-      const latest = snap[0] ?? null;
-      if (!latest) {
-        return {
-          id: a.id,
-          name: a.name,
-          type: a.type,
-          currency: a.currency,
-          snapshotAsOf: null,
-          snapshotValue: null,
-          delta: 0,
-          effective: null,
-          inBase: 0,
-        };
-      }
-      const txs = await db
+  // Earliest snapshot date across the set — lower bound for the tx
+  // scan so we don't pull years of unneeded rows.
+  const earliestAsOf = latestSnapshots.reduce<string>((acc, s) => {
+    return acc === "" || s.asOf < acc ? s.asOf : acc;
+  }, "");
+
+  // ── Batch tx fetch ──────────────────────────────────────────────
+  // Was: N separate tx queries. Now: one query covering all accounts
+  // (source OR destination), bucketed in memory below.
+  const txs = earliestAsOf
+    ? await db
         .select()
         .from(schema.transactions)
         .where(
           and(
-            gt(schema.transactions.occurredAt, latest.asOf),
+            or(
+              inArray(schema.transactions.accountId, ids),
+              inArray(schema.transactions.destAccountId, ids),
+            ),
+            gt(schema.transactions.occurredAt, earliestAsOf),
             lte(schema.transactions.occurredAt, asOfDate),
             ownedBy(schema.transactions.ownerUserId, owner),
           ),
-        );
-      let delta = 0;
-      for (const t of txs) {
-        const isSource = t.accountId === a.id;
-        const isDest =
-          t.destAccountId === a.id && t.kind === "transfer";
-        if (!isSource && !isDest) continue;
-        const inAccountCcy =
-          t.currency === a.currency
-            ? t.amount
-            : await convert(t.amount, t.currency, a.currency);
-        if (isSource) {
-          if (t.kind === "expense" || t.kind === "transfer") delta -= inAccountCcy;
-          else if (t.kind === "income") delta += inAccountCcy;
-        }
-        if (isDest) delta += inAccountCcy;
+        )
+    : [];
+
+  // ── Prefetch every FX rate we'll need in one shot ──────────────
+  // Was: per-tx awaited convert() inside the inner loop — at 100
+  // mixed-currency txs that's 100 sequential awaits even with the
+  // 12h cache. Now: pull both (txCcy → accountCcy) and (accountCcy
+  // → baseCurrency) pairs into one rate map, then sync conversions
+  // through the loop.
+  const ratePairs: Array<readonly [string, string]> = [];
+  for (const a of accounts) {
+    ratePairs.push([a.currency, baseCurrency]);
+  }
+  for (const t of txs) {
+    // Map tx currency to every account currency it could land on.
+    // In practice each tx hits one account, so this overprovisions
+    // slightly; the cost is a few extra Map entries.
+    for (const a of accounts) {
+      if (t.accountId === a.id || t.destAccountId === a.id) {
+        ratePairs.push([t.currency, a.currency]);
       }
-      const effective = latest.value + delta;
-      const signed = isLiability(a.type) ? -effective : effective;
-      const inBase = rates.convert(signed, a.currency, baseCurrency);
+    }
+  }
+  const rates = await prefetchRates(ratePairs);
+
+  // ── Build per-account result in one pass ───────────────────────
+  const perAccount: AsOfNetWorth["perAccount"] = accounts.map((a) => {
+    const latest = latestByAccount.get(a.id);
+    if (!latest) {
       return {
         id: a.id,
         name: a.name,
         type: a.type,
         currency: a.currency,
-        snapshotAsOf: latest.asOf,
-        snapshotValue: latest.value,
-        delta,
-        effective,
-        inBase,
+        snapshotAsOf: null,
+        snapshotValue: null,
+        delta: 0,
+        effective: null,
+        inBase: 0,
       };
-    }),
-  );
+    }
+    let delta = 0;
+    for (const t of txs) {
+      // Skip tx dated on or before the snapshot — snapshot wins.
+      if (t.occurredAt <= latest.asOf) continue;
+      const isSource = t.accountId === a.id;
+      const isDest = t.destAccountId === a.id && t.kind === "transfer";
+      if (!isSource && !isDest) continue;
+      const inAccountCcy =
+        t.currency === a.currency
+          ? t.amount
+          : rates.convert(t.amount, t.currency, a.currency);
+      if (isSource) {
+        if (t.kind === "expense" || t.kind === "transfer") delta -= inAccountCcy;
+        else if (t.kind === "income") delta += inAccountCcy;
+      }
+      if (isDest) delta += inAccountCcy;
+    }
+    const effective = latest.value + delta;
+    const signed = isLiability(a.type) ? -effective : effective;
+    const inBase = rates.convert(signed, a.currency, baseCurrency);
+    return {
+      id: a.id,
+      name: a.name,
+      type: a.type,
+      currency: a.currency,
+      snapshotAsOf: latest.asOf,
+      snapshotValue: latest.value,
+      delta,
+      effective,
+      inBase,
+    };
+  });
   const total = perAccount.reduce((acc, r) => acc + r.inBase, 0);
   return { asOf: asOfDate, baseCurrency, total, perAccount };
 }

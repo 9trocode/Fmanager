@@ -178,12 +178,36 @@ export async function buildMonthlyStatement(
 
   // Closing net-worth per month — uses the same FX-aware computation
   // the dashboard uses, just walked across the range.
+  //
+  // Was: two sequential `for (m of months) await computeNetWorthAsOf(...)`
+  // loops PLUS a third standalone call for the latest month — 12+12+1 = 25
+  // serial computations, each of which previously fanned out to ~2N
+  // queries (now batched to 2 thanks to the aggregation refactor).
+  // Now: one parallel Promise.all across the 12 months, results
+  // shared by both the month-row loop and the per-account-monthly
+  // loop. The "latest" view is just the last month's result.
+  const nwByMonth = new Map<string, Awaited<ReturnType<typeof computeNetWorthAsOf>>>();
+  await Promise.all(
+    months.map(async (m) => {
+      const nw = await computeNetWorthAsOf(m.endDate, opts.baseCurrency);
+      nwByMonth.set(m.key, nw);
+    }),
+  );
+
+  // Equity liquid is currently a "today's value" snapshot — no
+  // historical FMV backfill — so it's the same number every month.
+  // Compute once outside the loop.
+  const equityLiquid = grants.reduce((sum, g) => {
+    const native = equityValueForScenario(g, "liquid");
+    return sum + rates.convert(native, g.currency, opts.baseCurrency);
+  }, 0);
+
   const netWorthByMonth = new Map<
     string,
     { netWorth: number; cash: number; investments: number; equityLiquid: number }
   >();
   for (const m of months) {
-    const nw = await computeNetWorthAsOf(m.endDate, opts.baseCurrency);
+    const nw = nwByMonth.get(m.key)!;
     let cash = 0;
     let investments = 0;
     for (const a of nw.perAccount) {
@@ -194,12 +218,6 @@ export async function buildMonthlyStatement(
         investments += a.inBase;
       }
     }
-    // Equity liquid for the month — naive: same scenario applied today
-    // (we don't backfill historical FMVs).
-    const equityLiquid = grants.reduce((sum, g) => {
-      const native = equityValueForScenario(g, "liquid");
-      return sum + rates.convert(native, g.currency, opts.baseCurrency);
-    }, 0);
     netWorthByMonth.set(m.key, {
       netWorth: nw.total,
       cash,
@@ -244,10 +262,11 @@ export async function buildMonthlyStatement(
     };
   });
 
-  // Per-account month-end balances (in both native + base).
+  // Per-account month-end balances (in both native + base). Reuse
+  // the parallel-fetched nwByMonth map — no extra queries.
   const accountMonthly: AccountMonthly[] = [];
   for (const m of months) {
-    const nw = await computeNetWorthAsOf(m.endDate, opts.baseCurrency);
+    const nw = nwByMonth.get(m.key)!;
     for (const row of nw.perAccount) {
       accountMonthly.push({
         monthKey: m.key,
@@ -258,8 +277,9 @@ export async function buildMonthlyStatement(
     }
   }
 
-  // Accounts table — closing balance at end of last month.
-  const lastNw = await computeNetWorthAsOf(toMonth.endDate, opts.baseCurrency);
+  // Accounts table — closing balance at end of last month. Reuse
+  // the last month's already-computed snapshot.
+  const lastNw = nwByMonth.get(toMonth.key)!;
   const accountRows: AccountRow[] = accounts.map((a) => {
     const row = lastNw.perAccount.find((r) => r.id === a.id);
     return {
