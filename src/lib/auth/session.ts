@@ -297,7 +297,19 @@ export async function createSession(
 
 export async function destroySession() {
   const jar = await cookies();
-  jar.delete(COOKIE_NAME);
+  // `jar.delete(name)` doesn't always include the path attribute, so
+  // when the original cookie was set with `path: "/"` (which it is)
+  // some browsers / Next runtimes ignore the deletion and the user
+  // stays logged in. Setting an explicit expired cookie with the same
+  // name + path + secure flags is the reliable way to clear it.
+  jar.set(COOKIE_NAME, "", {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    expires: new Date(0),
+    maxAge: 0,
+  });
 }
 
 /** True only when a configured admin exists AND a valid session cookie is present. */
