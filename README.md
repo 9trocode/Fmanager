@@ -1,6 +1,6 @@
 # Cairn
 
-> Self-hosted personal finance for founders. Multi-currency, equity-aware, with an AI advisor that has full read/write access to your books. Stack the truths — every account, every flow, every grant — and plan against the floor.
+> Self-hosted personal finance manager. Multi-currency, equity-aware, with an AI advisor that has full read/write access to your books. Stack the truths — every account, every flow, every grant — and plan against the floor.
 
 [![Docker image](https://img.shields.io/badge/image-ghcr.io%2F9trocode%2Ffmanager-blue?logo=docker)](https://github.com/9trocode/Fmanager/pkgs/container/fmanager)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](#license)
