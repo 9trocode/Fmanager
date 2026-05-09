@@ -124,27 +124,36 @@ export default async function SettingsPage() {
               <BaseCurrencyForm current={settings.base_currency ?? "USD"} />
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">FX rates</CardTitle>
-              <CardDescription>
-                Free provider (open.er-api.com). Refresh manually; rates are cached for
-                12 hours otherwise.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex items-center gap-3">
-              <FxRefreshButton base={settings.base_currency ?? "USD"} />
-              {fxLastRefresh ? (
-                <span className="text-xs text-muted-foreground font-mono">
-                  last: {new Date(fxLastRefresh).toLocaleString()}
-                </span>
-              ) : (
-                <span className="text-xs text-muted-foreground">
-                  never refreshed — using fallback rates
-                </span>
-              )}
-            </CardContent>
-          </Card>
+          {/*
+            FX rate cache is shared across the whole instance — there's
+            no value in a per-tenant copy of "1 USD = 1500 NGN". Hidden
+            from isolated tenants since the refresh action rewrites
+            the host's table; they implicitly use whatever the host
+            has refreshed most recently.
+          */}
+          {isHost ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">FX rates</CardTitle>
+                <CardDescription>
+                  Free provider (open.er-api.com). Refresh manually; rates are cached for
+                  12 hours otherwise.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex items-center gap-3">
+                <FxRefreshButton base={settings.base_currency ?? "USD"} />
+                {fxLastRefresh ? (
+                  <span className="text-xs text-muted-foreground font-mono">
+                    last: {new Date(fxLastRefresh).toLocaleString()}
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">
+                    never refreshed — using fallback rates
+                  </span>
+                )}
+              </CardContent>
+            </Card>
+          ) : null}
         </TabsContent>
 
         <TabsContent value="advisor" className="space-y-4">

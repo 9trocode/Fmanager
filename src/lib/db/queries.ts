@@ -64,13 +64,17 @@ const DEFAULTS: Partial<Record<SettingKey, string>> = {
 /**
  * Read a setting value with scope resolution.
  *
- *   • Scoped key + isolated user → user_settings row, falling back to
- *     the global `settings` row when no per-user override exists.
- *   • Anything else → global `settings` row.
+ *   • Scoped key + isolated user → user_settings row, then DEFAULTS
+ *     constant. NEVER falls through to the host's `settings` table —
+ *     that would leak the host's API keys, advisor model, currency,
+ *     etc. into every tenant. Each tenant configures their own.
+ *   • Anything else (host / shared user / non-scoped key) → global
+ *     `settings` row, then DEFAULTS.
  *
- * The fallback for scoped keys means a tenant inherits the host's
- * defaults until they explicitly override — useful for rolling out
- * sensible base currency / advisor model values.
+ * The strict-isolation policy is what makes "host for others" safe:
+ * an isolated tenant who hasn't entered an API key gets `null`, not
+ * the host's key. Sensible values like base_currency=USD come from
+ * the DEFAULTS map so tenants aren't staring at empty UI on day 1.
  */
 export async function getSetting(key: SettingKey): Promise<string | null> {
   if (isScopedKey(key)) {
@@ -86,12 +90,11 @@ export async function getSetting(key: SettingKey): Promise<string | null> {
           ),
         )
         .limit(1);
-      // Per-user value present (even if empty string after explicit
-      // clear) wins over global default.
       if (userRow[0]) {
         return userRow[0].value ?? null;
       }
-      // Fall through to global default below.
+      // Strict isolation — no host-table fallback for tenants.
+      return DEFAULTS[key] ?? null;
     }
   }
   const row = await db
@@ -109,40 +112,49 @@ export async function getSettings(
   const map: Record<string, string | null> = {};
   for (const k of keys) map[k] = DEFAULTS[k] ?? null;
 
-  // Per-user overrides (scoped keys only, isolated user only).
   const owner = await getOwner();
-  const scopedNeeded = keys.filter(isScopedKey);
-  const overrides = new Set<string>();
-  if (owner != null && scopedNeeded.length > 0) {
-    const userRows = await db
-      .select()
-      .from(schema.userSettings)
-      .where(
-        and(
-          eq(schema.userSettings.userId, owner),
-          inArray(
-            schema.userSettings.key,
-            scopedNeeded as unknown as string[],
+  const isIsolated = owner != null;
+
+  if (isIsolated) {
+    // Isolated tenants: scoped keys come strictly from user_settings
+    // (or DEFAULTS). Non-scoped keys still go to the global table —
+    // those are either host-only (already filtered before getting
+    // here) or shared globals like fx_last_refresh.
+    const scopedNeeded = keys.filter(isScopedKey);
+    if (scopedNeeded.length > 0) {
+      const userRows = await db
+        .select()
+        .from(schema.userSettings)
+        .where(
+          and(
+            eq(schema.userSettings.userId, owner),
+            inArray(
+              schema.userSettings.key,
+              scopedNeeded as unknown as string[],
+            ),
           ),
-        ),
-      );
-    for (const r of userRows) {
-      overrides.add(r.key);
-      map[r.key] = r.value;
+        );
+      for (const r of userRows) map[r.key] = r.value;
     }
+    const globalNeeded = keys.filter((k) => !isScopedKey(k));
+    if (globalNeeded.length > 0) {
+      const rows = await db
+        .select()
+        .from(schema.settings)
+        .where(
+          inArray(schema.settings.key, globalNeeded as unknown as string[]),
+        );
+      for (const r of rows) if (r.value != null) map[r.key] = r.value;
+    }
+    return map;
   }
 
-  // Global table for everything not already overridden.
-  const globalNeeded = keys.filter((k) => !overrides.has(k));
-  if (globalNeeded.length > 0) {
-    const rows = await db
-      .select()
-      .from(schema.settings)
-      .where(
-        inArray(schema.settings.key, globalNeeded as unknown as string[]),
-      );
-    for (const r of rows) if (r.value != null) map[r.key] = r.value;
-  }
+  // Host / shared user: every key reads the global table.
+  const rows = await db
+    .select()
+    .from(schema.settings)
+    .where(inArray(schema.settings.key, keys as unknown as string[]));
+  for (const r of rows) if (r.value != null) map[r.key] = r.value;
   return map;
 }
 

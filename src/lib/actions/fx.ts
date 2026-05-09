@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { db, schema } from "@/lib/db";
 import { SUPPORTED_CURRENCIES } from "@/lib/format";
-import { assertAdmin } from "@/lib/auth/session";
+import { assertAdmin, getCurrentUser } from "@/lib/auth/session";
 
 const ENDPOINT = "https://open.er-api.com/v6/latest";
 
@@ -17,6 +17,14 @@ type ApiResponse = {
 
 export async function refreshFxRates(base = "USD") {
   await assertAdmin();
+  // FX rate cache is host-shared. Isolated tenants implicitly use
+  // whatever the host has refreshed; they don't get to rewrite it.
+  const user = await getCurrentUser();
+  if (user?.dataScope === "isolated") {
+    throw new Error(
+      "FX rates are managed by the instance host — your view uses the latest cached rates.",
+    );
+  }
   const res = await fetch(`${ENDPOINT}/${base}`, {
     cache: "no-store",
   });
