@@ -31,7 +31,7 @@ import { MembersManager } from "@/components/app/members-manager";
 import { StatementExport } from "@/components/app/statement-export";
 import { getSetting, getSettings, listDecisions } from "@/lib/db/queries";
 import { listActiveInvites, listUsers } from "@/lib/db/users";
-import { getAdminProfile } from "@/lib/auth/session";
+import { getAdminProfile, getCurrentUser } from "@/lib/auth/session";
 
 export default async function SettingsPage() {
   const [
@@ -62,6 +62,10 @@ export default async function SettingsPage() {
     listActiveInvites(),
     getAdminProfile(),
   ]);
+  // Isolated tenants are admins of their own silo only — they shouldn't
+  // see the host's Members panel or sample-data tools.
+  const currentUser = await getCurrentUser();
+  const isHost = !currentUser || currentUser.dataScope === "shared";
   const registrationMode: "closed" | "invite" | "open" =
     registrationModeRaw === "invite" || registrationModeRaw === "open"
       ? registrationModeRaw
@@ -95,14 +99,16 @@ export default async function SettingsPage() {
             </span>
           </TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
-          <TabsTrigger value="members">
-            Members
-            {members.length > 0 ? (
-              <span className="ml-1.5 text-[10px] font-mono bg-secondary px-1.5 rounded">
-                {members.length + 1}
-              </span>
-            ) : null}
-          </TabsTrigger>
+          {isHost ? (
+            <TabsTrigger value="members">
+              Members
+              {members.length > 0 ? (
+                <span className="ml-1.5 text-[10px] font-mono bg-secondary px-1.5 rounded">
+                  {members.length + 1}
+                </span>
+              ) : null}
+            </TabsTrigger>
+          ) : null}
           <TabsTrigger value="admin">Admin</TabsTrigger>
         </TabsList>
 
@@ -213,14 +219,16 @@ export default async function SettingsPage() {
           />
         </TabsContent>
 
-        <TabsContent value="members" className="space-y-4">
-          <MembersManager
-            mode={registrationMode}
-            users={members}
-            invites={invites}
-            ownerEmail={ownerProfile.email}
-          />
-        </TabsContent>
+        {isHost ? (
+          <TabsContent value="members" className="space-y-4">
+            <MembersManager
+              mode={registrationMode}
+              users={members}
+              invites={invites}
+              ownerEmail={ownerProfile.email}
+            />
+          </TabsContent>
+        ) : null}
 
         <TabsContent value="admin" className="space-y-4">
           <Card>

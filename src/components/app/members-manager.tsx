@@ -180,15 +180,22 @@ function NewInviteCard() {
       </CardHeader>
       <CardContent>
         <form action={handleSubmit} className="space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="invite_email">Email (optional)</Label>
-              <Input
-                id="invite_email"
-                name="email"
-                type="email"
-                placeholder="lock to one address"
-              />
+              <Label htmlFor="invite_data_scope">Data access</Label>
+              <Select name="data_scope" defaultValue="shared">
+                <SelectTrigger id="invite_data_scope">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="shared">
+                    Shared — sees your data
+                  </SelectItem>
+                  <SelectItem value="isolated">
+                    Isolated — their own workspace
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="invite_role">Role</Label>
@@ -201,6 +208,17 @@ function NewInviteCard() {
                   <SelectItem value="admin">Admin (full access)</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="invite_email">Email (optional)</Label>
+              <Input
+                id="invite_email"
+                name="email"
+                type="email"
+                placeholder="lock to one address"
+              />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="invite_expires">Expires</Label>
@@ -218,10 +236,20 @@ function NewInviteCard() {
               </Select>
             </div>
           </div>
-          <p className="text-[10px] text-muted-foreground leading-snug">
-            Locking an invite to an email blocks anyone with the wrong address
-            from using the code, even if it leaks.
-          </p>
+          <div className="rounded-md bg-secondary/50 p-2.5 text-[11px] text-muted-foreground leading-relaxed space-y-1">
+            <p>
+              <span className="font-medium text-foreground">Shared</span>{" "}
+              — for partners and family who manage the same finances. They
+              read + write your accounts, budgets, goals.
+            </p>
+            <p>
+              <span className="font-medium text-foreground">Isolated</span>{" "}
+              — for resell or hosting strangers. They get their own private
+              SQLite file at{" "}
+              <span className="font-mono">tenant_&lt;id&gt;.db</span>; you
+              can&apos;t see their data and they can&apos;t see yours.
+            </p>
+          </div>
           <div>
             <Button type="submit" disabled={pending} loading={pending}>
               {pending ? "Creating…" : "Create invite"}

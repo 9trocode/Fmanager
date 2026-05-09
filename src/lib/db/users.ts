@@ -1,9 +1,9 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
 import { and, desc, eq, isNull, or, gt } from "drizzle-orm";
-import { db, schema } from "@/lib/db";
+import { hostDb, schema } from "@/lib/db";
 import { hashPassword } from "@/lib/auth/session";
-import type { UserRole } from "@/lib/db/schema";
+import type { DataScope, UserRole } from "@/lib/db/schema";
 
 export type ListedUser = {
   id: number;
@@ -14,7 +14,7 @@ export type ListedUser = {
 };
 
 export async function listUsers(): Promise<ListedUser[]> {
-  const rows = await db
+  const rows = await hostDb
     .select({
       id: schema.users.id,
       email: schema.users.email,
@@ -29,7 +29,7 @@ export async function listUsers(): Promise<ListedUser[]> {
 
 export async function findUserByEmail(email: string) {
   const e = email.trim().toLowerCase();
-  const rows = await db
+  const rows = await hostDb
     .select()
     .from(schema.users)
     .where(eq(schema.users.email, e))
@@ -42,6 +42,7 @@ export type CreateUserInput = {
   name?: string | null;
   password: string;
   role: UserRole;
+  dataScope?: DataScope;
 };
 
 export async function createUser(input: CreateUserInput) {
@@ -57,20 +58,21 @@ export async function createUser(input: CreateUserInput) {
     throw new Error("An account with that email already exists.");
   }
   const hash = await hashPassword(input.password);
-  const [row] = await db
+  const [row] = await hostDb
     .insert(schema.users)
     .values({
       email,
       name: input.name?.trim() || null,
       passwordHash: hash,
       role: input.role,
+      dataScope: input.dataScope ?? "shared",
     })
     .returning();
   return row;
 }
 
 export async function deleteUserById(id: number) {
-  await db.delete(schema.users).where(eq(schema.users.id, id));
+  await hostDb.delete(schema.users).where(eq(schema.users.id, id));
 }
 
 // ─── invites ─────────────────────────────────────────────────────────────────
@@ -91,7 +93,7 @@ export type ListedInvite = {
  */
 export async function listActiveInvites(): Promise<ListedInvite[]> {
   const nowIso = new Date().toISOString();
-  const rows = await db
+  const rows = await hostDb
     .select()
     .from(schema.invites)
     .where(
@@ -107,6 +109,7 @@ export async function listActiveInvites(): Promise<ListedInvite[]> {
 export type CreateInviteInput = {
   email?: string | null;
   role: UserRole;
+  dataScope?: DataScope;
   expiresInHours?: number | null;
 };
 
@@ -120,12 +123,13 @@ export async function createInvite(input: CreateInviteInput) {
     input.expiresInHours && input.expiresInHours > 0
       ? new Date(Date.now() + input.expiresInHours * 3600_000).toISOString()
       : null;
-  const [row] = await db
+  const [row] = await hostDb
     .insert(schema.invites)
     .values({
       code: generateInviteCode(),
       email: input.email?.trim().toLowerCase() || null,
       role: input.role,
+      dataScope: input.dataScope ?? "shared",
       expiresAt,
     })
     .returning();
@@ -133,7 +137,7 @@ export async function createInvite(input: CreateInviteInput) {
 }
 
 export async function revokeInvite(id: number) {
-  await db.delete(schema.invites).where(eq(schema.invites.id, id));
+  await hostDb.delete(schema.invites).where(eq(schema.invites.id, id));
 }
 
 /**
@@ -142,7 +146,7 @@ export async function revokeInvite(id: number) {
 export async function findUsableInvite(code: string) {
   const c = code.trim();
   if (!c) return null;
-  const rows = await db
+  const rows = await hostDb
     .select()
     .from(schema.invites)
     .where(eq(schema.invites.code, c))
@@ -155,7 +159,7 @@ export async function findUsableInvite(code: string) {
 }
 
 export async function markInviteUsed(inviteId: number, userId: number) {
-  await db
+  await hostDb
     .update(schema.invites)
     .set({ usedAt: new Date().toISOString(), usedByUserId: userId })
     .where(eq(schema.invites.id, inviteId));

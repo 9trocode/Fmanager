@@ -8,8 +8,42 @@ import {
 import { promisify } from "node:util";
 import { cookies } from "next/headers";
 import { eq } from "drizzle-orm";
-import { db, schema } from "@/lib/db";
-import { getSetting, setSetting } from "@/lib/db/queries";
+import { hostDb, schema } from "@/lib/db";
+
+/**
+ * Auth + admin-configuration setting keys live on the HOST DB always,
+ * regardless of the active tenant context. Tenant DBs have their own
+ * settings table for per-tenant base currency / AI keys, but these
+ * keys are about the host instance itself.
+ */
+type HostSettingKey =
+  | "admin_email"
+  | "admin_name"
+  | "admin_password_hash"
+  | "registration_mode";
+
+async function getHostSetting(key: HostSettingKey): Promise<string | null> {
+  const row = await hostDb
+    .select()
+    .from(schema.settings)
+    .where(eq(schema.settings.key, key))
+    .limit(1);
+  return row[0]?.value ?? null;
+}
+
+async function setHostSetting(key: HostSettingKey, value: string | null) {
+  if (value == null || value === "") {
+    await hostDb.delete(schema.settings).where(eq(schema.settings.key, key));
+    return;
+  }
+  await hostDb
+    .insert(schema.settings)
+    .values({ key, value })
+    .onConflictDoUpdate({
+      target: schema.settings.key,
+      set: { value, updatedAt: new Date().toISOString() },
+    });
+}
 
 const scrypt = promisify(scryptCallback) as (
   password: string | Buffer,
@@ -135,7 +169,7 @@ function constantTimeStringEq(a: string, b: string): boolean {
  */
 export async function isAdminConfigured(): Promise<boolean> {
   if (process.env.ADMIN_PASSWORD) return true;
-  const hash = await getSetting("admin_password_hash");
+  const hash = await getHostSetting("admin_password_hash");
   return Boolean(hash);
 }
 
@@ -146,8 +180,8 @@ export type AdminProfile = {
 
 export async function getAdminProfile(): Promise<AdminProfile> {
   const [email, name] = await Promise.all([
-    getSetting("admin_email"),
-    getSetting("admin_name"),
+    getHostSetting("admin_email"),
+    getHostSetting("admin_name"),
   ]);
   return { email, name };
 }
@@ -167,9 +201,9 @@ export async function setupAdminAccount(input: SetupAdminInput): Promise<void> {
     throw new Error("Password must be at least 8 characters.");
   }
   const hash = await hashPassword(input.password);
-  await setSetting("admin_email", email);
-  await setSetting("admin_name", input.name?.trim() || null);
-  await setSetting("admin_password_hash", hash);
+  await setHostSetting("admin_email", email);
+  await setHostSetting("admin_name", input.name?.trim() || null);
+  await setHostSetting("admin_password_hash", hash);
 }
 
 // ─── credential verification ─────────────────────────────────────────────────
@@ -198,7 +232,7 @@ export async function verifyCredentials(
 
   // 1. users table — covers invited members + future migrated admins.
   if (inputEmail) {
-    const rows = await db
+    const rows = await hostDb
       .select()
       .from(schema.users)
       .where(eq(schema.users.email, inputEmail))
@@ -210,8 +244,8 @@ export async function verifyCredentials(
   }
 
   // 2. settings-based admin — the original owner.
-  const dbHash = await getSetting("admin_password_hash");
-  const dbEmail = (await getSetting("admin_email")) ?? "";
+  const dbHash = await getHostSetting("admin_password_hash");
+  const dbEmail = (await getHostSetting("admin_email")) ?? "";
 
   if (dbHash) {
     if (
@@ -308,12 +342,24 @@ export async function getCurrentUser() {
   if (!token) return null;
   const unpacked = unpack(token);
   if (!unpacked || unpacked.userId == null) return null;
-  const rows = await db
+  const rows = await hostDb
     .select()
     .from(schema.users)
     .where(eq(schema.users.id, unpacked.userId))
     .limit(1);
   return rows[0] ?? null;
+}
+
+/**
+ * The active tenant id for the current request — null for the host
+ * session (settings-admin or shared-scope user), or a user id for an
+ * isolated-scope user. Used to bind the AsyncLocalStorage tenant
+ * context at the layout / route boundary.
+ */
+export async function getActiveTenantId(): Promise<number | null> {
+  const user = await getCurrentUser();
+  if (!user) return null;
+  return user.dataScope === "isolated" ? user.id : null;
 }
 
 /** Throws if the caller is not admin. Use at the top of mutation server actions. */

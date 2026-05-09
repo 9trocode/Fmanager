@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { streamText, convertToModelMessages, type UIMessage } from "ai";
 import { eq } from "drizzle-orm";
-import { db, schema } from "@/lib/db";
-import { isAuthenticated, getRole } from "@/lib/auth/session";
+import { db, schema, withTenant } from "@/lib/db";
+import {
+  getActiveTenantId,
+  isAuthenticated,
+  getRole,
+} from "@/lib/auth/session";
 import { buildAdvisorClient } from "@/lib/ai/provider";
 import { advisorTools } from "@/lib/ai/tools";
 import {
@@ -290,6 +294,11 @@ export async function POST(req: Request) {
   if (!(await isAuthenticated())) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  const tenantId = await getActiveTenantId();
+  return withTenant(tenantId, () => handleChat(req));
+}
+
+async function handleChat(req: Request) {
   const role = (await getRole()) ?? "admin";
   // Viewer role gets a read-only advisor — strip the write tools.
   const tools =

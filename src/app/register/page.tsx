@@ -83,12 +83,12 @@ export default async function RegisterPage({
             <CairnMark size={22} bare className="text-primary-foreground" />
           </div>
           <h1 className="text-xl font-semibold tracking-tight">
-            Join this Cairn
+            {inviteRequired ? "Join this Cairn" : "Create your Cairn"}
           </h1>
           <p className="text-sm text-muted-foreground">
             {inviteRequired
               ? "You need an invite code from the owner to create an account."
-              : "Create an account to join this instance."}
+              : "Sign up and get your own private Cairn — your data, your accounts, your view."}
           </p>
         </div>
 
@@ -97,8 +97,8 @@ export default async function RegisterPage({
             <CardTitle className="text-base">Create account</CardTitle>
             <CardDescription>
               {inviteRequired
-                ? "Codes are single-use. Each one carries a role (viewer or admin) chosen by the owner."
-                : "Open registration is enabled. New accounts default to viewer (read-only) access."}
+                ? "Codes are single-use. The owner sets your role (admin / viewer) and whether you join the host's data or get your own."
+                : "Open registration. You're the admin of your own private workspace — none of your data is visible to the host or any other user."}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -120,8 +120,9 @@ export default async function RegisterPage({
                 <div className="flex items-start gap-2 rounded-md bg-secondary/60 p-2.5 text-[11px] leading-relaxed text-muted-foreground">
                   <Sparkles className="size-3 text-primary mt-0.5 shrink-0" />
                   <span>
-                    Open registration — anyone reaching this URL can sign up as
-                    a viewer. The owner can switch this off any time.
+                    Your accounts, transactions, budgets, goals, and equity
+                    grants will be stored in your own isolated workspace.
+                    The host of this instance and other users cannot see them.
                   </span>
                 </div>
               )}

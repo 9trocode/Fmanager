@@ -2,8 +2,13 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { assertAdmin, createSession } from "@/lib/auth/session";
-import { getSetting, setSetting } from "@/lib/db/queries";
+import { eq } from "drizzle-orm";
+import {
+  assertAdmin,
+  createSession,
+  getCurrentUser,
+} from "@/lib/auth/session";
+import { hostDb, schema } from "@/lib/db";
 import {
   createInvite,
   createUser,
@@ -12,35 +17,84 @@ import {
   markInviteUsed,
   revokeInvite,
 } from "@/lib/db/users";
-import type { UserRole } from "@/lib/db/schema";
+import type { DataScope, UserRole } from "@/lib/db/schema";
 
 const VALID_ROLES: readonly UserRole[] = ["admin", "viewer"];
+const VALID_SCOPES: readonly DataScope[] = ["shared", "isolated"];
 
 function parseRole(raw: FormDataEntryValue | null): UserRole {
   return VALID_ROLES.includes(raw as UserRole) ? (raw as UserRole) : "viewer";
 }
 
-export async function setRegistrationMode(formData: FormData) {
+function parseScope(raw: FormDataEntryValue | null): DataScope {
+  return VALID_SCOPES.includes(raw as DataScope)
+    ? (raw as DataScope)
+    : "shared";
+}
+
+/**
+ * Member management is host-only. Isolated-scope users are admins
+ * within their own silo but they don't get to mint invites for the
+ * host's instance — only the original settings-admin does.
+ */
+async function assertHost(): Promise<void> {
   await assertAdmin();
+  const user = await getCurrentUser();
+  // The settings-admin (no user row) AND any user-row admin in shared
+  // scope can manage the host's invites/members. Isolated users cannot.
+  if (user && user.dataScope === "isolated") {
+    throw new Error("Host-only — only the instance owner can manage members.");
+  }
+}
+
+async function getRegistrationMode(): Promise<string> {
+  const row = await hostDb
+    .select()
+    .from(schema.settings)
+    .where(eq(schema.settings.key, "registration_mode"))
+    .limit(1);
+  return row[0]?.value ?? "closed";
+}
+
+async function setRegistrationModeValue(mode: string | null) {
+  if (mode == null || mode === "") {
+    await hostDb
+      .delete(schema.settings)
+      .where(eq(schema.settings.key, "registration_mode"));
+    return;
+  }
+  await hostDb
+    .insert(schema.settings)
+    .values({ key: "registration_mode", value: mode })
+    .onConflictDoUpdate({
+      target: schema.settings.key,
+      set: { value: mode, updatedAt: new Date().toISOString() },
+    });
+}
+
+export async function setRegistrationMode(formData: FormData) {
+  await assertHost();
   const mode = String(formData.get("mode") ?? "closed");
   // Accept exactly the three known states; anything else is treated as closed.
   if (mode === "invite" || mode === "open") {
-    await setSetting("registration_mode", mode);
+    await setRegistrationModeValue(mode);
   } else {
-    await setSetting("registration_mode", null);
+    await setRegistrationModeValue(null);
   }
   revalidatePath("/settings");
 }
 
 export async function createInviteAction(formData: FormData) {
-  await assertAdmin();
+  await assertHost();
   const role = parseRole(formData.get("role"));
+  const scope = parseScope(formData.get("data_scope"));
   const emailRaw = String(formData.get("email") ?? "").trim();
   const expiresStr = String(formData.get("expires_hours") ?? "");
   const expiresInHours = expiresStr ? Number(expiresStr) : null;
   await createInvite({
     email: emailRaw || null,
     role,
+    dataScope: scope,
     expiresInHours:
       expiresInHours && Number.isFinite(expiresInHours) && expiresInHours > 0
         ? expiresInHours
@@ -50,7 +104,7 @@ export async function createInviteAction(formData: FormData) {
 }
 
 export async function revokeInviteAction(formData: FormData) {
-  await assertAdmin();
+  await assertHost();
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id)) return;
   await revokeInvite(id);
@@ -58,7 +112,7 @@ export async function revokeInviteAction(formData: FormData) {
 }
 
 export async function removeMember(formData: FormData) {
-  await assertAdmin();
+  await assertHost();
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id)) return;
   await deleteUserById(id);
@@ -88,30 +142,35 @@ export async function registerWithCode(formData: FormData) {
     redirect("/register?error=weak");
   }
 
-  const mode = (await getSetting("registration_mode")) ?? "closed";
+  const mode = await getRegistrationMode();
   if (mode !== "invite" && mode !== "open") {
     redirect("/login?error=registration_closed");
   }
 
   let inviteId: number | null = null;
-  let role: UserRole = "viewer";
+  // Open registration ALWAYS produces an isolated tenant — the new user
+  // gets their own data silo and is admin within it. Invites carry the
+  // scope the host chose at mint time (defaults to "shared" so family
+  // members keep sharing the host's data).
+  let role: UserRole = "admin";
+  let dataScope: DataScope = "isolated";
 
   if (mode === "invite") {
     const invite = await findUsableInvite(code);
     if (!invite) {
       redirect("/register?error=invalid_code");
     }
-    // If the invite was scoped to a specific email, enforce it.
     if (invite.email && invite.email !== email) {
       redirect("/register?error=email_mismatch");
     }
     inviteId = invite.id;
     role = invite.role;
+    dataScope = invite.dataScope;
   }
 
   let user;
   try {
-    user = await createUser({ email, name, password, role });
+    user = await createUser({ email, name, password, role, dataScope });
   } catch (e) {
     const code =
       e instanceof Error && e.message.includes("exists")

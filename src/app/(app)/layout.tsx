@@ -1,10 +1,12 @@
 import { redirect } from "next/navigation";
 import { MobileTopBar, Sidebar } from "@/components/app/sidebar";
 import {
+  getActiveTenantId,
   getRole,
   isAdminConfigured,
   isAuthenticated,
 } from "@/lib/auth/session";
+import { withTenant } from "@/lib/db";
 import { RoleProvider } from "@/components/app/role-context";
 import { FloatingAdvisor } from "@/components/app/floating-advisor";
 import { ScreenLockProvider } from "@/components/app/screen-lock";
@@ -34,6 +36,15 @@ export default async function AppLayout({
     redirect("/welcome?step=0");
   }
   if (!(await isAuthenticated())) redirect("/login");
+
+  // Bind the tenant context for everything downstream — finance reads
+  // and writes will route to the active tenant's DB (host vs isolated).
+  // Auth tables continue to use `hostDb` directly via session.ts.
+  const tenantId = await getActiveTenantId();
+  return withTenant(tenantId, () => renderApp({ children }));
+}
+
+async function renderApp({ children }: { children: React.ReactNode }) {
   const role = (await getRole()) ?? "admin";
 
   // Lazy auto-accrual. Once the user is past auth, post any recurring

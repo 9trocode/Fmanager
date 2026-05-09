@@ -525,6 +525,23 @@ export const advisorAlerts = sqliteTable(
 export const userRoles = ["admin", "viewer"] as const;
 export type UserRole = (typeof userRoles)[number];
 
+/**
+ * How a user's reads + writes are scoped against the data tables.
+ *
+ * - "shared":   Family / co-founder model. The user reads + writes the
+ *               host's data (rows where owner_user_id IS NULL). Their role
+ *               (admin vs viewer) gates whether they can mutate.
+ * - "isolated": Multi-tenant model. The user has their own data silo
+ *               (rows where owner_user_id = users.id). They never see the
+ *               host's data and the host never sees theirs. Always
+ *               role="admin" within their own silo.
+ *
+ * Determined at signup: invites default to "shared", open registration
+ * defaults to "isolated".
+ */
+export const dataScopes = ["shared", "isolated"] as const;
+export type DataScope = (typeof dataScopes)[number];
+
 export const users = sqliteTable(
   "users",
   {
@@ -533,6 +550,10 @@ export const users = sqliteTable(
     name: text("name"),
     passwordHash: text("password_hash").notNull(),
     role: text("role", { enum: userRoles }).notNull(),
+    /** Defaults to "shared" so existing/invited members keep current behavior. */
+    dataScope: text("data_scope", { enum: dataScopes })
+      .notNull()
+      .default("shared"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -558,6 +579,14 @@ export const invites = sqliteTable(
     code: text("code").notNull(),
     email: text("email"),
     role: text("role", { enum: userRoles }).notNull(),
+    /**
+     * Whether the invited user joins the host's shared data (default,
+     * for family/co-founder use) or gets their own isolated tenant
+     * (for resell / hosted-for-others use).
+     */
+    dataScope: text("data_scope", { enum: dataScopes })
+      .notNull()
+      .default("shared"),
     expiresAt: text("expires_at"),
     usedAt: text("used_at"),
     usedByUserId: integer("used_by_user_id").references(() => users.id, {

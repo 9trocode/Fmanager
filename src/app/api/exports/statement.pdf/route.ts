@@ -1,5 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { isAuthenticated, getAdminProfile } from "@/lib/auth/session";
+import {
+  getActiveTenantId,
+  getAdminProfile,
+  isAuthenticated,
+} from "@/lib/auth/session";
+import { withTenant } from "@/lib/db";
 import { getBaseCurrency } from "@/lib/db/queries";
 import { buildMonthlyStatement } from "@/lib/exports/statement-data";
 import { buildStatementPdf } from "@/lib/exports/statement-pdf";
@@ -13,6 +18,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  const tenantId = await getActiveTenantId();
+  return withTenant(tenantId, () => buildResponse(req));
+}
+
+async function buildResponse(req: NextRequest): Promise<NextResponse> {
   const url = new URL(req.url);
   const monthsBack = clampMonths(Number(url.searchParams.get("months") ?? "12"));
   const baseCurrency =
