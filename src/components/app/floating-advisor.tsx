@@ -81,14 +81,36 @@ export function FloatingAdvisor() {
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
+      {/*
+        Mobile vs desktop:
+          • Mobile (<sm) — circular icon-only FAB. The label-pill version
+            shipped previously sat on top of in-page CTAs ("Add account",
+            "Log spend", form submit buttons) at common screen widths,
+            and on iOS extended into the home-indicator area. Shrinking
+            to a 48px circle and lifting it via env(safe-area-inset-bottom)
+            clears both.
+          • Desktop (≥sm) — keeps the original pill with the "Advisor"
+            label.
+        The fixed positioning still uses bottom-right but the offset
+        scales: ~16px from the bottom on desktop, ~16px + safe-area on
+        mobile so iOS browsers' bottom chrome doesn't clip it.
+      */}
       <button
         type="button"
         onClick={() => setOpen(true)}
         aria-label="Open advisor"
-        className="fixed bottom-5 right-5 z-30 inline-flex items-center gap-2 rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/20 px-4 h-12 hover:scale-[1.03] active:scale-[0.98] transition-transform"
+        style={{
+          // Tailwind doesn't have a built-in safe-area utility; inline
+          // the env() so iOS Safari's home-indicator doesn't overlap the
+          // button. Falls back to 16px when safe-area is 0 (Android,
+          // desktop browsers).
+          bottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)",
+          right: "calc(env(safe-area-inset-right, 0px) + 16px)",
+        }}
+        className="fixed z-30 inline-flex items-center justify-center gap-2 rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:scale-[1.03] active:scale-[0.98] transition-transform size-12 sm:size-auto sm:px-4 sm:h-12"
       >
-        <Sparkles className="size-4" />
-        <span className="text-sm font-medium">Advisor</span>
+        <Sparkles className="size-5 sm:size-4" />
+        <span className="hidden sm:inline text-sm font-medium">Advisor</span>
       </button>
       <SheetContent
         side="right"

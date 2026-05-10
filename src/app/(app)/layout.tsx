@@ -126,7 +126,16 @@ export default async function AppLayout({
           whoami={whoami}
         />
         <main className="flex-1 min-w-0 relative">
-          <div className="max-w-6xl mx-auto px-4 sm:px-6 md:px-8 py-6 md:py-12 relative">
+          {/*
+            Bottom padding budget: the FloatingAdvisor FAB sits at
+            ~16px from the bottom + safe-area-inset on mobile, with a
+            ~48px button. Without extra page padding the last item in
+            any list scrolls under the FAB. pb-24 on mobile (~96px)
+            clears the button + a comfortable gap; desktop reverts
+            to the original spacing since the FAB's pill is small
+            enough that py-12 already provides headroom.
+          */}
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 md:px-8 pt-6 md:pt-12 pb-24 md:pb-12 relative">
             {children}
           </div>
         </main>
