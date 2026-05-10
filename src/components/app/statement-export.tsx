@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { FileSpreadsheet, FileText, Download } from "lucide-react";
+import { FileSpreadsheet, FileText, Download, FileCode2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,10 +29,12 @@ const RANGE_OPTIONS = [
 
 export function StatementExport({ baseCurrency }: { baseCurrency: string }) {
   const [months, setMonths] = useState("12");
-  const [pendingFmt, setPendingFmt] = useState<"xlsx" | "pdf" | null>(null);
+  const [pendingFmt, setPendingFmt] = useState<
+    "xlsx" | "pdf" | "csv" | null
+  >(null);
   const [, startTransition] = useTransition();
 
-  function download(format: "xlsx" | "pdf") {
+  function download(format: "xlsx" | "pdf" | "csv") {
     setPendingFmt(format);
     startTransition(async () => {
       try {
@@ -55,7 +57,9 @@ export function StatementExport({ baseCurrency }: { baseCurrency: string }) {
         toast.success(
           format === "xlsx"
             ? "Excel statement downloaded."
-            : "PDF statement downloaded.",
+            : format === "pdf"
+              ? "PDF statement downloaded."
+              : "CSV statement downloaded.",
         );
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Export failed.");
@@ -108,6 +112,15 @@ export function StatementExport({ baseCurrency }: { baseCurrency: string }) {
         <div className="flex flex-wrap gap-2.5 pt-1">
           <Button
             type="button"
+            onClick={() => download("pdf")}
+            disabled={pendingFmt !== null}
+            loading={pendingFmt === "pdf"}
+          >
+            <FileText className="size-4" />
+            {pendingFmt === "pdf" ? "Building…" : "Export PDF"}
+          </Button>
+          <Button
+            type="button"
             variant="outline"
             onClick={() => download("xlsx")}
             disabled={pendingFmt !== null}
@@ -118,21 +131,24 @@ export function StatementExport({ baseCurrency }: { baseCurrency: string }) {
           </Button>
           <Button
             type="button"
-            onClick={() => download("pdf")}
+            variant="outline"
+            onClick={() => download("csv")}
             disabled={pendingFmt !== null}
-            loading={pendingFmt === "pdf"}
+            loading={pendingFmt === "csv"}
           >
-            <FileText className="size-4" />
-            {pendingFmt === "pdf" ? "Building…" : "Export PDF"}
+            <FileCode2 className="size-4" />
+            {pendingFmt === "csv" ? "Building…" : "Export CSV"}
           </Button>
         </div>
 
         <p className="text-[11px] text-muted-foreground leading-relaxed">
-          Both files are generated on your machine — your data never leaves the
-          server. The PDF includes a branded cover, monthly performance,
-          account balances, and (if you have grants) equity scenarios. The
-          Excel workbook adds a full transactions sheet you can pivot or
-          filter.
+          All three formats are generated on your machine — your data never
+          leaves the server. PDF for sharing or archiving (cover, trends,
+          categories, goals, budgets, accounts). Excel for spreadsheet
+          drilling — same sections plus a full transactions sheet. CSV is a
+          single multi-section file (one tab in Sheets / Numbers, splittable
+          on{" "}
+          <span className="font-mono">## SECTION</span> markers in scripts).
         </p>
       </CardContent>
     </Card>

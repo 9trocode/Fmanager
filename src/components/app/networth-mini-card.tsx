@@ -18,6 +18,13 @@ export function NetWorthMiniCard({ summary }: { summary: NetWorthSummary }) {
   const expected = summary.totals.expected;
   const equityUpsideLiquid = liquid - floor;
   const equityUpsideExpected = expected - floor;
+  // No equity grants → all three scenarios collapse to the same number.
+  // Showing three identical columns with "+0 paper" / "+0 if it works out"
+  // is noise; render a single net-worth view instead. Round-down to 0.5
+  // unit gives us a stable "effectively zero" check that survives FX
+  // dust from cross-currency conversions.
+  const hasEquityUpside =
+    Math.abs(equityUpsideLiquid) > 0.5 || Math.abs(equityUpsideExpected) > 0.5;
 
   return (
     <Card>
@@ -26,10 +33,12 @@ export function NetWorthMiniCard({ summary }: { summary: NetWorthSummary }) {
           <div className="space-y-1">
             <CardTitle className="text-base flex items-center gap-2">
               <TrendingUp className="size-4 text-muted-foreground" />
-              Total net worth
+              {hasEquityUpside ? "Total net worth" : "Net worth"}
             </CardTitle>
             <CardDescription>
-              Your full balance sheet, with company equity treated honestly.
+              {hasEquityUpside
+                ? "Your full balance sheet, with company equity treated honestly."
+                : "Your full balance sheet today. Add an equity grant on /equity to see the upside scenarios."}
             </CardDescription>
           </div>
           <Button asChild variant="ghost" size="sm" className="text-xs shrink-0">
@@ -39,43 +48,61 @@ export function NetWorthMiniCard({ summary }: { summary: NetWorthSummary }) {
           </Button>
         </div>
       </CardHeader>
-      <CardContent className="border-t border-border pt-4 grid md:grid-cols-3 gap-4">
-        <div className="space-y-0.5">
-          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-            Without company equity
+      {hasEquityUpside ? (
+        <CardContent className="border-t border-border pt-4 grid md:grid-cols-3 gap-4">
+          <div className="space-y-0.5">
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              Without company equity
+            </div>
+            <div className="font-mono tabular-nums text-2xl">
+              {formatMoney(floor, baseCurrency, { compact: true })}
+            </div>
+            <div className="text-[10px] text-muted-foreground">
+              What you actually have today.
+            </div>
           </div>
-          <div className="font-mono tabular-nums text-2xl">
+          <div className="space-y-0.5">
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              + Equity at today&apos;s value
+            </div>
+            <div className="font-mono tabular-nums text-base text-muted-foreground">
+              {formatMoney(liquid, baseCurrency, { compact: true })}
+            </div>
+            <div className="text-[10px] text-muted-foreground">
+              +{formatMoney(equityUpsideLiquid, baseCurrency, { compact: true })}{" "}
+              paper.
+            </div>
+          </div>
+          <div className="space-y-0.5">
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              + Equity at target exit
+            </div>
+            <div className="font-mono tabular-nums text-base text-muted-foreground">
+              {formatMoney(expected, baseCurrency, { compact: true })}
+            </div>
+            <div className="text-[10px] text-muted-foreground">
+              +{formatMoney(equityUpsideExpected, baseCurrency, { compact: true })}{" "}
+              if it works out.
+            </div>
+          </div>
+        </CardContent>
+      ) : (
+        <CardContent className="border-t border-border pt-4">
+          <div
+            className={
+              "font-mono tabular-nums text-3xl " +
+              (floor < 0 ? "text-destructive" : "")
+            }
+          >
             {formatMoney(floor, baseCurrency, { compact: true })}
           </div>
-          <div className="text-[10px] text-muted-foreground">
-            What you actually have today.
+          <div className="mt-1 text-[11px] text-muted-foreground">
+            {floor < 0
+              ? "Liabilities exceed assets right now. Pull down the breakdown to see why."
+              : "Cash + investments minus loans. No company equity tracked yet."}
           </div>
-        </div>
-        <div className="space-y-0.5">
-          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-            + Equity at today&apos;s value
-          </div>
-          <div className="font-mono tabular-nums text-base text-muted-foreground">
-            {formatMoney(liquid, baseCurrency, { compact: true })}
-          </div>
-          <div className="text-[10px] text-muted-foreground">
-            +{formatMoney(equityUpsideLiquid, baseCurrency, { compact: true })}{" "}
-            paper.
-          </div>
-        </div>
-        <div className="space-y-0.5">
-          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-            + Equity at target exit
-          </div>
-          <div className="font-mono tabular-nums text-base text-muted-foreground">
-            {formatMoney(expected, baseCurrency, { compact: true })}
-          </div>
-          <div className="text-[10px] text-muted-foreground">
-            +{formatMoney(equityUpsideExpected, baseCurrency, { compact: true })}{" "}
-            if it works out.
-          </div>
-        </div>
-      </CardContent>
+        </CardContent>
+      )}
     </Card>
   );
 }
