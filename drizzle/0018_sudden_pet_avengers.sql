@@ -1,0 +1,13 @@
+-- No-op placeholder.
+--
+-- This migration tag was originally generated as a draft of the
+-- advisor_alerts dedup-index fix, but the SQL was reworked + moved
+-- to migration 0019 (which does the actual cleanup-then-replace).
+-- The journal still references 0018 by tag — without this file
+-- present, `drizzle-orm/migrator` crashes on boot trying to read it.
+--
+-- Keeping this as an explicit no-op (rather than re-numbering 0019
+-- → 0018 and deleting this) keeps the journal indexes monotonic so
+-- already-deployed databases that recorded earlier migrations don't
+-- see hash drift.
+SELECT 1;

@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "f1402804-47d0-43ae-b38e-fc75ed15de99",
-  "prevId": "155cf1c0-bf11-44ac-851b-a9839abf9c54",
+  "id": "155cf1c0-bf11-44ac-851b-a9839abf9c54",
+  "prevId": "ca812012-67dc-4fc0-b149-7e874a3a2b05",
   "tables": {
     "accounts": {
       "name": "accounts",
@@ -298,22 +298,13 @@
         }
       },
       "indexes": {
-        "advisor_alerts_dedup_host_uniq": {
-          "name": "advisor_alerts_dedup_host_uniq",
-          "columns": [
-            "dedup_key"
-          ],
-          "isUnique": true,
-          "where": "\"advisor_alerts\".\"owner_user_id\" IS NULL AND \"advisor_alerts\".\"dismissed_at\" IS NULL AND \"advisor_alerts\".\"resolved_at\" IS NULL"
-        },
-        "advisor_alerts_dedup_tenant_uniq": {
-          "name": "advisor_alerts_dedup_tenant_uniq",
+        "advisor_alerts_dedup_uniq": {
+          "name": "advisor_alerts_dedup_uniq",
           "columns": [
             "owner_user_id",
             "dedup_key"
           ],
-          "isUnique": true,
-          "where": "\"advisor_alerts\".\"owner_user_id\" IS NOT NULL AND \"advisor_alerts\".\"dismissed_at\" IS NULL AND \"advisor_alerts\".\"resolved_at\" IS NULL"
+          "isUnique": true
         },
         "advisor_alerts_owner_idx": {
           "name": "advisor_alerts_owner_idx",
