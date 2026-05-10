@@ -579,12 +579,33 @@ export const advisorAlerts = sqliteTable(
     resolvedAt: text("resolved_at"),
   },
   (t) => ({
-    // Per-owner uniqueness — same dedup_key can exist across different
-    // tenants (each computes runway/budget alerts independently).
-    dedupUniq: uniqueIndex("advisor_alerts_dedup_uniq").on(
-      t.ownerUserId,
-      t.dedupKey,
-    ),
+    // Per-owner uniqueness, split across two PARTIAL unique indexes:
+    //
+    //  • Filtered to ACTIVE rows only (dismissed_at IS NULL AND
+    //    resolved_at IS NULL). Once an alert is dismissed or resolved,
+    //    its dedup slot frees up — so next day's runway check or next
+    //    month's budget alert can fire fresh without colliding with
+    //    historical rows.
+    //  • Split between host (owner_user_id IS NULL) and tenant
+    //    (owner_user_id IS NOT NULL) because SQLite treats NULL as
+    //    DISTINCT in UNIQUE constraints. A single composite over
+    //    (owner_user_id, dedup_key) would let the host accumulate
+    //    duplicates on every advisor check — the exact prod bug
+    //    where every throttle window fired a fresh copy of the same
+    //    alert.
+    //
+    // `ON CONFLICT DO NOTHING` on the insert hits whichever index
+    // applies based on the row's owner_user_id.
+    dedupHostUniq: uniqueIndex("advisor_alerts_dedup_host_uniq")
+      .on(t.dedupKey)
+      .where(
+        sql`${t.ownerUserId} IS NULL AND ${t.dismissedAt} IS NULL AND ${t.resolvedAt} IS NULL`,
+      ),
+    dedupTenantUniq: uniqueIndex("advisor_alerts_dedup_tenant_uniq")
+      .on(t.ownerUserId, t.dedupKey)
+      .where(
+        sql`${t.ownerUserId} IS NOT NULL AND ${t.dismissedAt} IS NULL AND ${t.resolvedAt} IS NULL`,
+      ),
     ownerIdx: index("advisor_alerts_owner_idx").on(t.ownerUserId),
     // Hot path: "give me the active alerts" — neither dismissed nor resolved.
     activeIdx: index("advisor_alerts_active_idx").on(

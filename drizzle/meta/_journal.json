@@ -127,6 +127,20 @@
       "when": 1778373318213,
       "tag": "0017_mysterious_sauron",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1778393757599,
+      "tag": "0018_sudden_pet_avengers",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1778393820196,
+      "tag": "0019_dazzling_lady_bullseye",
+      "breakpoints": true
     }
   ]
 }
