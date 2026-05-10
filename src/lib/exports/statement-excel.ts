@@ -459,6 +459,243 @@ function buildEquity(wb: ExcelJS.Workbook, data: MonthlyStatement) {
   };
 }
 
+// ─── Sheet 5: Categories — spend per category × per month ───────────────────
+
+function buildCategories(wb: ExcelJS.Workbook, data: MonthlyStatement) {
+  if (data.categories.length === 0) return;
+  const ws = wb.addWorksheet("Categories", {
+    views: [{ state: "frozen", xSplit: 1, ySplit: 6 }],
+  });
+  addSheetTitle(
+    ws,
+    data,
+    "Spend by category, per month — pivot-ready cross-tab",
+  );
+
+  const monthLabels = data.months.map((m) => m.label);
+  const HEADERS = [
+    "Category",
+    ...monthLabels,
+    `Total (${data.baseCurrency})`,
+    "Share",
+    "Tx count",
+  ];
+  setColumnWidths(ws, [
+    24,
+    ...monthLabels.map(() => 12),
+    16,
+    8,
+    9,
+  ]);
+
+  const headerRow = ws.getRow(5);
+  HEADERS.forEach((h, i) => (headerRow.getCell(i + 1).value = h));
+  styleHeaderRow(headerRow);
+
+  const baseFmt = moneyFormat(data.baseCurrency);
+  const startRow = 6;
+  data.categories.forEach((c, idx) => {
+    const r = startRow + idx;
+    const row = ws.getRow(r);
+    row.values = [
+      c.category,
+      ...c.perMonth,
+      c.totalBase,
+      c.share,
+      c.txCount,
+    ];
+    row.font = { name: FONT_BODY, size: 10, color: { argb: PALETTE.ink } };
+    for (let col = 2; col < 2 + monthLabels.length; col++) {
+      const cell = row.getCell(col);
+      cell.font = { name: FONT_MONO, size: 10, color: { argb: PALETTE.ink } };
+      cell.numFmt = baseFmt;
+    }
+    const totalCell = row.getCell(2 + monthLabels.length);
+    totalCell.font = {
+      name: FONT_MONO,
+      size: 10,
+      bold: true,
+      color: { argb: PALETTE.ink },
+    };
+    totalCell.numFmt = baseFmt;
+    row.getCell(3 + monthLabels.length).numFmt = "0%";
+    row.getCell(4 + monthLabels.length).numFmt = "0";
+  });
+
+  applyZebra(ws, startRow, startRow + data.categories.length - 1);
+
+  // Totals row at the bottom — column-sums for the per-month cells +
+  // grand total.
+  const totalRow = startRow + data.categories.length + 1;
+  const t = ws.getRow(totalRow);
+  const colSums = monthLabels.map((_, mi) =>
+    data.categories.reduce((s, c) => s + (c.perMonth[mi] ?? 0), 0),
+  );
+  t.values = [
+    "Total",
+    ...colSums,
+    data.totals.expenses,
+    1,
+    data.transactions.filter((tx) => tx.kind === "expense").length,
+  ];
+  t.font = { name: FONT_BODY, size: 10, bold: true, color: { argb: PALETTE.ink } };
+  t.eachCell((cell) => {
+    cell.border = { top: { style: "medium", color: { argb: PALETTE.primary } } };
+  });
+  for (let col = 2; col < 2 + monthLabels.length; col++) {
+    t.getCell(col).numFmt = baseFmt;
+  }
+  t.getCell(2 + monthLabels.length).numFmt = baseFmt;
+  t.getCell(3 + monthLabels.length).numFmt = "0%";
+  t.getCell(4 + monthLabels.length).numFmt = "0";
+
+  ws.autoFilter = {
+    from: { row: 5, column: 1 },
+    to: { row: 5, column: HEADERS.length },
+  };
+}
+
+// ─── Sheet 6: Goals — savings goals + computed progress ─────────────────────
+
+function buildGoals(wb: ExcelJS.Workbook, data: MonthlyStatement) {
+  if (data.goals.length === 0) return;
+  const ws = wb.addWorksheet("Goals", {
+    views: [{ state: "frozen", ySplit: 6 }],
+  });
+  addSheetTitle(ws, data, "Active savings goals — progress + ETA");
+
+  const HEADERS = [
+    "Goal",
+    "Kind",
+    "Currency",
+    "Target",
+    "Current",
+    "Progress",
+    "Monthly contribution",
+    "ETA (months)",
+    "Status",
+  ];
+  setColumnWidths(ws, [24, 12, 9, 14, 14, 10, 18, 12, 12]);
+
+  const headerRow = ws.getRow(5);
+  HEADERS.forEach((h, i) => (headerRow.getCell(i + 1).value = h));
+  styleHeaderRow(headerRow);
+
+  const startRow = 6;
+  data.goals.forEach((g, idx) => {
+    const r = startRow + idx;
+    const row = ws.getRow(r);
+    const ccyFmt = moneyFormat(g.currency);
+    const status = g.done
+      ? "Done"
+      : g.onPace == null
+        ? "—"
+        : g.onPace
+          ? "On pace"
+          : "Off pace";
+    row.values = [
+      g.name,
+      g.kind,
+      g.currency,
+      g.target ?? "",
+      g.current,
+      g.progress ?? "",
+      g.monthlyContribution,
+      g.etaMonths ?? "",
+      status,
+    ];
+    row.font = { name: FONT_BODY, size: 10, color: { argb: PALETTE.ink } };
+    [4, 5, 7].forEach((c) => {
+      const cell = row.getCell(c);
+      cell.numFmt = ccyFmt;
+      cell.font = { name: FONT_MONO, size: 10, color: { argb: PALETTE.ink } };
+    });
+    row.getCell(6).numFmt = "0%";
+    row.getCell(8).numFmt = "0";
+    // Status colouring.
+    const statusCell = row.getCell(9);
+    if (g.done) {
+      statusCell.font = { name: FONT_BODY, size: 10, bold: true, color: { argb: PALETTE.good } };
+    } else if (g.onPace === false) {
+      statusCell.font = { name: FONT_BODY, size: 10, bold: true, color: { argb: PALETTE.bad } };
+    } else if (g.onPace === true) {
+      statusCell.font = { name: FONT_BODY, size: 10, color: { argb: PALETTE.good } };
+    }
+  });
+
+  applyZebra(ws, startRow, startRow + data.goals.length - 1);
+
+  ws.autoFilter = {
+    from: { row: 5, column: 1 },
+    to: { row: 5, column: HEADERS.length },
+  };
+}
+
+// ─── Sheet 7: Budgets — current-month status ────────────────────────────────
+
+function buildBudgets(wb: ExcelJS.Workbook, data: MonthlyStatement) {
+  if (data.budgets.length === 0) return;
+  const ws = wb.addWorksheet("Budgets", {
+    views: [{ state: "frozen", ySplit: 6 }],
+  });
+  addSheetTitle(
+    ws,
+    data,
+    `Budget status this month — ${data.range.toMonth}`,
+  );
+
+  const HEADERS = [
+    "Category",
+    "Currency",
+    "Monthly limit",
+    "Spent this month",
+    "% used",
+    "Status",
+  ];
+  setColumnWidths(ws, [22, 9, 16, 18, 10, 12]);
+
+  const headerRow = ws.getRow(5);
+  HEADERS.forEach((h, i) => (headerRow.getCell(i + 1).value = h));
+  styleHeaderRow(headerRow);
+
+  const startRow = 6;
+  data.budgets.forEach((b, idx) => {
+    const r = startRow + idx;
+    const row = ws.getRow(r);
+    const ccyFmt = moneyFormat(b.currency);
+    row.values = [
+      b.category,
+      b.currency,
+      b.monthlyLimit,
+      b.spentThisMonth,
+      b.percentUsed / 100,
+      b.status === "over" ? "Over" : b.status === "warning" ? "Watch" : "Healthy",
+    ];
+    row.font = { name: FONT_BODY, size: 10, color: { argb: PALETTE.ink } };
+    [3, 4].forEach((c) => {
+      const cell = row.getCell(c);
+      cell.numFmt = ccyFmt;
+      cell.font = { name: FONT_MONO, size: 10, color: { argb: PALETTE.ink } };
+    });
+    row.getCell(5).numFmt = "0%";
+    const statusCell = row.getCell(6);
+    if (b.status === "over") {
+      statusCell.font = { name: FONT_BODY, size: 10, bold: true, color: { argb: PALETTE.bad } };
+    } else if (b.status === "warning") {
+      statusCell.font = { name: FONT_BODY, size: 10, bold: true, color: { argb: PALETTE.warn } };
+    } else {
+      statusCell.font = { name: FONT_BODY, size: 10, color: { argb: PALETTE.good } };
+    }
+  });
+
+  applyZebra(ws, startRow, startRow + data.budgets.length - 1);
+
+  ws.autoFilter = {
+    from: { row: 5, column: 1 },
+    to: { row: 5, column: HEADERS.length },
+  };
+}
+
 // ─── Public ──────────────────────────────────────────────────────────────────
 
 export async function buildStatementWorkbook(
@@ -470,7 +707,12 @@ export async function buildStatementWorkbook(
   wb.created = new Date(data.generatedAt);
   wb.modified = new Date(data.generatedAt);
 
+  // Sheet order tells the story: rollups first, then the analytical
+  // cross-tabs the user will pivot on, then drill-downs.
   buildSummary(wb, data);
+  buildCategories(wb, data);
+  buildGoals(wb, data);
+  buildBudgets(wb, data);
   buildAccounts(wb, data);
   buildTransactions(wb, data);
   buildEquity(wb, data);

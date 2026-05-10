@@ -7,10 +7,19 @@ import {
   StyleSheet,
   Svg,
   Path,
+  Polyline,
+  Rect,
+  Line,
   pdf,
 } from "@react-pdf/renderer";
 import type { ReactElement } from "react";
-import type { MonthlyStatement, MonthRow } from "./statement-data";
+import type {
+  MonthlyStatement,
+  MonthRow,
+  CategoryRow,
+  GoalRow,
+  BudgetRow,
+} from "./statement-data";
 import { ACCOUNT_TYPE_LABEL } from "@/lib/account-types";
 import { SCENARIO_LABEL } from "@/lib/scenarios";
 
@@ -252,9 +261,294 @@ function fmtPct(value: number | null): string {
   return `${(value * 100).toFixed(1)}%`;
 }
 
+function fmtSignedMoney(value: number, currency: string): string {
+  if (value === 0) return fmtMoney(0, currency);
+  const sign = value > 0 ? "+" : "−";
+  return `${sign}${fmtMoney(Math.abs(value), currency)}`;
+}
+
+// ─── Chart primitives — native react-pdf SVGs ───────────────────────────────
+//
+// react-pdf doesn't ship a chart library, but it does render SVG natively
+// (rect / line / polyline / path), so we can draw production-grade
+// charts inline without bundling recharts or chart.js. Each helper
+// takes a width/height + a numeric series and produces a clean,
+// printable visualization that fits the brand.
+
+function Sparkline({
+  values,
+  width,
+  height,
+  stroke = C.primary,
+  fill,
+}: {
+  values: number[];
+  width: number;
+  height: number;
+  stroke?: string;
+  fill?: string;
+}) {
+  if (values.length === 0) return null;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  // Normalize each point onto the box: x evenly across width,
+  // y inverted so larger values draw higher (SVG y grows down).
+  const step = values.length > 1 ? width / (values.length - 1) : 0;
+  const points = values
+    .map((v, i) => `${i * step},${height - ((v - min) / range) * height}`)
+    .join(" ");
+  return (
+    <Svg width={width} height={height}>
+      {fill ? (
+        <Path
+          d={`M0,${height} L${points} L${width},${height} Z`}
+          fill={fill}
+        />
+      ) : null}
+      <Polyline
+        points={points}
+        stroke={stroke}
+        strokeWidth={1.4}
+        fill="none"
+      />
+    </Svg>
+  );
+}
+
+function LineChart({
+  values,
+  labels,
+  width,
+  height,
+  stroke = C.primary,
+  fill = C.primaryFaint,
+}: {
+  values: number[];
+  labels?: string[];
+  width: number;
+  height: number;
+  stroke?: string;
+  fill?: string;
+}) {
+  if (values.length === 0) return null;
+  const padX = 28;
+  const padTop = 6;
+  const padBot = 18;
+  const innerW = width - padX * 2;
+  const innerH = height - padTop - padBot;
+  const min = Math.min(0, ...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const step = values.length > 1 ? innerW / (values.length - 1) : 0;
+  const points = values
+    .map((v, i) => {
+      const x = padX + i * step;
+      const y = padTop + (1 - (v - min) / range) * innerH;
+      return `${x},${y}`;
+    })
+    .join(" ");
+  // Y-axis ticks: just show min, mid, max so the eye has scale anchors.
+  const midY = (max + min) / 2;
+  const ticks = [
+    { v: max, y: padTop },
+    { v: midY, y: padTop + innerH / 2 },
+    { v: min, y: padTop + innerH },
+  ];
+  // X labels: first, middle, last to keep it readable.
+  const xLabels = labels
+    ? [
+        { i: 0, label: labels[0] },
+        labels.length > 2
+          ? { i: Math.floor(labels.length / 2), label: labels[Math.floor(labels.length / 2)] }
+          : null,
+        { i: labels.length - 1, label: labels[labels.length - 1] },
+      ].filter((x): x is { i: number; label: string } => x != null)
+    : [];
+  return (
+    <Svg width={width} height={height}>
+      {/* horizontal gridlines */}
+      {ticks.map((t, i) => (
+        <Line
+          key={i}
+          x1={padX}
+          y1={t.y}
+          x2={width - padX}
+          y2={t.y}
+          stroke={C.rule}
+          strokeWidth={0.5}
+        />
+      ))}
+      {/* filled area */}
+      <Path
+        d={`M${padX},${padTop + innerH} L${points} L${width - padX},${padTop + innerH} Z`}
+        fill={fill}
+      />
+      <Polyline
+        points={points}
+        stroke={stroke}
+        strokeWidth={1.6}
+        fill="none"
+      />
+      {/* y-tick labels (right-edge) */}
+      {ticks.map((t, i) => (
+        <Text
+          key={`y${i}`}
+          x={width - padX + 4}
+          y={t.y + 3}
+          style={{ fontSize: 6, fontFamily: "Courier", color: C.inkFaint }}
+        >
+          {fmtAxisNumber(t.v)}
+        </Text>
+      ))}
+      {/* x-axis labels */}
+      {xLabels.map((x) => (
+        <Text
+          key={x.label}
+          x={padX + x.i * step}
+          y={height - 4}
+          style={{ fontSize: 6, fontFamily: "Courier", color: C.inkFaint }}
+        >
+          {x.label}
+        </Text>
+      ))}
+    </Svg>
+  );
+}
+
+function BarsChart({
+  positive,
+  negative,
+  labels,
+  width,
+  height,
+}: {
+  /** Series drawn above the baseline (e.g. income). */
+  positive: number[];
+  /** Series drawn below the baseline (e.g. expenses). Pass positive numbers; rendered as down-bars. */
+  negative: number[];
+  labels: string[];
+  width: number;
+  height: number;
+}) {
+  if (positive.length === 0) return null;
+  const padX = 28;
+  const padTop = 6;
+  const padBot = 18;
+  const innerW = width - padX * 2;
+  const innerH = height - padTop - padBot;
+  const max = Math.max(1, ...positive, ...negative);
+  // Symmetric scale so income bars and expense bars share the visual
+  // baseline at the centre.
+  const half = innerH / 2;
+  const baseline = padTop + half;
+  const slot = innerW / Math.max(1, positive.length);
+  const barW = Math.min(10, slot * 0.6);
+  return (
+    <Svg width={width} height={height}>
+      {/* baseline */}
+      <Line
+        x1={padX}
+        y1={baseline}
+        x2={width - padX}
+        y2={baseline}
+        stroke={C.rule}
+        strokeWidth={0.5}
+      />
+      {positive.map((v, i) => {
+        const cx = padX + slot * (i + 0.5);
+        const h = (v / max) * half;
+        return (
+          <Rect
+            key={`p${i}`}
+            x={cx - barW / 2}
+            y={baseline - h}
+            width={barW}
+            height={h}
+            fill={C.good}
+          />
+        );
+      })}
+      {negative.map((v, i) => {
+        const cx = padX + slot * (i + 0.5);
+        const h = (v / max) * half;
+        return (
+          <Rect
+            key={`n${i}`}
+            x={cx - barW / 2}
+            y={baseline}
+            width={barW}
+            height={h}
+            fill={C.bad}
+          />
+        );
+      })}
+      {/* x labels: first / mid / last */}
+      {[0, Math.floor(labels.length / 2), labels.length - 1]
+        .filter((v, i, a) => a.indexOf(v) === i)
+        .map((i) => (
+          <Text
+            key={i}
+            x={padX + slot * (i + 0.5) - 8}
+            y={height - 4}
+            style={{ fontSize: 6, fontFamily: "Courier", color: C.inkFaint }}
+          >
+            {labels[i]}
+          </Text>
+        ))}
+    </Svg>
+  );
+}
+
+function HorizontalBar({
+  value,
+  width,
+  height = 5,
+  color = C.primary,
+  trackColor = C.panel,
+}: {
+  /** 0..1 progress. Capped at 1.05 (renders as full + tiny overshoot tick). */
+  value: number;
+  width: number;
+  height?: number;
+  color?: string;
+  trackColor?: string;
+}) {
+  const pct = Math.max(0, Math.min(1.05, value));
+  const fillW = Math.min(width, pct * width);
+  return (
+    <Svg width={width} height={height}>
+      <Rect x={0} y={0} width={width} height={height} rx={1} fill={trackColor} />
+      <Rect x={0} y={0} width={fillW} height={height} rx={1} fill={color} />
+    </Svg>
+  );
+}
+
+function fmtAxisNumber(v: number): string {
+  const abs = Math.abs(v);
+  const sign = v < 0 ? "-" : "";
+  if (abs >= 1_000_000) return `${sign}${(abs / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `${sign}${Math.round(abs / 1_000)}K`;
+  return `${sign}${Math.round(abs)}`;
+}
+
 // ─── Cover page ──────────────────────────────────────────────────────────────
 
 function CoverPage({ data }: { data: MonthlyStatement }) {
+  const t = data.totals;
+  const deltaColor =
+    t.netWorthDelta > 0 ? C.good : t.netWorthDelta < 0 ? C.bad : C.inkSoft;
+  const deltaPct =
+    t.netWorthStart !== 0 ? t.netWorthDelta / Math.abs(t.netWorthStart) : null;
+  const savingsRate = t.income > 0 ? t.net / t.income : null;
+  const runwayLabel =
+    t.runwayMonths == null
+      ? "no recurring burn"
+      : t.runwayMonths === Infinity
+        ? "indefinite"
+        : t.runwayMonths >= 24
+          ? `${(t.runwayMonths / 12).toFixed(1)}y of burn`
+          : `${t.runwayMonths.toFixed(1)} mo of burn`;
   return (
     <Page size="A4" style={styles.cover}>
       <View style={styles.brandRow}>
@@ -270,66 +564,92 @@ function CoverPage({ data }: { data: MonthlyStatement }) {
         {data.ownerName ?? data.ownerEmail ?? "Self-hosted instance"}
       </Text>
 
-      <View style={{ marginTop: 56 }}>
+      {/* Hero net-worth block — biggest, most-readable thing on the page.
+          Includes the period delta inline + a sparkline along the bottom
+          edge so the reader sees the SHAPE of the trajectory before any
+          tables. */}
+      <View style={{ marginTop: 36 }}>
+        <Text style={styles.kpiLabel}>Net worth · end of {data.range.toMonth}</Text>
+        <Text
+          style={{
+            fontFamily: "Helvetica-Bold",
+            fontSize: 40,
+            color: C.ink,
+            marginTop: 4,
+          }}
+        >
+          {fmtMoney(t.netWorth, data.baseCurrency)}
+        </Text>
+        <View style={{ flexDirection: "row", alignItems: "baseline", gap: 8, marginTop: 4 }}>
+          <Text style={{ fontSize: 11, color: deltaColor, fontFamily: "Helvetica-Bold" }}>
+            {fmtSignedMoney(t.netWorthDelta, data.baseCurrency)}
+          </Text>
+          {deltaPct != null ? (
+            <Text style={{ fontSize: 9, color: deltaColor, fontFamily: "Courier" }}>
+              {`${deltaPct >= 0 ? "+" : ""}${(deltaPct * 100).toFixed(1)}%`}
+            </Text>
+          ) : null}
+          <Text style={{ fontSize: 9, color: C.inkFaint }}>
+            since {data.range.fromMonth}
+          </Text>
+        </View>
+        <View style={{ marginTop: 12 }}>
+          <Sparkline
+            values={data.months.map((m) => m.netWorth)}
+            width={500}
+            height={42}
+            stroke={C.primary}
+            fill={C.primaryFaint}
+          />
+        </View>
+      </View>
+
+      {/* KPI grid — 6 tiles, period rollup. Same look-and-feel as the
+          dashboard so a printed copy reads like a snapshot of the live
+          app, not a separate report shape. */}
+      <View style={{ marginTop: 28 }}>
         <View style={styles.kpiRow}>
           <View style={styles.kpi}>
-            <Text style={styles.kpiLabel}>Net worth</Text>
-            <Text style={styles.kpiValue}>
-              {fmtMoney(data.totals.netWorth, data.baseCurrency)}
+            <Text style={styles.kpiLabel}>Income</Text>
+            <Text style={{ ...styles.kpiValue, color: C.good }}>
+              {fmtMoney(t.income, data.baseCurrency)}
             </Text>
-            <Text style={styles.kpiSub}>end of {data.range.toMonth}</Text>
+            <Text style={styles.kpiSub}>{data.months.length} mo total</Text>
           </View>
           <View style={styles.kpi}>
-            <Text style={styles.kpiLabel}>Total income</Text>
-            <Text
-              style={{
-                ...styles.kpiValue,
-                color: C.good,
-              }}
-            >
-              {fmtMoney(data.totals.income, data.baseCurrency)}
-            </Text>
-            <Text style={styles.kpiSub}>across {data.months.length} months</Text>
-          </View>
-          <View style={styles.kpi}>
-            <Text style={styles.kpiLabel}>Total expenses</Text>
-            <Text
-              style={{
-                ...styles.kpiValue,
-                color: C.bad,
-              }}
-            >
-              {fmtMoney(data.totals.expenses, data.baseCurrency)}
+            <Text style={styles.kpiLabel}>Expenses</Text>
+            <Text style={{ ...styles.kpiValue, color: C.bad }}>
+              {fmtMoney(t.expenses, data.baseCurrency)}
             </Text>
             <Text style={styles.kpiSub}>
-              avg{" "}
-              {fmtMoney(
-                data.totals.expenses / Math.max(1, data.months.length),
-                data.baseCurrency,
-              )}{" "}
-              / mo
+              avg {fmtMoney(t.expenses / Math.max(1, data.months.length), data.baseCurrency)}/mo
+            </Text>
+          </View>
+          <View style={styles.kpi}>
+            <Text style={styles.kpiLabel}>Net saved</Text>
+            <Text style={styles.kpiValue}>
+              {fmtMoney(t.net, data.baseCurrency)}
+            </Text>
+            <Text style={styles.kpiSub}>
+              {savingsRate != null ? `${fmtPct(savingsRate)} savings rate` : "—"}
             </Text>
           </View>
         </View>
 
         <View style={[styles.kpiRow, { marginTop: 10 }]}>
           <View style={styles.kpi}>
-            <Text style={styles.kpiLabel}>Net saved</Text>
-            <Text style={styles.kpiValue}>
-              {fmtMoney(data.totals.net, data.baseCurrency)}
-            </Text>
+            <Text style={styles.kpiLabel}>Runway</Text>
+            <Text style={styles.kpiValue}>{runwayLabel}</Text>
             <Text style={styles.kpiSub}>
-              {data.totals.income > 0
-                ? `${fmtPct(data.totals.net / data.totals.income)} savings rate`
-                : "no income recorded"}
+              burn {fmtMoney(t.monthlyBurn, data.baseCurrency)}/mo
             </Text>
           </View>
           <View style={styles.kpi}>
             <Text style={styles.kpiLabel}>Best month</Text>
             <Text style={styles.kpiValue}>
-              {fmtMoney(data.totals.bestMonthNet, data.baseCurrency)}
+              {fmtMoney(t.bestMonthNet, data.baseCurrency)}
             </Text>
-            <Text style={styles.kpiSub}>{data.totals.bestMonthLabel}</Text>
+            <Text style={styles.kpiSub}>{t.bestMonthLabel || "—"}</Text>
           </View>
           <View style={styles.kpi}>
             <Text style={styles.kpiLabel}>Activity</Text>
@@ -343,7 +663,7 @@ function CoverPage({ data }: { data: MonthlyStatement }) {
 
       <Text style={styles.coverMeta}>
         generated {new Date(data.generatedAt).toLocaleString()} · base{" "}
-        {data.baseCurrency} · self-hosted, your data stays on your machine
+        {data.baseCurrency} · self-hosted · your data stays on your machine
       </Text>
     </Page>
   );
@@ -569,6 +889,307 @@ function EquityTable({ data }: { data: MonthlyStatement }) {
   );
 }
 
+// ─── Trends page — net worth, income vs expenses, savings rate ──────────────
+
+function TrendsPage({ data }: { data: MonthlyStatement }) {
+  const labels = data.months.map((m) => m.label);
+  return (
+    <PageChrome title="Trends" data={data}>
+      <Text style={styles.sectionTitle}>Net worth</Text>
+      <Text style={{ fontSize: 8, color: C.inkSoft, marginBottom: 4 }}>
+        Closing balance per month, base {data.baseCurrency}.
+      </Text>
+      <LineChart
+        values={data.months.map((m) => m.netWorth)}
+        labels={labels}
+        width={500}
+        height={120}
+      />
+
+      <Text style={[styles.sectionTitle, { marginTop: 18 }]}>
+        Income vs expenses
+      </Text>
+      <Text style={{ fontSize: 8, color: C.inkSoft, marginBottom: 4 }}>
+        Bars above the baseline are income, below are expenses. Same scale
+        on both sides so the ratio is visible at a glance.
+      </Text>
+      <BarsChart
+        positive={data.months.map((m) => m.income)}
+        negative={data.months.map((m) => m.expenses)}
+        labels={labels}
+        width={500}
+        height={120}
+      />
+
+      <Text style={[styles.sectionTitle, { marginTop: 18 }]}>Savings rate</Text>
+      <Text style={{ fontSize: 8, color: C.inkSoft, marginBottom: 4 }}>
+        Net ÷ income, per month. Rate clamps at ±100%.
+      </Text>
+      <LineChart
+        values={data.months.map((m) => (m.savingsRate ?? 0) * 100)}
+        labels={labels}
+        width={500}
+        height={90}
+        stroke={C.good}
+        fill="#E6F2EA"
+      />
+    </PageChrome>
+  );
+}
+
+// ─── Categories page — top spend categories with horizontal bars ────────────
+
+function CategoriesPage({ data }: { data: MonthlyStatement }) {
+  // Top 10 categories. Anything beyond gets a single "Other" bucket so
+  // long-tail noise doesn't dominate the visual.
+  const top = data.categories.slice(0, 10);
+  const restTotal = data.categories
+    .slice(10)
+    .reduce((s, c) => s + c.totalBase, 0);
+  const restShare = data.totals.expenses > 0 ? restTotal / data.totals.expenses : 0;
+  const maxAmount = Math.max(0.01, ...top.map((c) => c.totalBase));
+  return (
+    <PageChrome title="Spending by category" data={data}>
+      <Text style={styles.sectionTitle}>
+        Where {fmtMoney(data.totals.expenses, data.baseCurrency)} went
+      </Text>
+      <Text style={{ fontSize: 8, color: C.inkSoft, marginBottom: 8 }}>
+        Top {top.length} categories across {data.months.length} months. Bar
+        length is amount; the share % is to the right.
+      </Text>
+      <View>
+        {top.map((c) => (
+          <CategoryRowView
+            key={c.category}
+            row={c}
+            maxAmount={maxAmount}
+            data={data}
+          />
+        ))}
+        {restTotal > 0 ? (
+          <View style={{ marginTop: 6 }}>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 2,
+              }}
+            >
+              <Text style={{ fontSize: 8, color: C.inkSoft, fontStyle: "italic" }}>
+                Other ({data.categories.length - 10} categories)
+              </Text>
+              <Text style={{ fontSize: 8, color: C.inkSoft, fontFamily: "Courier" }}>
+                {fmtMoney(restTotal, data.baseCurrency)} ·{" "}
+                {(restShare * 100).toFixed(0)}%
+              </Text>
+            </View>
+            <HorizontalBar
+              value={restTotal / maxAmount}
+              width={500}
+              height={4}
+              color={C.inkFaint}
+            />
+          </View>
+        ) : null}
+      </View>
+    </PageChrome>
+  );
+}
+
+function CategoryRowView({
+  row,
+  maxAmount,
+  data,
+}: {
+  row: CategoryRow;
+  maxAmount: number;
+  data: MonthlyStatement;
+}) {
+  return (
+    <View style={{ marginBottom: 6 }}>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: 2,
+        }}
+      >
+        <Text style={{ fontSize: 9, color: C.ink }}>{row.category}</Text>
+        <View style={{ flexDirection: "row", gap: 8, alignItems: "baseline" }}>
+          <Text style={{ fontSize: 8, color: C.inkFaint }}>
+            {row.txCount} tx
+          </Text>
+          <Text style={{ fontSize: 9, color: C.ink, fontFamily: "Courier" }}>
+            {fmtMoney(row.totalBase, data.baseCurrency)}
+          </Text>
+          <Text style={{ fontSize: 8, color: C.inkSoft, fontFamily: "Courier" }}>
+            {(row.share * 100).toFixed(0)}%
+          </Text>
+        </View>
+      </View>
+      <HorizontalBar value={row.totalBase / maxAmount} width={500} height={5} />
+    </View>
+  );
+}
+
+// ─── Goals page — progress bars + ETA per goal ──────────────────────────────
+
+function GoalsPage({ data }: { data: MonthlyStatement }) {
+  return (
+    <PageChrome title="Goals" data={data}>
+      <Text style={styles.sectionTitle}>Active savings goals</Text>
+      <Text style={{ fontSize: 8, color: C.inkSoft, marginBottom: 8 }}>
+        Progress against target where set; ETA is months at the current
+        contribution rate.
+      </Text>
+      <View>
+        {data.goals.map((g) => (
+          <GoalRowView key={g.id} row={g} />
+        ))}
+      </View>
+    </PageChrome>
+  );
+}
+
+function GoalRowView({ row }: { row: GoalRow }) {
+  const statusColor = row.done
+    ? C.good
+    : row.onPace == null
+      ? C.inkFaint
+      : row.onPace
+        ? C.good
+        : C.bad;
+  const statusLabel = row.done
+    ? "Done"
+    : row.onPace == null
+      ? "—"
+      : row.onPace
+        ? "On pace"
+        : "Off pace";
+  const etaLabel =
+    row.etaMonths == null
+      ? "—"
+      : row.etaMonths >= 24
+        ? `~${(row.etaMonths / 12).toFixed(1)}y to target`
+        : `~${row.etaMonths} mo to target`;
+  return (
+    <View style={{ marginBottom: 12 }}>
+      <View
+        style={{
+          flexDirection: "row",
+          justifyContent: "space-between",
+          alignItems: "baseline",
+          marginBottom: 3,
+        }}
+      >
+        <Text style={{ fontSize: 10, color: C.ink, fontFamily: "Helvetica-Bold" }}>
+          {row.name}
+        </Text>
+        <Text
+          style={{
+            fontSize: 8,
+            color: statusColor,
+            fontFamily: "Courier",
+          }}
+        >
+          {statusLabel}
+        </Text>
+      </View>
+      <View
+        style={{
+          flexDirection: "row",
+          justifyContent: "space-between",
+          marginBottom: 3,
+        }}
+      >
+        <Text style={{ fontSize: 8, color: C.inkSoft, fontFamily: "Courier" }}>
+          {fmtMoney(row.current, row.currency)}
+          {row.target != null ? ` / ${fmtMoney(row.target, row.currency)}` : ""}
+        </Text>
+        <Text style={{ fontSize: 8, color: C.inkSoft, fontFamily: "Courier" }}>
+          {fmtMoney(row.monthlyContribution, row.currency)}/mo · {etaLabel}
+        </Text>
+      </View>
+      {row.progress != null ? (
+        <HorizontalBar
+          value={row.progress}
+          width={500}
+          height={5}
+          color={row.done ? C.good : C.primary}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+// ─── Budgets page — current-month status per budget ─────────────────────────
+
+function BudgetsPage({ data }: { data: MonthlyStatement }) {
+  return (
+    <PageChrome title="Budgets" data={data}>
+      <Text style={styles.sectionTitle}>
+        Status this month — {data.range.toMonth}
+      </Text>
+      <Text style={{ fontSize: 8, color: C.inkSoft, marginBottom: 8 }}>
+        Spend vs cap, in each budget&apos;s currency. Bars cap at 100%; over-
+        budget is shown in red on the right with the percent overshoot.
+      </Text>
+      <View>
+        {data.budgets.map((b) => (
+          <BudgetRowView key={b.id} row={b} />
+        ))}
+      </View>
+    </PageChrome>
+  );
+}
+
+function BudgetRowView({ row }: { row: BudgetRow }) {
+  const color =
+    row.status === "over"
+      ? C.bad
+      : row.status === "warning"
+        ? "#D97706"
+        : C.good;
+  const right =
+    row.status === "over"
+      ? `+${(row.percentUsed - 100).toFixed(0)}% over`
+      : `${row.percentUsed.toFixed(0)}% used`;
+  return (
+    <View style={{ marginBottom: 10 }}>
+      <View
+        style={{
+          flexDirection: "row",
+          justifyContent: "space-between",
+          alignItems: "baseline",
+          marginBottom: 3,
+        }}
+      >
+        <Text style={{ fontSize: 10, color: C.ink }}>{row.category}</Text>
+        <Text style={{ fontSize: 8, color, fontFamily: "Courier" }}>{right}</Text>
+      </View>
+      <View
+        style={{
+          flexDirection: "row",
+          justifyContent: "space-between",
+          marginBottom: 3,
+        }}
+      >
+        <Text style={{ fontSize: 8, color: C.inkSoft, fontFamily: "Courier" }}>
+          {fmtMoney(row.spentThisMonth, row.currency)} / {fmtMoney(row.monthlyLimit, row.currency)}
+        </Text>
+      </View>
+      <HorizontalBar
+        value={row.percentUsed / 100}
+        width={500}
+        height={5}
+        color={color}
+      />
+    </View>
+  );
+}
+
 // ─── Document ────────────────────────────────────────────────────────────────
 
 function StatementDoc({ data }: { data: MonthlyStatement }) {
@@ -579,10 +1200,29 @@ function StatementDoc({ data }: { data: MonthlyStatement }) {
     >
       <CoverPage data={data} />
 
+      {/*
+        Pages, in narrative order:
+        1. Cover                — net worth + delta + KPIs
+        2. Trends               — net worth line, income/expense bars, savings
+        3. Monthly performance  — the per-month table with sparklines
+        4. Spending by category — top categories, share, per-tx counts
+        5. Goals                — savings goals progress + ETA
+        6. Budgets              — current-month status (only if any exist)
+        7. Accounts             — closing balances at end of period
+        8. Equity               — three scenarios (only if grants exist)
+      */}
+      <TrendsPage data={data} />
+
       <PageChrome title="Monthly performance" data={data}>
         <Text style={styles.sectionTitle}>Cashflow + balance sheet</Text>
         <MonthlyTable data={data} />
       </PageChrome>
+
+      {data.categories.length > 0 ? <CategoriesPage data={data} /> : null}
+
+      {data.goals.length > 0 ? <GoalsPage data={data} /> : null}
+
+      {data.budgets.length > 0 ? <BudgetsPage data={data} /> : null}
 
       <PageChrome title="Accounts" data={data}>
         <Text style={styles.sectionTitle}>
