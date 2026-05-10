@@ -2,6 +2,7 @@ import "server-only";
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { getOwner, ownedBy } from "@/lib/db/scope";
+import { ThrottleStore } from "@/lib/throttle-store";
 import { localToday, localYmd } from "@/lib/dates";
 
 /**
@@ -95,15 +96,16 @@ function parseYmd(s: string): Date {
  * deploys don't miss a run.
  */
 // Per-tenant throttle. Tenant A's accrual must not throttle B.
-const lastAccrualByOwner = new Map<string, number>();
+// Capped via ThrottleStore so the map can't grow forever in
+// deployments with many tenants.
+const lastAccrualByOwner = new ThrottleStore();
 const ACCRUAL_THROTTLE_MS = 30 * 60 * 1000;
 
 export async function accrueDueFlows(): Promise<{ posted: number }> {
   const owner = await getOwner();
   const throttleKey = owner == null ? "host" : `u${owner}`;
   const now = Date.now();
-  const last = lastAccrualByOwner.get(throttleKey) ?? 0;
-  if (now - last < ACCRUAL_THROTTLE_MS) {
+  if (now - lastAccrualByOwner.get(throttleKey) < ACCRUAL_THROTTLE_MS) {
     return { posted: 0 };
   }
   lastAccrualByOwner.set(throttleKey, now);

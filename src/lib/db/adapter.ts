@@ -87,9 +87,24 @@ function createSqliteAdapter(): DbAdapter {
   sqlite.pragma("foreign_keys = ON");
   // Wait up to 5s on a write lock instead of throwing SQLITE_BUSY.
   sqlite.pragma("busy_timeout = 5000");
-  // Performance pragmas — tiny finance DBs fit in RAM after warmup.
-  sqlite.pragma("cache_size = -65536");
-  sqlite.pragma("mmap_size = 268435456");
+  // Memory budget tuned for the Cairn workload, not "what's possible":
+  //
+  //   Was — cache=64MB + mmap=256MB. That's 320MB of virtual memory
+  //   reserved per process for a DB that's typically <20MB on disk
+  //   even after years of use. Combined with V8's 384MB heap cap in
+  //   the Docker runner, the container starts at ~700MB of address
+  //   space before the first request runs. Caused real OOM kills on
+  //   small instances (Fly 256MB, Railway hobby, etc.).
+  //
+  //   Now — cache=16MB + mmap=64MB. Personal-finance DBs hold maybe
+  //   a few hundred K rows tops; 16MB of page cache covers the hot
+  //   working set after warmup, 64MB of mmap covers the typical
+  //   file. Both can be bumped via env for unusually large
+  //   deployments without a code change.
+  const cacheKb = Number(process.env.SQLITE_CACHE_KB) || 16384; // 16MB
+  const mmapBytes = Number(process.env.SQLITE_MMAP_BYTES) || 64 * 1024 * 1024;
+  sqlite.pragma(`cache_size = -${cacheKb}`);
+  sqlite.pragma(`mmap_size = ${mmapBytes}`);
   sqlite.pragma("synchronous = NORMAL");
   sqlite.pragma("temp_store = MEMORY");
 

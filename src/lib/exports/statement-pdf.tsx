@@ -1243,14 +1243,40 @@ function StatementDoc({ data }: { data: MonthlyStatement }) {
   );
 }
 
-export async function buildStatementPdf(
+/**
+ * Returns a Web ReadableStream of the rendered PDF bytes.
+ *
+ * `pdf().toBuffer()` is misleadingly named — it returns a Node
+ * Readable, not a Buffer. We previously collected the entire stream
+ * into one big Buffer before responding; for a 12-month statement
+ * with thousands of txs that's a 2-5MB single allocation that pegs
+ * the request's heap usage. Streaming straight through to the
+ * Response keeps peak memory at one chunk (~16KB) regardless of
+ * the document size.
+ */
+export async function buildStatementPdfStream(
   data: MonthlyStatement,
-): Promise<Buffer> {
-  const stream = await pdf(<StatementDoc data={data} />).toBuffer();
-  // toBuffer returns a Node Readable. Collect.
-  const chunks: Buffer[] = [];
-  for await (const chunk of stream) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  }
-  return Buffer.concat(chunks);
+): Promise<ReadableStream<Uint8Array>> {
+  const nodeStream = await pdf(<StatementDoc data={data} />).toBuffer();
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      nodeStream.on("data", (chunk: Buffer | string) => {
+        controller.enqueue(
+          typeof chunk === "string"
+            ? new TextEncoder().encode(chunk)
+            : new Uint8Array(chunk),
+        );
+      });
+      nodeStream.on("end", () => controller.close());
+      nodeStream.on("error", (err) => controller.error(err));
+    },
+    cancel() {
+      // If the client disconnects mid-stream, kill the producer
+      // so we stop wasting CPU + memory rendering pages no one
+      // will read.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const s = nodeStream as any;
+      if (typeof s.destroy === "function") s.destroy();
+    },
+  });
 }

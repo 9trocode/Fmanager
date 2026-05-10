@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getAdminProfile, isAuthenticated } from "@/lib/auth/session";
 import { getBaseCurrency } from "@/lib/db/queries";
 import { buildMonthlyStatement } from "@/lib/exports/statement-data";
-import { buildStatementPdf } from "@/lib/exports/statement-pdf";
+import { buildStatementPdfStream } from "@/lib/exports/statement-pdf";
 
 export const dynamic = "force-dynamic";
 // react-pdf needs Node — disallow edge runtime explicitly.
@@ -25,15 +25,14 @@ export async function GET(req: NextRequest) {
     ownerName: profile.name,
     ownerEmail: profile.email,
   });
-  const buffer = await buildStatementPdf(data);
-
+  // Stream the PDF straight through to the response. Was: collect
+  // every chunk into one Buffer then ship — peaked at the full
+  // document size (2-5MB for typical statements). Now peak memory
+  // is one chunk (~16KB) regardless of how many pages.
+  const stream = await buildStatementPdfStream(data);
   const stamp = new Date().toISOString().slice(0, 10);
   const filename = `cairn-statement-${stamp}.pdf`;
-  const ab = buffer.buffer.slice(
-    buffer.byteOffset,
-    buffer.byteOffset + buffer.byteLength,
-  );
-  return new NextResponse(ab as ArrayBuffer, {
+  return new NextResponse(stream, {
     headers: {
       "Content-Type": "application/pdf",
       "Content-Disposition": `attachment; filename="${filename}"`,

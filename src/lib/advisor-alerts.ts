@@ -13,6 +13,7 @@ import {
 } from "@/lib/db/queries";
 import { getOwner, ownedBy } from "@/lib/db/scope";
 import { convert } from "@/lib/fx";
+import { ThrottleStore } from "@/lib/throttle-store";
 
 /**
  * Proactive advisor alerts.
@@ -35,16 +36,16 @@ type AlertInsert = typeof schema.advisorAlerts.$inferInsert;
 
 // Per-tenant throttle. Multi-tenant: tenant A triggering a check
 // must not throttle tenant B. Keyed by ownerUserId (or "host" for
-// the settings-admin / shared scope).
-const lastRunByOwner = new Map<string, number>();
+// the settings-admin / shared scope). Capped via ThrottleStore so
+// the map can't grow forever in deployments with many tenants.
+const lastRunByOwner = new ThrottleStore();
 const RUN_THROTTLE_MS = 30 * 60 * 1000;
 
 export async function runAdvisorChecks(): Promise<{ inserted: number; resolved: number }> {
   const owner = await getOwner();
   const throttleKey = owner == null ? "host" : `u${owner}`;
   const now = Date.now();
-  const last = lastRunByOwner.get(throttleKey) ?? 0;
-  if (now - last < RUN_THROTTLE_MS) {
+  if (now - lastRunByOwner.get(throttleKey) < RUN_THROTTLE_MS) {
     return { inserted: 0, resolved: 0 };
   }
   lastRunByOwner.set(throttleKey, now);
