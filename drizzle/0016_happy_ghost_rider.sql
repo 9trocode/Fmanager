@@ -1,0 +1,1 @@
+CREATE INDEX `transactions_owner_occurred_idx` ON `transactions` (`owner_user_id`,`occurred_at`);

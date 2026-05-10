@@ -36,6 +36,12 @@ ENV DATABASE_URL=/data/app.db
 #     reduces idle CPU when better-sqlite3 / fs uses async I/O)
 ENV NODE_OPTIONS="--max-old-space-size=384 --no-deprecation"
 ENV UV_THREADPOOL_SIZE=2
+# The entrypoint already runs scripts/migrate.mjs before the server
+# boots, so the in-process auto-migrate inside the adapter (which
+# would fire on first DB open via instrumentation.ts) is redundant
+# work that adds ~30-50ms to the first request after each container
+# start. In dev we still want auto-migrate; the runner image opts out.
+ENV DATABASE_AUTO_MIGRATE=0
 
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S -u 1001 -G nodejs nextjs && \

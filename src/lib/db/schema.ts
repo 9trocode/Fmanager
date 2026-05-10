@@ -377,6 +377,18 @@ export const transactions = sqliteTable(
       t.accountId,
       t.occurredAt,
     ),
+    // Composite (owner, occurredAt). The dominant query shape on every
+    // multi-tenant deployment is "txs for the active owner in a date
+    // range" — the dashboard / cash-flow / budgets / transactions /
+    // export pages all hit this. Without the composite, SQLite picks
+    // either the owner index (then scans the date range across the
+    // whole owner's history) or the date index (then scans every
+    // tenant's txs in that range). The composite covers it in one
+    // b-tree walk.
+    ownerOccurredIdx: index("transactions_owner_occurred_idx").on(
+      t.ownerUserId,
+      t.occurredAt,
+    ),
     ownerIdx: index("transactions_owner_idx").on(t.ownerUserId),
     flowOccurredUniq: uniqueIndex("transactions_flow_occurred_uniq")
       .on(t.flowId, t.occurredAt)

@@ -1,8 +1,8 @@
 services:
   app:
     build: .
-    image: founder-finance:latest
-    container_name: founder-finance
+    image: crian:latest
+    container_name: crian
     restart: unless-stopped
     ports:
       - "3000:3000"
@@ -17,7 +17,7 @@ services:
       DATABASE_URL: /data/app.db
       APP_URL: ${APP_URL:-http://localhost:3000}
     volumes:
-      - founder-finance-data:/data
+      - crian-data:/data
 
 volumes:
-  founder-finance-data:
+  crian-data:
