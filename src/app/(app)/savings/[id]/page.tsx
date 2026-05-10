@@ -37,7 +37,7 @@ import {
   listGrants,
 } from "@/lib/db/queries";
 import { computeNetWorth } from "@/lib/aggregation";
-import { getRate } from "@/lib/fx";
+import { prefetchRates } from "@/lib/fx";
 import { formatMoney } from "@/lib/format";
 import {
   monthsToTarget,
@@ -82,15 +82,27 @@ export default async function SavingsGoalDetailPage({
 
   // Net worth projection at the goal's horizon, using the goal's monthly
   // contribution as the savings input (in base currency).
-  const goalToBase = await getRate(goal.currency, baseCurrency);
-  const monthlyInBase = goal.monthlyContribution * goalToBase;
-
+  //
+  // Was: serial `await getRate()` for the goal currency THEN one
+  // sequential await per unique grant currency. With N grant
+  // currencies that's 1+N round-trips even though FX is cached.
+  // Now: prefetch every (currency → base) pair in one shot, then
+  // sync lookups via the rate map.
   const uniqueGrantCurrencies = Array.from(
     new Set(grants.map((g) => g.currency)),
   );
+  const allCurrencies = Array.from(
+    new Set([goal.currency, ...uniqueGrantCurrencies]),
+  );
+  const rates = await prefetchRates(
+    allCurrencies.map((c) => [c, baseCurrency] as const),
+  );
+  const goalToBase = rates.rate(goal.currency, baseCurrency);
+  const monthlyInBase = goal.monthlyContribution * goalToBase;
+
   const fxToBase: Record<string, number> = {};
   for (const c of uniqueGrantCurrencies) {
-    fxToBase[c] = await getRate(c, baseCurrency);
+    fxToBase[c] = rates.rate(c, baseCurrency);
   }
   const startGrantsInBase = summary.byCategory.liquid.grant;
   const startNonGrant = summary.totals.liquid - startGrantsInBase;

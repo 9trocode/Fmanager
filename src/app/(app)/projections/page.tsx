@@ -13,7 +13,7 @@ import {
   listSavingsGoals,
 } from "@/lib/db/queries";
 import { computeNetWorth } from "@/lib/aggregation";
-import { getRate } from "@/lib/fx";
+import { prefetchRates } from "@/lib/fx";
 import {
   getPredictionSession,
   listPredictionSessions,
@@ -50,11 +50,20 @@ export default async function ProjectionsPage({
       ? await getPredictionSession(activeSessionId)
       : null;
 
+  // Prefetch every (currency → base) pair the projection needs in
+  // one shot. Was N sequential `await getRate()` calls — even with
+  // the 12h cache, every iteration yields and the next blocks.
   const grantCurrencies = grants.map((g) => g.currency);
   const goalCurrencies = goals.map((g) => g.currency);
+  const uniqueCurrencies = Array.from(
+    new Set([...grantCurrencies, ...goalCurrencies]),
+  );
+  const projRates = await prefetchRates(
+    uniqueCurrencies.map((c) => [c, baseCurrency] as const),
+  );
   const fxToBase: Record<string, number> = {};
-  for (const c of new Set([...grantCurrencies, ...goalCurrencies])) {
-    const rate = await getRate(c, baseCurrency);
+  for (const c of uniqueCurrencies) {
+    const rate = projRates.rate(c, baseCurrency);
     fxToBase[c] = Number.isFinite(rate) ? rate : 1;
   }
 

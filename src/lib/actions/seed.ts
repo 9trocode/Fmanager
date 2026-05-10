@@ -474,23 +474,30 @@ export async function seedSampleData() {
   // who hit "give me sample data" get the dataset in their own scope.
   const owner = await getOwner();
 
-  const idsByName: Record<string, number> = {};
-  for (const a of ACCOUNTS) {
-    const [created] = await db
-      .insert(schema.accounts)
-      .values({
+  // Insert all accounts in one statement so we get every id back in
+  // one fsync. Was N sequential per-account inserts.
+  const insertedAccounts = await db
+    .insert(schema.accounts)
+    .values(
+      ACCOUNTS.map((a) => ({
         name: a.name,
         type: a.type,
         currency: a.currency,
         institution: a.institution,
         notes: a.notes,
         ownerUserId: owner,
-      })
-      .returning();
+      })),
+    )
+    .returning();
+  const idsByName: Record<string, number> = {};
+  const snapshotRows: (typeof schema.valueSnapshots.$inferInsert)[] = [];
+  for (let i = 0; i < ACCOUNTS.length; i++) {
+    const a = ACCOUNTS[i];
+    const created = insertedAccounts[i];
     if (!created) continue;
     idsByName[a.name] = created.id;
     for (const s of a.snapshots) {
-      await db.insert(schema.valueSnapshots).values({
+      snapshotRows.push({
         accountId: created.id,
         value: s.value,
         currency: a.currency,
@@ -500,9 +507,17 @@ export async function seedSampleData() {
       });
     }
   }
+  if (snapshotRows.length > 0) {
+    // One bulk insert for every snapshot across every account.
+    // Was N×M individual fsyncs.
+    await db.insert(schema.valueSnapshots).values(snapshotRows);
+  }
 
-  for (const g of GRANTS) {
-    await db.insert(schema.equityGrants).values({ ...g, ownerUserId: owner });
+  if (GRANTS.length > 0) {
+    // One bulk insert for grants too. Was N per-grant statements.
+    await db
+      .insert(schema.equityGrants)
+      .values(GRANTS.map((g) => ({ ...g, ownerUserId: owner })));
   }
 
   await db
