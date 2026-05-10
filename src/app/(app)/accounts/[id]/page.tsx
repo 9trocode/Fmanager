@@ -84,15 +84,19 @@ export default async function AccountDetailPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ m?: string }>;
 }) {
-  const { id: idStr } = await params;
+  // params + searchParams are independent promises Next.js gives us;
+  // resolve both in parallel along with the account-existence check.
+  const [{ id: idStr }, sp] = await Promise.all([params, searchParams]);
   const id = Number(idStr);
   if (!Number.isFinite(id)) notFound();
 
-  const account = await getAccount(id);
+  // Account fetch + month resolution can also run together.
+  const [account, selectedMonth] = await Promise.all([
+    getAccount(id),
+    resolveMonthKey(sp.m),
+  ]);
   if (!account) notFound();
 
-  const sp = await searchParams;
-  const selectedMonth = await resolveMonthKey(sp.m);
   const isPastMonth =
     selectedMonth != null && selectedMonth !== currentMonthKey();
   const asOfDate = isPastMonth ? endOfMonthYmd(selectedMonth!) : undefined;

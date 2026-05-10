@@ -62,12 +62,15 @@ export default async function NetWorthPage({
 }: {
   searchParams: Promise<{ m?: string }>;
 }) {
+  // searchParams + month resolution + base currency are independent
+  // — fan them out instead of awaiting one after the other.
   const params = await searchParams;
-  const selectedMonth = await resolveMonthKey(params.m);
+  const [selectedMonth, baseCurrency] = await Promise.all([
+    resolveMonthKey(params.m),
+    getBaseCurrency(),
+  ]);
   const today = currentMonthKey();
   const isPastMonth = selectedMonth != null && selectedMonth !== today;
-
-  const baseCurrency = await getBaseCurrency();
 
   // Past month → as-of-date snapshot view (cash side only). Current
   // month → live multi-scenario view (existing behavior).

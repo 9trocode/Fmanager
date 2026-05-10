@@ -106,12 +106,14 @@ export default async function TransactionsPage({
     scope?: string;
   }>;
 }) {
-  const sp = await searchParams;
-  // Honor the global month filter (sidebar) so picking October 2024
-  // there scopes this page too. URL-explicit `from/to` and an
-  // explicit `scope=all` still win — those are the user's per-page
-  // overrides.
-  const globalMonthKey = await resolveMonthKey(undefined);
+  // searchParams + global month filter (sidebar) are independent of
+  // each other — fan them out instead of awaiting in series.
+  const [sp, globalMonthKey] = await Promise.all([
+    searchParams,
+    resolveMonthKey(undefined),
+  ]);
+  // URL-explicit `from/to` and an explicit `scope=all` still win —
+  // those are the user's per-page overrides.
   const month = monthBounds(globalMonthKey);
 
   const userSetDates = Boolean(sp.from || sp.to);

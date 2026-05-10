@@ -56,17 +56,22 @@ export default async function SavingsGoalDetailPage({
   const id = Number(idStr);
   if (!Number.isFinite(id)) notFound();
 
-  const goal = await getSavingsGoal(id);
+  // Pull the goal + base currency in parallel — computeNetWorth needs
+  // baseCurrency, so it sequences after, but everything else fans out.
+  // Was: computeNetWorth(await getBaseCurrency()) inside a sibling
+  // Promise.all — the inner await blocked the array from kicking off.
+  const [goal, baseCurrency] = await Promise.all([
+    getSavingsGoal(id),
+    getBaseCurrency(),
+  ]);
   if (!goal) notFound();
 
-  const [accounts, baseCurrency, summary, grants, linkedAccount] =
-    await Promise.all([
-      listAccounts({ includeArchived: false }),
-      getBaseCurrency(),
-      computeNetWorth(await getBaseCurrency()),
-      listGrants(),
-      goal.accountId ? getAccount(goal.accountId) : null,
-    ]);
+  const [accounts, summary, grants, linkedAccount] = await Promise.all([
+    listAccounts({ includeArchived: false }),
+    computeNetWorth(baseCurrency),
+    listGrants(),
+    goal.accountId ? getAccount(goal.accountId) : null,
+  ]);
 
   const accountOptions = accounts.map((a) => ({
     id: a.id,

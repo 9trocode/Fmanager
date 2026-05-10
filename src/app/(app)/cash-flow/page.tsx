@@ -17,12 +17,16 @@ import { resolveMonthKey } from "@/lib/month-filter";
 import { localYmd } from "@/lib/dates";
 
 export default async function CashFlowPage() {
-  const baseCurrency = await getBaseCurrency();
+  // Run base currency + month resolution in parallel — both touch
+  // independent state (DB vs cookie).
+  const [baseCurrency, monthKey] = await Promise.all([
+    getBaseCurrency(),
+    resolveMonthKey(undefined),
+  ]);
 
   // If the global month filter is set (sidebar), narrow the "Recent
   // one-time" list to that calendar month. Otherwise fall back to the
-  // last 30 days, which is what this page has always shown.
-  const monthKey = await resolveMonthKey(undefined);
+  // last 30 days.
   let monthLabel: string | null = null;
   let recentTxsPromise: Promise<
     Awaited<ReturnType<typeof listRecentTransactions>>

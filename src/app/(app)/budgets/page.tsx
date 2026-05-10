@@ -20,8 +20,11 @@ export default async function BudgetsPage({
   searchParams: Promise<{ m?: string }>;
 }) {
   const params = await searchParams;
-  const monthKey = await resolveMonthKey(params.m);
-  const baseCurrency = await getBaseCurrency();
+  // Month resolution + base currency are independent.
+  const [monthKey, baseCurrency] = await Promise.all([
+    resolveMonthKey(params.m),
+    getBaseCurrency(),
+  ]);
 
   // Resolve the month boundaries from the query param if present, else
   // current month. Used both for the aggregator call and for the local

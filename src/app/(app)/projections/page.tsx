@@ -29,15 +29,21 @@ export default async function ProjectionsPage({
   const validRequested = Number.isFinite(requestedSessionId)
     ? requestedSessionId
     : null;
-  const baseCurrency = await getBaseCurrency();
-  const [summary, grants, goals, budgets, flows, sessions] = await Promise.all([
-    computeNetWorth(baseCurrency),
-    listGrants(),
-    listSavingsGoals(),
-    listBudgets(),
-    listFlows(),
-    listPredictionSessions(),
-  ]);
+  // Pull every independent read in one fan-out. baseCurrency was
+  // serially awaited before computeNetWorth — splitting it out so
+  // listGrants/listSavingsGoals/listBudgets/listFlows/listPredictionSessions
+  // start in parallel, then computeNetWorth runs once baseCurrency
+  // resolves (it's the only consumer that needs it).
+  const [baseCurrency, grants, goals, budgets, flows, sessions] =
+    await Promise.all([
+      getBaseCurrency(),
+      listGrants(),
+      listSavingsGoals(),
+      listBudgets(),
+      listFlows(),
+      listPredictionSessions(),
+    ]);
+  const summary = await computeNetWorth(baseCurrency);
   const activeSessionId = validRequested ?? sessions[0]?.id ?? null;
   const activeSession =
     activeSessionId != null

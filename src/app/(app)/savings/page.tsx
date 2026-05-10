@@ -70,8 +70,11 @@ function etaLabel(state: GoalState): string {
 }
 
 export default async function GoalsPage() {
-  const baseCurrency = await getBaseCurrency();
-  const [goals, accounts] = await Promise.all([
+  // baseCurrency lookup runs independently of the data queries —
+  // pull all three in one fan-out instead of awaiting baseCurrency
+  // first.
+  const [baseCurrency, goals, accounts] = await Promise.all([
+    getBaseCurrency(),
     listSavingsGoals({ includeArchived: true }),
     listAccounts(),
   ]);
