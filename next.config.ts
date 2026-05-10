@@ -6,6 +6,18 @@ const nextConfig: NextConfig = {
     root: path.join(__dirname),
   },
   output: "standalone",
+  experimental: {
+    /**
+     * Tree-shake big "barrel-export" packages so a `import { X } from "lucide-react"`
+     * pulls in just X, not the full thousand-icon catalog.
+     *
+     * lucide-react is the worst offender — 69 importers across the app
+     * pulling individual icons from a single barrel. Without this,
+     * every client bundle ships the icons the route uses + most of the
+     * rest of the catalog as dead code. Same story for radix-ui.
+     */
+    optimizePackageImports: ["lucide-react", "radix-ui", "@radix-ui/react-icons"],
+  },
   // Force the full better-sqlite3 + drizzle-orm packages into the standalone
   // output's node_modules. The runtime migrate script (scripts/migrate.mjs)
   // is a separate Node process — Next doesn't bundle it — so it needs the
