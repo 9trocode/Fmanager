@@ -86,6 +86,16 @@ export const accounts = sqliteTable(
   (t) => ({
     archivedIdx: index("accounts_archived_idx").on(t.archived),
     ownerIdx: index("accounts_owner_idx").on(t.ownerUserId),
+    // Composite for the dominant "active accounts for owner" query
+    // pattern. listAccounts({includeArchived:false}) hits this on
+    // every dashboard render. SQLite uses the leftmost prefix, so
+    // (owner_user_id, archived) covers both the owner-only and the
+    // owner+archived shapes — `accounts_owner_idx` becomes redundant
+    // but keeping it costs nothing on the small accounts table.
+    ownerArchivedIdx: index("accounts_owner_archived_idx").on(
+      t.ownerUserId,
+      t.archived,
+    ),
   }),
 );
 
@@ -250,6 +260,13 @@ export const recurringFlows = sqliteTable(
     accountIdx: index("recurring_flows_account_idx").on(t.accountId),
     archivedIdx: index("recurring_flows_archived_idx").on(t.archived),
     ownerIdx: index("recurring_flows_owner_idx").on(t.ownerUserId),
+    // listFlows({includeArchived:false}) is hit by every page that
+    // needs the recurring-cash-flow context (cash-flow, dashboard,
+    // advisor system prompt, projections, runway calc).
+    ownerArchivedIdx: index("recurring_flows_owner_archived_idx").on(
+      t.ownerUserId,
+      t.archived,
+    ),
   }),
 );
 
@@ -312,6 +329,12 @@ export const savingsGoals = sqliteTable(
     archivedIdx: index("savings_goals_archived_idx").on(t.archived),
     accountIdx: index("savings_goals_account_idx").on(t.accountId),
     ownerIdx: index("savings_goals_owner_idx").on(t.ownerUserId),
+    // listSavingsGoals({includeArchived:false}) — savings page +
+    // dashboard's SavingsSummaryLoader.
+    ownerArchivedIdx: index("savings_goals_owner_archived_idx").on(
+      t.ownerUserId,
+      t.archived,
+    ),
   }),
 );
 
@@ -389,6 +412,21 @@ export const transactions = sqliteTable(
       t.ownerUserId,
       t.occurredAt,
     ),
+    // (owner, category, occurred_at) — budget computation walks every
+    // tx in a month for one category for one owner. Without this, the
+    // category filter forces a scan of every owner's txs for that
+    // category. /budgets/[id], computeBudgetStatus, and listTransactions
+    // with a category filter all hit this.
+    ownerCategoryOccurredIdx: index(
+      "transactions_owner_category_occurred_idx",
+    ).on(t.ownerUserId, t.category, t.occurredAt),
+    // (owner, kind, occurred_at) — /budgets one-time-expenses scan +
+    // listTransactions with kind=expense / kind=income filter. With
+    // 100K txs split ~70/30 expense/income, the kind filter cuts the
+    // scan in half before the date range applies.
+    ownerKindOccurredIdx: index(
+      "transactions_owner_kind_occurred_idx",
+    ).on(t.ownerUserId, t.kind, t.occurredAt),
     ownerIdx: index("transactions_owner_idx").on(t.ownerUserId),
     flowOccurredUniq: uniqueIndex("transactions_flow_occurred_uniq")
       .on(t.flowId, t.occurredAt)
@@ -553,6 +591,20 @@ export const advisorAlerts = sqliteTable(
       t.dismissedAt,
       t.resolvedAt,
       t.createdAt,
+    ),
+    // Multi-tenant hot path: countActiveAlerts() runs on EVERY (app)
+    // layout render to drive the sidebar badge. Shape:
+    //   WHERE owner_user_id = ? AND dismissed_at IS NULL
+    //                          AND resolved_at IS NULL GROUP BY severity
+    // Without this composite, SQLite either reads the activeIdx (then
+    // post-filters by owner across every tenant's alerts) or reads
+    // ownerIdx (then post-filters NULL/NULL across every alert this
+    // tenant has ever had). The composite covers the active-for-owner
+    // path in one b-tree walk.
+    ownerActiveIdx: index("advisor_alerts_owner_active_idx").on(
+      t.ownerUserId,
+      t.dismissedAt,
+      t.resolvedAt,
     ),
   }),
 );
