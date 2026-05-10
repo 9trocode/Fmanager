@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import {
   ArrowDownRight,
   ArrowRight,
@@ -29,6 +30,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { CairnMark } from "@/components/app/cairn-mark";
+import { GitHubStats } from "@/components/app/github-stats";
 import { isAuthenticated } from "@/lib/auth/session";
 
 export default async function LandingPage() {
@@ -97,7 +99,30 @@ function Hero({
             </Button>
           ) : null}
         </div>
-        <p className="mt-6 text-xs text-muted-foreground font-mono">
+        <div className="mt-5 flex items-center justify-center">
+          {/*
+            Live stars + forks + last-commit pulled hourly from the
+            GitHub API server-side. Wrapped in Suspense with a static
+            fallback so a cold GitHub fetch never blocks the rest of
+            the hero from streaming. After the first cache fill it's
+            served instantly from Next's data cache for the next hour.
+          */}
+          <Suspense
+            fallback={
+              <a
+                href="https://github.com/9trocode/Cairn"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 rounded-md border border-border bg-card/60 px-3 py-1.5 text-xs font-mono text-muted-foreground"
+              >
+                9trocode/Cairn · loading…
+              </a>
+            }
+          >
+            <GitHubStats />
+          </Suspense>
+        </div>
+        <p className="mt-5 text-xs text-muted-foreground font-mono">
           BYO Anthropic key · BYO infrastructure · no premium tier exists
         </p>
 
@@ -935,6 +960,26 @@ function Footer() {
           >
             Sign in
           </Link>
+          <a
+            href="https://github.com/9trocode/Cairn"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-foreground transition-colors inline-flex items-center gap-1.5"
+            aria-label="Cairn on GitHub"
+          >
+            {/* Inline GitHub mark — kept self-contained here so the
+                Footer doesn't need to fetch live stats just to render. */}
+            <svg
+              viewBox="0 0 24 24"
+              width={14}
+              height={14}
+              aria-hidden
+              fill="currentColor"
+            >
+              <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.7-3.87-1.54-3.87-1.54-.52-1.32-1.27-1.67-1.27-1.67-1.04-.71.08-.7.08-.7 1.15.08 1.75 1.18 1.75 1.18 1.02 1.75 2.68 1.24 3.34.95.1-.74.4-1.24.73-1.53-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.18-3.1-.12-.29-.51-1.46.11-3.05 0 0 .96-.31 3.15 1.18a10.96 10.96 0 0 1 5.74 0c2.18-1.49 3.14-1.18 3.14-1.18.62 1.59.23 2.76.11 3.05.74.81 1.18 1.84 1.18 3.1 0 4.42-2.69 5.4-5.25 5.68.41.36.78 1.06.78 2.14 0 1.55-.01 2.79-.01 3.17 0 .31.21.68.8.56C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z" />
+            </svg>
+            GitHub
+          </a>
         </nav>
       </div>
     </footer>
