@@ -80,7 +80,6 @@ export default async function LoginPage({
                   id="email"
                   name="email"
                   type="email"
-                  defaultValue={profile.email ?? ""}
                   autoComplete="email"
                   autoFocus
                   placeholder={

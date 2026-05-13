@@ -26,8 +26,10 @@ export default async function CashFlowPage() {
 
   // If the global month filter is set (sidebar), narrow the "Recent
   // one-time" list to that calendar month. Otherwise fall back to the
-  // last 30 days.
+  // last 30 days. Future months have no transactions yet — skip the
+  // query and show an empty list so the page becomes a pure forecast.
   let monthLabel: string | null = null;
+  let isFuture = false;
   let recentTxsPromise: Promise<
     Awaited<ReturnType<typeof listRecentTransactions>>
   >;
@@ -41,10 +43,17 @@ export default async function CashFlowPage() {
       month: "long",
       year: "numeric",
     });
-    recentTxsPromise = listTransactions({
-      dateFrom: start,
-      dateTo: end,
-    }) as Promise<Awaited<ReturnType<typeof listRecentTransactions>>>;
+    const now = new Date();
+    const currentKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    isFuture = monthKey > currentKey;
+    recentTxsPromise = isFuture
+      ? (Promise.resolve([]) as Promise<
+          Awaited<ReturnType<typeof listRecentTransactions>>
+        >)
+      : (listTransactions({
+          dateFrom: start,
+          dateTo: end,
+        }) as Promise<Awaited<ReturnType<typeof listRecentTransactions>>>);
   } else {
     recentTxsPromise = listRecentTransactions(30);
   }
@@ -67,8 +76,13 @@ export default async function CashFlowPage() {
       listAccounts(),
       recentTxsPromise,
       listBudgets(),
-      monthKey ? computeThisMonthActuals(baseCurrency, monthKey) : null,
+      monthKey && !isFuture
+        ? computeThisMonthActuals(baseCurrency, monthKey)
+        : null,
     ]);
+  // Past month → actuals. Future month → projection (forecast). Current
+  // month / no filter → projection (the starting point you should be
+  // tracking toward).
   const summary = monthActuals
     ? {
         baseCurrency,
@@ -104,7 +118,9 @@ export default async function CashFlowPage() {
   }));
 
   const description = monthLabel
-    ? `Showing ${monthLabel} actuals — income, expenses, and net come from transactions in that month. The recurring flows section below stays the same (templates aren't time-scoped). Switch back to the current month in the sidebar for projected numbers.`
+    ? isFuture
+      ? `Forecast for ${monthLabel} — based on your current recurring flows. Want to model a raise, a new subscription, or a one-off bill in that month? Edit a flow below (its monthly total changes everywhere this month is shown) or use Predict for full what-if scenarios.`
+      : `Showing ${monthLabel} actuals — income, expenses, and net come from transactions in that month. The recurring flows section below stays the same (templates aren't time-scoped). Switch back to the current month in the sidebar for projected numbers.`
     : "Recurring inflows and outflows shape your monthly take. One-time expenses (a vacation, a tax bill) live in transactions and still affect your runway — log them from here too.";
 
   return (

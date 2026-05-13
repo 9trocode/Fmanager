@@ -34,6 +34,7 @@ import {
 
 const COOKIE = "ff_month";
 const MONTHS_BACK = 24;
+const MONTHS_FORWARD = 12;
 
 export function MonthFilter({
   variant = "default",
@@ -53,8 +54,19 @@ export function MonthFilter({
   const selected = fromUrl ?? cookieKey ?? currentKey;
 
   const options = useMemo(() => {
-    const out: Array<{ value: string; label: string }> = [];
+    const out: Array<{ value: string; label: string; future?: boolean }> = [];
     const now = new Date();
+    // Future months first (most distant at top), so "plan ahead" is one
+    // glance away. Then this month, then past months back to MONTHS_BACK.
+    for (let i = MONTHS_FORWARD; i >= 1; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      const value = monthKey(d);
+      const label = d.toLocaleString("en-US", {
+        month: "long",
+        year: "numeric",
+      });
+      out.push({ value, label: `${label} (forecast)`, future: true });
+    }
     for (let i = 0; i < MONTHS_BACK; i++) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const value = monthKey(d);

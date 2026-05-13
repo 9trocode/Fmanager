@@ -132,7 +132,6 @@ export default async function RegisterPage({
                   id="email"
                   name="email"
                   type="email"
-                  defaultValue={params.email ?? ""}
                   autoComplete="email"
                   placeholder="you@example.com"
                   required
