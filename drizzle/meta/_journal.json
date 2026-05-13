@@ -148,6 +148,13 @@
       "when": 1778480000000,
       "tag": "0020_future_month_overrides",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1778490000000,
+      "tag": "0021_budget_effective_from",
+      "breakpoints": true
     }
   ]
 }

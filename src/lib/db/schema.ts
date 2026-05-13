@@ -420,6 +420,15 @@ export const budgets = sqliteTable(
     accountId: integer("account_id").references(() => accounts.id, {
       onDelete: "set null",
     }),
+    /**
+     * Optional `YYYY-MM`. When set, the budget is invisible to any
+     * month VIEW earlier than this. Written when the user creates a
+     * budget while the global month filter is set to a future month
+     * — they're planning ahead, so the cap shouldn't retroactively
+     * appear on this month's or last month's tracking. Null = the
+     * budget has always existed (current and historical behavior).
+     */
+    effectiveFrom: text("effective_from"),
     notes: text("notes"),
     ownerUserId: ownerUserId(),
     createdAt: createdAt(),

@@ -324,6 +324,9 @@ export function BudgetsManager({
         <AddBudgetDialog
           baseCurrency={baseCurrency}
           accountOptions={accountOptions}
+          activeMonthKey={activeMonthKey}
+          isFutureMonth={isFutureMonth}
+          monthLabel={monthLabel}
         />
       </div>
 
@@ -332,7 +335,14 @@ export function BudgetsManager({
           icon={Target}
           title="No budgets yet"
           description="Set monthly spending limits per category. Spend is calculated from this month's transactions."
-          action={<AddBudgetDialog baseCurrency={baseCurrency} />}
+          action={
+            <AddBudgetDialog
+              baseCurrency={baseCurrency}
+              activeMonthKey={activeMonthKey}
+              isFutureMonth={isFutureMonth}
+              monthLabel={monthLabel}
+            />
+          }
         />
       ) : (
         <div className="space-y-2">

@@ -677,7 +677,20 @@ export const computeBudgetStatus = cache(async function computeBudgetStatusImpl(
   baseCurrency: string,
   monthKey?: string,
 ): Promise<BudgetSummary> {
-  const rawBudgets = await listBudgets();
+  const allBudgets = await listBudgets();
+  // Filter out budgets whose effective_from is AFTER the viewed
+  // month. The viewed month defaults to the current calendar month
+  // when no filter is set. This makes "new budget added on the
+  // August view" invisible to May (current) and to any earlier
+  // month — they only show up from August onward.
+  const viewMonth = monthKey ?? (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  })();
+  const rawBudgets = allBudgets.filter((b) => {
+    if (!b.effectiveFrom) return true;
+    return b.effectiveFrom <= viewMonth;
+  });
   if (rawBudgets.length === 0) {
     return {
       baseCurrency,

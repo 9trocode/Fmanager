@@ -56,7 +56,21 @@ export async function createBudget(formData: FormData) {
   await assertAdmin();
   const fields = commonFields(formData);
   const owner = await getOwner();
-  await db.insert(schema.budgets).values({ ...fields, ownerUserId: owner });
+
+  // When the user is filtered to a FUTURE month and creates a new
+  // budget, stamp `effective_from` with that month so the budget
+  // stays invisible to earlier months. Without this, a new budget
+  // added on the August view would also appear in May's tracking
+  // — counting commitments the user hasn't actually made yet.
+  const scoped = parseMonthKey(formData.get("month_key"));
+  const effectiveFrom =
+    scoped != null && scoped > currentMonthKey() ? scoped : null;
+
+  await db.insert(schema.budgets).values({
+    ...fields,
+    effectiveFrom,
+    ownerUserId: owner,
+  });
   revalidate();
 }
 

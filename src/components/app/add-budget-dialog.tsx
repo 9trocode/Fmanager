@@ -31,6 +31,9 @@ export function AddBudgetDialog({
   baseCurrency,
   trigger,
   accountOptions = [],
+  activeMonthKey = null,
+  isFutureMonth = false,
+  monthLabel = null,
 }: {
   baseCurrency: string;
   trigger?: React.ReactNode;
@@ -41,6 +44,12 @@ export function AddBudgetDialog({
    * cap spending only on the Naira card.
    */
   accountOptions?: Array<{ id: number; name: string; currency: string }>;
+  /** Active global month filter (YYYY-MM). When this is a future
+   *  month, the new budget gets `effective_from` stamped to it so
+   *  earlier months don't see the new cap. */
+  activeMonthKey?: string | null;
+  isFutureMonth?: boolean;
+  monthLabel?: string | null;
 }) {
   const role = useRole();
   const [open, setOpen] = useState(false);
@@ -58,10 +67,18 @@ export function AddBudgetDialog({
       </DialogTrigger>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>New budget</DialogTitle>
+          <DialogTitle>
+            New budget
+            {isFutureMonth && monthLabel ? (
+              <span className="ml-2 text-xs font-normal text-muted-foreground">
+                — starting {monthLabel}
+              </span>
+            ) : null}
+          </DialogTitle>
           <DialogDescription>
-            Set a monthly spending limit for a category. Spend is summed from
-            transactions in the current month.
+            {isFutureMonth && monthLabel
+              ? `This budget will only apply from ${monthLabel} onward — current and previous months won't see it.`
+              : "Set a monthly spending limit for a category. Spend is summed from transactions in the current month."}
           </DialogDescription>
         </DialogHeader>
         <form
@@ -73,6 +90,9 @@ export function AddBudgetDialog({
           }
           className="space-y-4"
         >
+          {isFutureMonth && activeMonthKey ? (
+            <input type="hidden" name="month_key" value={activeMonthKey} />
+          ) : null}
           <div className="space-y-1.5">
             <Label htmlFor="category">Category</Label>
             <Input
