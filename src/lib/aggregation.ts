@@ -743,8 +743,11 @@ export const computeBudgetStatus = cache(async function computeBudgetStatusImpl(
   });
 
   const { from, to } = monthRange(monthKey);
+  // Include transfers too: when the user budgets a planned movement
+  // (e.g. "Savings to Wise USD: 200K NGN/mo") and logs the actual
+  // transfer with that category, the budget should tick toward its
+  // cap. Plain transfers (no category) get filtered out in the loop.
   const monthTxs = await listTransactions({
-    kind: "expense",
     dateFrom: from,
     dateTo: to,
   });
@@ -766,7 +769,13 @@ export const computeBudgetStatus = cache(async function computeBudgetStatusImpl(
   for (const b of budgets) {
     let spent = 0;
     for (const t of monthTxs) {
-      if (t.kind !== "expense") continue;
+      // Expense → outright spend that counts toward the cap.
+      // Transfer → counts only when the user explicitly tagged it
+      // with this budget's category (e.g. "I budgeted savings to
+      // Wise USD" + a transfer transaction with the same category).
+      // Income doesn't apply to budgets.
+      if (t.kind === "income") continue;
+      if (t.kind !== "expense" && t.kind !== "transfer") continue;
       if (!t.category || t.category !== b.category) continue;
       // If the budget is scoped to a specific account, only count
       // transactions on that account — UNLESS the transaction's
