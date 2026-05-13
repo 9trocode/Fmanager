@@ -77,6 +77,43 @@ function monthsToTarget(opts: {
   return null;
 }
 
+/**
+ * Resolves the funding-account snapshot for any goal with `accountId`
+ * set, regardless of kind. Returns null when no account is linked or
+ * its balance is unresolvable. Surfacing this for every kind makes
+ * the goal list show "In {Account}: balance" on FIRE, Net Worth, and
+ * Debt Payoff goals too — not just savings.
+ */
+async function resolveFundingAccount(
+  goal: Goal,
+): Promise<GoalState["fundingAccount"]> {
+  if (goal.accountId == null) return null;
+  const [acct, balance] = await Promise.all([
+    getAccount(goal.accountId),
+    getEffectiveBalance(goal.accountId),
+  ]);
+  if (!acct || balance.effectiveValue == null) return null;
+  // Don't clamp at 0 for loan-style accounts (debt payoff): the
+  // "balance" there IS the remaining principal. For everything else
+  // negative balance = liability bleeding into a cash slot, which we
+  // floor to 0 for display.
+  const balanceNative =
+    acct.type === "loan"
+      ? balance.effectiveValue
+      : Math.max(0, balance.effectiveValue);
+  const balanceInGoalCurrency =
+    acct.currency === goal.currency
+      ? balanceNative
+      : await convert(balanceNative, acct.currency, goal.currency);
+  return {
+    id: acct.id,
+    name: acct.name,
+    currency: acct.currency,
+    balanceNative,
+    balanceInGoalCurrency,
+  };
+}
+
 export async function computeGoalState(
   goal: Goal,
   baseCurrency: string,
@@ -89,29 +126,10 @@ export async function computeGoalState(
       // every contribution lands there, every withdrawal leaves from
       // there. Fall back to the manually-tracked currentAmount only
       // when no account is linked.
-      let current = goal.currentAmount;
-      let fundingAccount: GoalState["fundingAccount"] = null;
-      if (goal.accountId != null) {
-        const [acct, balance] = await Promise.all([
-          getAccount(goal.accountId),
-          getEffectiveBalance(goal.accountId),
-        ]);
-        if (acct && balance.effectiveValue != null) {
-          const balanceNative = Math.max(0, balance.effectiveValue);
-          const balanceInGoalCurrency =
-            acct.currency === goal.currency
-              ? balanceNative
-              : await convert(balanceNative, acct.currency, goal.currency);
-          current = balanceInGoalCurrency;
-          fundingAccount = {
-            id: acct.id,
-            name: acct.name,
-            currency: acct.currency,
-            balanceNative,
-            balanceInGoalCurrency,
-          };
-        }
-      }
+      const fundingAccount = await resolveFundingAccount(goal);
+      const current = fundingAccount
+        ? fundingAccount.balanceInGoalCurrency
+        : goal.currentAmount;
       const percent = target && target > 0 ? (current / target) * 100 : 0;
       const eta =
         target == null
@@ -137,7 +155,10 @@ export async function computeGoalState(
     }
 
     case "net_worth": {
-      const summary = await computeNetWorth(baseCurrency);
+      const [summary, fundingAccount] = await Promise.all([
+        computeNetWorth(baseCurrency),
+        resolveFundingAccount(goal),
+      ]);
       // Floor net worth (without equity) is the honest current.
       const floorInBase = summary.totals.floor;
       const current = await convert(floorInBase, baseCurrency, goal.currency);
@@ -169,13 +190,15 @@ export async function computeGoalState(
         done: target != null && current >= target,
         description:
           "Total net worth (floor scenario, equity at zero). Tracks your real balance sheet.",
+        fundingAccount,
       };
     }
 
     case "fire": {
-      const [summary, flow] = await Promise.all([
+      const [summary, flow, fundingAccount] = await Promise.all([
         computeNetWorth(baseCurrency),
         computeMonthlyCashFlow(baseCurrency),
+        resolveFundingAccount(goal),
       ]);
       const annualExpenses = flow.expenses * 12;
       const multiplier = goal.fireMultiplier ?? DEFAULT_FIRE_MULTIPLIER;
@@ -199,6 +222,7 @@ export async function computeGoalState(
         etaMonths: eta,
         done: current >= target && target > 0,
         description: `Financial independence: ${multiplier}× annual expenses (${goal.currency} ${Math.round(annualExpenses).toLocaleString()}/yr).`,
+        fundingAccount,
       };
     }
 
@@ -214,7 +238,10 @@ export async function computeGoalState(
           description: "No loan account linked. Edit the goal to link one.",
         };
       }
-      const balance = await getEffectiveBalance(goal.accountId);
+      const [balance, fundingAccount] = await Promise.all([
+        getEffectiveBalance(goal.accountId),
+        resolveFundingAccount(goal),
+      ]);
       const principalNow = Math.max(0, balance.effectiveValue ?? 0);
       // currentAmount stores the original principal at goal creation time.
       const principalStart = goal.currentAmount > 0
@@ -236,6 +263,7 @@ export async function computeGoalState(
         etaMonths: eta,
         done: principalNow <= 0,
         description: `Pay down loan to zero. Started at ${goal.currency} ${principalStart.toLocaleString()}.`,
+        fundingAccount,
       };
     }
   }

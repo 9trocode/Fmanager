@@ -382,7 +382,16 @@ export const computeThisMonthActuals = cache(async function computeThisMonthActu
 export type CashFlowSummary = {
   baseCurrency: string;
   income: number;
+  /** Total monthly outflow from source accounts — INCLUDES internal
+   *  transfers. This is what the cash-flow page displays so the
+   *  "Monthly expenses" stat matches what the user sees in the
+   *  expense list. */
   expenses: number;
+  /** Subset of `expenses` that is internal transfer flows
+   *  (expense flow with `destAccountId` set). Tracked separately so
+   *  runway can compute true burn (`expenses - internalTransfers`)
+   *  without double-counting savings contributions as a loss. */
+  internalTransfers: number;
   net: number;
   byCategory: { income: Record<string, number>; expense: Record<string, number> };
 };
@@ -416,6 +425,7 @@ export const computeMonthlyCashFlow = cache(async function computeMonthlyCashFlo
       baseCurrency,
       income: 0,
       expenses: 0,
+      internalTransfers: 0,
       net: 0,
       byCategory: { income: {}, expense: {} },
     };
@@ -423,12 +433,19 @@ export const computeMonthlyCashFlow = cache(async function computeMonthlyCashFlo
       monthTxs.map((t) => [t.currency, baseCurrency] as const),
     );
     for (const t of monthTxs) {
-      if (t.kind === "transfer") continue;
       const inBase = pastRates.convert(t.amount, t.currency, baseCurrency);
       const cat = (t.category ?? "").trim() || "Other";
       if (t.kind === "income") {
         past.income += inBase;
         past.byCategory.income[cat] = (past.byCategory.income[cat] ?? 0) + inBase;
+      } else if (t.kind === "transfer") {
+        // Transfer is wallet outflow from the source account. Reflect
+        // it in `expenses` so the cash-flow page's "Monthly expenses"
+        // matches the eyeball sum of recurring outflows, and track
+        // separately so runway can subtract it for true burn.
+        past.expenses += inBase;
+        past.internalTransfers += inBase;
+        past.byCategory.expense[cat] = (past.byCategory.expense[cat] ?? 0) + inBase;
       } else {
         past.expenses += inBase;
         past.byCategory.expense[cat] = (past.byCategory.expense[cat] ?? 0) + inBase;
@@ -473,6 +490,7 @@ export const computeMonthlyCashFlow = cache(async function computeMonthlyCashFlo
     baseCurrency,
     income: 0,
     expenses: 0,
+    internalTransfers: 0,
     net: 0,
     byCategory: { income: {}, expense: {} },
   };
@@ -485,12 +503,6 @@ export const computeMonthlyCashFlow = cache(async function computeMonthlyCashFlo
   }
   const rates = await prefetchRates(ratePairs);
   for (const f of flows) {
-    // Internal transfers (expense flow with destAccountId set) move
-    // money between the user's own accounts — they're NOT income and
-    // NOT a burn. Skip from the income/expense totals so runway,
-    // "Free cash" widgets, and net-monthly math don't double-count
-    // a savings contribution as both a debit and… well, nothing.
-    if (f.kind === "expense" && f.destAccountId != null) continue;
     const ovr = overrideByFlowId.get(f.id);
     const effectiveAmount = ovr ? ovr.amount : f.amount;
     const effectiveCurrency = ovr ? ovr.currency : f.currency;
@@ -501,8 +513,16 @@ export const computeMonthlyCashFlow = cache(async function computeMonthlyCashFlo
       result.income += inBase;
       result.byCategory.income[cat] = (result.byCategory.income[cat] ?? 0) + inBase;
     } else {
+      // Both plain expenses and internal-transfer flows are wallet
+      // outflows from `accountId`. Sum both into `expenses` so the
+      // cash-flow page's stat reflects the full list the user sees.
+      // Track the internal-transfer subset so runway can subtract it
+      // for true burn (transfers don't reduce wealth, just move it).
       result.expenses += inBase;
       result.byCategory.expense[cat] = (result.byCategory.expense[cat] ?? 0) + inBase;
+      if (f.kind === "expense" && f.destAccountId != null) {
+        result.internalTransfers += inBase;
+      }
     }
   }
   result.net = result.income - result.expenses;
@@ -575,7 +595,11 @@ export async function computeCashRunway(
     unflowedBudgetCaps += inBase;
   }
 
-  const totalMonthlyExpenses = flow.expenses + unflowedBudgetCaps;
+  // True monthly burn = total wallet outflows MINUS internal
+  // transfers. Transfers move money between the user's accounts but
+  // don't reduce wealth, so they shouldn't shorten runway.
+  const flowBurn = flow.expenses - (flow.internalTransfers ?? 0);
+  const totalMonthlyExpenses = flowBurn + unflowedBudgetCaps;
   const monthsRunway =
     totalMonthlyExpenses > 0 ? liquidCash / totalMonthlyExpenses : null;
   const netBurn = Math.max(0, totalMonthlyExpenses - flow.income);
@@ -590,7 +614,7 @@ export async function computeCashRunway(
     monthsRunway,
     monthsNetRunway,
     breakdown: {
-      flowExpenses: flow.expenses,
+      flowExpenses: flowBurn,
       unflowedBudgetCaps,
     },
   };
@@ -752,6 +776,16 @@ export const computeBudgetStatus = cache(async function computeBudgetStatusImpl(
     dateTo: to,
   });
 
+  // For future months we project budget fill from matching recurring
+  // flows — past/current months use actual transactions only. The
+  // viewMonth was computed earlier (see effective_from filter above).
+  const currentMonth = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  })();
+  const isFutureView = viewMonth > currentMonth;
+  const flowsForProjection = isFutureView ? await listFlows() : [];
+
   // Pre-resolve every rate the nested loop will need. Without this,
   // the original code awaited `convert()` once per (budget × tx) pair —
   // 50 budgets × 500 txs is 25k microtask hops even with React's cache.
@@ -759,6 +793,9 @@ export const computeBudgetStatus = cache(async function computeBudgetStatusImpl(
   for (const b of budgets) {
     pairs.push([b.currency, baseCurrency] as const);
     for (const t of monthTxs) pairs.push([t.currency, b.currency] as const);
+    for (const f of flowsForProjection) {
+      pairs.push([f.currency, b.currency] as const);
+    }
   }
   const rates = await prefetchRates(pairs);
 
@@ -792,6 +829,35 @@ export const computeBudgetStatus = cache(async function computeBudgetStatusImpl(
         if (t.currency !== b.currency) continue;
       }
       spent += rates.convert(t.amount, t.currency, b.currency);
+    }
+    // FUTURE MONTH PROJECTION.
+    //
+    // In a future month, no transactions have posted yet — actual
+    // `spent` from the loop above is 0. But the user can already see
+    // commitments piling up: every recurring expense (or transfer)
+    // flow tied to this budget's category WILL accrue against it
+    // before the month ends. Surfacing the projected fill turns the
+    // budget gauges from "always 0%" on forecast views into a
+    // useful "this is what you'd be committed to" picture.
+    if (isFutureView) {
+      const bCatLower = b.category.trim().toLowerCase();
+      for (const f of flowsForProjection) {
+        if (f.kind === "income") continue;
+        if (!f.category) continue;
+        if (f.category.trim().toLowerCase() !== bCatLower) continue;
+        // Same account-scoping rule as the transaction loop above:
+        // skip cross-account flows unless their currency matches the
+        // budget's currency.
+        if (
+          b.accountId != null &&
+          f.accountId !== b.accountId &&
+          f.destAccountId !== b.accountId
+        ) {
+          if (f.currency !== b.currency) continue;
+        }
+        const monthly = monthlyEquivalent(f.amount, f.cadence);
+        spent += rates.convert(monthly, f.currency, b.currency);
+      }
     }
     const remaining = b.monthlyLimit - spent;
     const percentUsed =
