@@ -485,6 +485,12 @@ export const computeMonthlyCashFlow = cache(async function computeMonthlyCashFlo
   }
   const rates = await prefetchRates(ratePairs);
   for (const f of flows) {
+    // Internal transfers (expense flow with destAccountId set) move
+    // money between the user's own accounts — they're NOT income and
+    // NOT a burn. Skip from the income/expense totals so runway,
+    // "Free cash" widgets, and net-monthly math don't double-count
+    // a savings contribution as both a debit and… well, nothing.
+    if (f.kind === "expense" && f.destAccountId != null) continue;
     const ovr = overrideByFlowId.get(f.id);
     const effectiveAmount = ovr ? ovr.amount : f.amount;
     const effectiveCurrency = ovr ? ovr.currency : f.currency;

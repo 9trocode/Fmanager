@@ -53,6 +53,14 @@ function parseDate(value: FormDataEntryValue | null): string | null {
 }
 
 function commonFields(formData: FormData) {
+  const accountId = parseAccountId(formData.get("account_id"));
+  const destAccountId = parseAccountId(formData.get("dest_account_id"));
+  // Internal-transfer guard: source and dest must differ. Self-transfer
+  // has no meaning and would produce balance-canceling noise.
+  const safeDestAccountId =
+    destAccountId != null && destAccountId === accountId
+      ? null
+      : destAccountId;
   return {
     name: String(formData.get("name") ?? "").trim(),
     kind: parseKind(formData.get("kind")),
@@ -60,7 +68,13 @@ function commonFields(formData: FormData) {
     amount: parseAmount(formData.get("amount")),
     currency: String(formData.get("currency") ?? "USD").toUpperCase(),
     cadence: parseCadence(formData.get("cadence")),
-    accountId: parseAccountId(formData.get("account_id")),
+    accountId,
+    // Only expense flows can have a destination — an income flow with
+    // a dest doesn't make sense in our model (income lands in
+    // accountId, full stop). Silently drop for non-expense to keep
+    // the data clean even if a stale form posts the field.
+    destAccountId:
+      parseKind(formData.get("kind")) === "expense" ? safeDestAccountId : null,
     nextDueAt: parseDate(formData.get("next_due_at")),
     notes: String(formData.get("notes") ?? "").trim() || null,
   };
@@ -110,8 +124,13 @@ export async function createFlow(formData: FormData) {
   //   * an explicit nextDueAt is in the future — the user clearly wants
   //     the system to wait until that date.
   if (flow.accountId != null && !deferToFuture) {
+    // When the flow has a destAccountId set, this is an internal
+    // transfer — money leaves accountId and lands in destAccountId.
+    // Post a `transfer` transaction so both balances move atomically.
+    const isInternalTransfer = flow.destAccountId != null;
     await db.insert(schema.transactions).values({
-      kind: flow.kind,
+      kind: isInternalTransfer ? "transfer" : flow.kind,
+      destAccountId: isInternalTransfer ? flow.destAccountId : null,
       amount: flow.amount,
       currency: flow.currency,
       accountId: flow.accountId,

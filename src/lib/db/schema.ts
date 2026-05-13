@@ -226,6 +226,18 @@ export const recurringFlows = sqliteTable(
     onDelete: "set null",
   }),
   /**
+   * Optional destination account. Only meaningful for `kind=expense`
+   * flows where the money LEAVES `accountId` and LANDS in
+   * `destAccountId` (savings transfer, contributing to a goal-linked
+   * account, paying down a loan, etc.). When set, the accruer posts
+   * a `transfer` transaction instead of an `expense` one, and the
+   * monthly cash-flow / runway calc EXCLUDES this flow from burn
+   * (it's not money leaving the user's wealth — just being moved).
+   */
+  destAccountId: integer("dest_account_id").references(() => accounts.id, {
+    onDelete: "set null",
+  }),
+  /**
    * Last calendar period (`YYYY-MM-DD`) for which an auto-accrued
    * transaction has already been posted. Drives `accrueDueFlows()` so a
    * monthly salary turns into a real transaction on the linked account

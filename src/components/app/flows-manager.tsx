@@ -91,6 +91,9 @@ export type FlowRow = {
   currency: string;
   cadence: FlowCadence;
   accountId: number | null;
+  /** Optional destination account — when set on an expense flow, the
+   *  flow is an internal transfer (debit source, credit dest). */
+  destAccountId?: number | null;
   /** Optional explicit next-due date (YYYY-MM-DD). */
   nextDueAt?: string | null;
   archived: boolean;
@@ -129,6 +132,14 @@ function FlowFields({
   const [accountId, setAccountId] = useState(initialAccountId);
   const linkedAccount = accountOptions.find((a) => String(a.id) === accountId);
   const isLoanAccount = linkedAccount?.type === "loan";
+
+  // Optional destination — only valid for expense flows. When set,
+  // this flow is an INTERNAL TRANSFER: money leaves `accountId` and
+  // lands in `destAccountId`. Use case: monthly savings contribution
+  // to a goal-linked account, paying down a loan account, etc.
+  const initialDestAccountId =
+    defaults?.destAccountId != null ? String(defaults.destAccountId) : "none";
+  const [destAccountId, setDestAccountId] = useState(initialDestAccountId);
 
   // Controlled currency so we can warn the user when it mismatches
   // the linked account's currency. Without this, a flow's
@@ -371,6 +382,52 @@ function FlowFields({
         ) : null}
       </div>
 
+      {/*
+        Destination account — turns an expense flow into an internal
+        transfer. Only shown for expense flows (income lands in
+        accountId, full stop). Hidden input still posts the value so
+        the action can clear it on kind=income flows.
+      */}
+      {kind === "expense" ? (
+        <div className="space-y-1.5">
+          <Label htmlFor="dest_account_id">
+            Goes into account (optional)
+          </Label>
+          <input
+            type="hidden"
+            name="dest_account_id"
+            value={destAccountId}
+          />
+          <Select value={destAccountId} onValueChange={setDestAccountId}>
+            <SelectTrigger id="dest_account_id">
+              <SelectValue placeholder="— none —" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">
+                <span className="text-muted-foreground">
+                  — none (money leaves your wealth) —
+                </span>
+              </SelectItem>
+              {accountOptions
+                .filter((a) => String(a.id) !== accountId)
+                .map((a) => (
+                  <SelectItem key={a.id} value={String(a.id)}>
+                    {a.name} ({a.currency})
+                    {a.type === "loan" ? " · loan" : ""}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+          <p className="text-[10px] text-muted-foreground leading-relaxed">
+            Pick this when the money moves between your own accounts
+            (e.g. monthly savings contribution, paying a loan account).
+            It posts as a <span className="font-mono">transfer</span> and
+            is excluded from monthly burn — both balances move, your
+            net wealth stays the same.
+          </p>
+        </div>
+      ) : null}
+
       <div className="space-y-1.5">
         <Label htmlFor="notes">Notes (optional)</Label>
         <textarea
@@ -540,6 +597,10 @@ function FlowRow({
   const monthly = monthlyEquivalent(flow.amount, flow.cadence);
   const readOnly = role === "viewer";
   const linked = accountOptions.find((a) => a.id === flow.accountId);
+  const destLinked = accountOptions.find(
+    (a) => a.id === flow.destAccountId,
+  );
+  const isTransferFlow = flow.kind === "expense" && flow.destAccountId != null;
 
   function handleArchive() {
     const fd = new FormData();
@@ -650,6 +711,15 @@ function FlowRow({
                 · no account linked
               </span>
             )}
+            {isTransferFlow && destLinked ? (
+              <Badge
+                variant="outline"
+                className="text-[10px] gap-1 border-emerald-500/30 text-emerald-300"
+                title={`Each cycle moves money from ${linked?.name ?? "source"} into ${destLinked.name}. Excluded from monthly burn.`}
+              >
+                → {destLinked.name}
+              </Badge>
+            ) : null}
             {budget && !isIncome ? (
               <Badge
                 variant="outline"

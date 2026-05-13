@@ -200,8 +200,10 @@ export async function accrueDueFlows(): Promise<{ posted: number }> {
       let safety = 0;
       while (safety < MAX_CATCHUP_PERIODS && dueDate <= todayDate) {
         const occurredAt = localYmd(dueDate);
+        const isInternalTransfer = f.destAccountId != null;
         plan.inserts.push({
-          kind: f.kind,
+          kind: isInternalTransfer ? "transfer" : f.kind,
+          destAccountId: isInternalTransfer ? f.destAccountId : null,
           amount: f.amount,
           currency: f.currency,
           accountId: f.accountId,
@@ -240,8 +242,10 @@ export async function accrueDueFlows(): Promise<{ posted: number }> {
       if (nextDue > todayDate) break;
 
       const occurredAt = localYmd(nextDue);
+      const isInternalTransfer = f.destAccountId != null;
       plan.inserts.push({
-        kind: f.kind,
+        kind: isInternalTransfer ? "transfer" : f.kind,
+        destAccountId: isInternalTransfer ? f.destAccountId : null,
         amount: f.amount,
         currency: f.currency,
         accountId: f.accountId,
