@@ -77,6 +77,21 @@ function endOfMonthYmd(monthKey: string): string {
   return `${yy}-${mm}-${dd}`;
 }
 
+function startOfMonthYmd(monthKey: string): string {
+  const [y, m] = monthKey.split("-").map(Number);
+  const yy = String(y).padStart(4, "0");
+  const mm = String(m).padStart(2, "0");
+  return `${yy}-${mm}-01`;
+}
+
+function monthLabelFromKey(monthKey: string): string {
+  const [y, m] = monthKey.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+}
+
 export default async function AccountDetailPage({
   params,
   searchParams,
@@ -738,42 +753,71 @@ export default async function AccountDetailPage({
 
       <AccountDetailsCard account={account} />
 
-      <Card className="mt-6">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0">
-          <div>
-            <CardTitle className="text-base">Transactions</CardTitle>
-            <CardDescription>
-              {txs.length === 0
-                ? "No transactions logged yet."
-                : `${txs.length} most recent`}
-            </CardDescription>
-          </div>
-          <AddTransactionDialog
-            accounts={accountOptions}
-            defaultAccountId={account.id}
-          />
-        </CardHeader>
-        {txs.length === 0 ? (
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              Log expenses, income, or transfers to update the effective
-              balance between snapshots.
-            </p>
-          </CardContent>
-        ) : (
-          <CardContent className="space-y-2">
-            {txs.map((t) => (
-              <TransactionItem
-                key={t.id}
-                transaction={t}
+      {(() => {
+        // When the global month filter is active, scope this card to
+        // transactions in that calendar month. Without this, picking
+        // "June 2026 (forecast)" still showed every recent tx from
+        // May — confusing because every other panel on the page
+        // already respects the filter.
+        const monthStart = selectedMonth
+          ? startOfMonthYmd(selectedMonth)
+          : null;
+        const monthEnd = selectedMonth ? endOfMonthYmd(selectedMonth) : null;
+        const visibleTxs =
+          monthStart && monthEnd
+            ? txs.filter(
+                (t) => t.occurredAt >= monthStart && t.occurredAt <= monthEnd,
+              )
+            : txs;
+        const monthLabel = selectedMonth
+          ? monthLabelFromKey(selectedMonth)
+          : null;
+        const subtitle = (() => {
+          if (visibleTxs.length === 0) {
+            return monthLabel
+              ? `No transactions in ${monthLabel}.`
+              : "No transactions logged yet.";
+          }
+          if (monthLabel) {
+            return `${visibleTxs.length} in ${monthLabel}`;
+          }
+          return `${visibleTxs.length} most recent`;
+        })();
+        const emptyBody = monthLabel
+          ? `Nothing posted to this account in ${monthLabel} yet. Switch to a different month from the sidebar to see other periods.`
+          : "Log expenses, income, or transfers to update the effective balance between snapshots.";
+        return (
+          <Card className="mt-6">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
+              <div>
+                <CardTitle className="text-base">Transactions</CardTitle>
+                <CardDescription>{subtitle}</CardDescription>
+              </div>
+              <AddTransactionDialog
                 accounts={accountOptions}
-                contextAccountId={account.id}
-                flowsById={flowsById}
+                defaultAccountId={account.id}
               />
-            ))}
-          </CardContent>
-        )}
-      </Card>
+            </CardHeader>
+            {visibleTxs.length === 0 ? (
+              <CardContent>
+                <p className="text-sm text-muted-foreground">{emptyBody}</p>
+              </CardContent>
+            ) : (
+              <CardContent className="space-y-2">
+                {visibleTxs.map((t) => (
+                  <TransactionItem
+                    key={t.id}
+                    transaction={t}
+                    accounts={accountOptions}
+                    contextAccountId={account.id}
+                    flowsById={flowsById}
+                  />
+                ))}
+              </CardContent>
+            )}
+          </Card>
+        );
+      })()}
     </>
   );
 }
