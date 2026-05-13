@@ -11,7 +11,7 @@ import {
 } from "@/lib/db/queries";
 import { db, schema } from "@/lib/db";
 import { and, eq, gt, inArray, lte, or, sql } from "drizzle-orm";
-import { prefetchRates } from "@/lib/fx";
+import { convert, prefetchRates } from "@/lib/fx";
 import { getOwner, ownedBy } from "@/lib/db/scope";
 import { isLiability } from "@/lib/account-types";
 import { monthlyEquivalent } from "@/lib/flows";
@@ -464,6 +464,9 @@ export const computeMonthlyCashFlow = cache(async function computeMonthlyCashFlo
 export type RunwaySummary = {
   baseCurrency: string;
   liquidCash: number;
+  /** Total monthly outflow used for runway = recurring expense flows
+   *  plus any budgeted spend that isn't already represented by a
+   *  recurring flow (committed-but-not-flowed caps). */
   monthlyExpenses: number;
   monthlyIncome: number;
   netMonthly: number;
@@ -471,34 +474,80 @@ export type RunwaySummary = {
   monthsRunway: number | null;
   /** Months of runway against net burn (expenses - income). null if income covers expenses. */
   monthsNetRunway: number | null;
+  /** Breakdown of `monthlyExpenses` so the UI can explain WHERE the
+   *  burn number comes from. All values in base currency. */
+  breakdown: {
+    flowExpenses: number;
+    /** Sum of budget caps for categories NOT already represented by a
+     *  recurring flow. Added on top of flow expenses since budgets
+     *  represent committed spend the user has signalled they intend
+     *  to make, even if no flow is wired up. */
+    unflowedBudgetCaps: number;
+  };
 };
 
 export async function computeCashRunway(
   baseCurrency: string,
 ): Promise<RunwaySummary> {
   const summary = await computeNetWorth(baseCurrency);
-  const flow = await computeMonthlyCashFlow(baseCurrency);
+  const [flow, budgetSummary] = await Promise.all([
+    computeMonthlyCashFlow(baseCurrency),
+    computeBudgetStatus(baseCurrency),
+  ]);
 
   // Cash-like = cash + brokerage + crypto. Excludes real estate, retirement
   // (penalties to liquidate), grants (illiquid), and loans (already negative).
   const cats = summary.byCategory.floor;
   const liquidCash = Math.max(0, cats.cash + cats.brokerage + cats.crypto);
 
+  // Budgets represent monthly spending commitments. Where a recurring
+  // expense flow already exists for a category (e.g. flow "Rent" $1.2k
+  // mirrors budget "Rent" $1.2k), counting both would double the burn.
+  // So we add ONLY the budget caps whose category isn't already
+  // represented in flow.byCategory.expense. The result is "the floor
+  // of what I plan to spend each month" — flows are the auto-tracked
+  // commitments; budgets fill in the gaps for things you've decided
+  // to spend on but haven't (yet) wired a recurring flow for.
+  const flowExpenseCategoriesLower = new Set(
+    Object.keys(flow.byCategory.expense ?? {}).map((c) =>
+      c.trim().toLowerCase(),
+    ),
+  );
+  let unflowedBudgetCaps = 0;
+  for (const r of budgetSummary.rows) {
+    const cat = r.category.trim().toLowerCase();
+    if (flowExpenseCategoriesLower.has(cat)) continue;
+    // r.monthlyLimit is in r.baseCurrency (== the budget's currency).
+    // computeBudgetStatus already pre-resolved rates for this — but
+    // re-querying once more is cheap and keeps the dependency local.
+    const inBase =
+      r.baseCurrency === baseCurrency
+        ? r.monthlyLimit
+        : await convert(r.monthlyLimit, r.baseCurrency, baseCurrency);
+    unflowedBudgetCaps += inBase;
+  }
+
+  const totalMonthlyExpenses = flow.expenses + unflowedBudgetCaps;
   const monthsRunway =
-    flow.expenses > 0 ? liquidCash / flow.expenses : null;
-  const netBurn = Math.max(0, flow.expenses - flow.income);
+    totalMonthlyExpenses > 0 ? liquidCash / totalMonthlyExpenses : null;
+  const netBurn = Math.max(0, totalMonthlyExpenses - flow.income);
   const monthsNetRunway = netBurn > 0 ? liquidCash / netBurn : null;
 
   return {
     baseCurrency,
     liquidCash,
-    monthlyExpenses: flow.expenses,
+    monthlyExpenses: totalMonthlyExpenses,
     monthlyIncome: flow.income,
-    netMonthly: flow.net,
+    netMonthly: flow.income - totalMonthlyExpenses,
     monthsRunway,
     monthsNetRunway,
+    breakdown: {
+      flowExpenses: flow.expenses,
+      unflowedBudgetCaps,
+    },
   };
 }
+
 
 export type BudgetStatus = {
   id: number;
@@ -659,9 +708,19 @@ export const computeBudgetStatus = cache(async function computeBudgetStatusImpl(
       if (t.kind !== "expense") continue;
       if (!t.category || t.category !== b.category) continue;
       // If the budget is scoped to a specific account, only count
-      // transactions on that account. Null accountId means
-      // "any account" (the original default behavior).
-      if (b.accountId != null && t.accountId !== b.accountId) continue;
+      // transactions on that account — UNLESS the transaction's
+      // currency exactly matches the budget's currency. That escape
+      // hatch handles the cross-currency-from-wrong-account case:
+      // an NGN housing expense logged against a USD wallet (because
+      // that's the account the card draws from) was previously
+      // invisible to an NGN housing budget scoped to the NGN
+      // account, and so 100% of NGN spend disappeared from budget
+      // tracking. With this rule, currency-matched spend always
+      // counts toward a same-currency budget, regardless of which
+      // account it touches.
+      if (b.accountId != null && t.accountId !== b.accountId) {
+        if (t.currency !== b.currency) continue;
+      }
       spent += rates.convert(t.amount, t.currency, b.currency);
     }
     const remaining = b.monthlyLimit - spent;

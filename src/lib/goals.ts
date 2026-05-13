@@ -1,6 +1,6 @@
 import "server-only";
 import { computeMonthlyCashFlow, computeNetWorth } from "@/lib/aggregation";
-import { getEffectiveBalance } from "@/lib/db/queries";
+import { getAccount, getEffectiveBalance } from "@/lib/db/queries";
 import { convert } from "@/lib/fx";
 import type { GoalKind } from "@/lib/db/schema";
 
@@ -39,6 +39,21 @@ export type GoalState = {
   done: boolean;
   /** Plain-English single-line context for the goal. */
   description: string;
+  /**
+   * When `goal.accountId` is set, surface the funding account so the UI
+   * can show "what's actually in this account" alongside the goal's
+   * target. Reported in `goal.currency` after FX conversion. Null when
+   * no account is linked or its balance can't be resolved.
+   */
+  fundingAccount?: {
+    id: number;
+    name: string;
+    currency: string;
+    /** Account's effective balance in its native currency. */
+    balanceNative: number;
+    /** Same balance converted into `goal.currency` for direct compare. */
+    balanceInGoalCurrency: number;
+  } | null;
 };
 
 const DEFAULT_FIRE_MULTIPLIER = 25;
@@ -69,7 +84,34 @@ export async function computeGoalState(
   switch (goal.kind) {
     case "savings": {
       const target = goal.targetAmount;
-      const current = goal.currentAmount;
+      // When the goal is tied to an account, the account's effective
+      // balance IS the source of truth for "how much have I saved" —
+      // every contribution lands there, every withdrawal leaves from
+      // there. Fall back to the manually-tracked currentAmount only
+      // when no account is linked.
+      let current = goal.currentAmount;
+      let fundingAccount: GoalState["fundingAccount"] = null;
+      if (goal.accountId != null) {
+        const [acct, balance] = await Promise.all([
+          getAccount(goal.accountId),
+          getEffectiveBalance(goal.accountId),
+        ]);
+        if (acct && balance.effectiveValue != null) {
+          const balanceNative = Math.max(0, balance.effectiveValue);
+          const balanceInGoalCurrency =
+            acct.currency === goal.currency
+              ? balanceNative
+              : await convert(balanceNative, acct.currency, goal.currency);
+          current = balanceInGoalCurrency;
+          fundingAccount = {
+            id: acct.id,
+            name: acct.name,
+            currency: acct.currency,
+            balanceNative,
+            balanceInGoalCurrency,
+          };
+        }
+      }
       const percent = target && target > 0 ? (current / target) * 100 : 0;
       const eta =
         target == null
@@ -87,7 +129,10 @@ export async function computeGoalState(
         percent,
         etaMonths: eta,
         done: target != null && current >= target,
-        description: `Save ${goal.currency} via ${goal.monthlyContribution.toLocaleString()} / mo at ${goal.expectedReturnPct}% blended return.`,
+        description: fundingAccount
+          ? `Tracked against ${fundingAccount.name} (${fundingAccount.currency}). Contributions land there directly.`
+          : `Save ${goal.currency} via ${goal.monthlyContribution.toLocaleString()} / mo at ${goal.expectedReturnPct}% blended return.`,
+        fundingAccount,
       };
     }
 

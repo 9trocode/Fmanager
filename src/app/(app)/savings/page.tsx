@@ -6,6 +6,7 @@ import {
   Landmark,
   PiggyBank,
   TrendingDown,
+  Wallet,
 } from "lucide-react";
 import {
   Card,
@@ -165,6 +166,35 @@ export default async function GoalsPage() {
                                 })}`
                               : ""}
                           </CardDescription>
+                          {state.fundingAccount ? (
+                            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                              <Wallet className="size-3" />
+                              <span className="truncate">
+                                In{" "}
+                                <span className="font-medium text-foreground">
+                                  {state.fundingAccount.name}
+                                </span>
+                                {": "}
+                                <span className="font-mono">
+                                  {formatMoney(
+                                    state.fundingAccount.balanceNative,
+                                    state.fundingAccount.currency,
+                                    { compact: true },
+                                  )}
+                                </span>
+                                {state.fundingAccount.currency !== g.currency ? (
+                                  <span className="font-mono">
+                                    {" ≈ "}
+                                    {formatMoney(
+                                      state.fundingAccount.balanceInGoalCurrency,
+                                      g.currency,
+                                      { compact: true },
+                                    )}
+                                  </span>
+                                ) : null}
+                              </span>
+                            </div>
+                          ) : null}
                         </div>
                       </div>
                       <ChevronRight className="size-4 text-muted-foreground group-hover:text-foreground shrink-0 mt-1" />
