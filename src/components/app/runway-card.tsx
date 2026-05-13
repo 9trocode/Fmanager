@@ -57,11 +57,26 @@ export function RunwayCard({ runway }: { runway: RunwaySummary }) {
     );
   }
 
-  const months = runway.monthsRunway;
-  const { label, tone } = classify(months);
+  // When income covers expenses (netMonthly >= 0), liquid cash isn't
+  // burning down — runway is effectively infinite. Previously the
+  // card still flashed "Tight 1.0 mo" because it always used the
+  // gross-expenses ratio, ignoring income. Pick the headline number
+  // by which mode actually reflects reality:
+  //   - net-positive → ∞ / "Income covers expenses"
+  //   - net-negative → monthsNetRunway (income offsets burn)
+  //   - fallback     → monthsRunway (no income at all)
+  const incomeCoversExpenses = runway.netMonthly >= 0;
+  const months = incomeCoversExpenses
+    ? null
+    : (runway.monthsNetRunway ?? runway.monthsRunway);
+  const { label, tone } = incomeCoversExpenses
+    ? { label: "Self-sustaining", tone: "good" as const }
+    : classify(months);
   const monthsText =
     months == null
-      ? "∞"
+      ? incomeCoversExpenses
+        ? "∞"
+        : "∞"
       : months >= 60
         ? `${(months / 12).toFixed(0)}+ y`
         : `${months.toFixed(1)} mo`;
@@ -87,10 +102,29 @@ export function RunwayCard({ runway }: { runway: RunwaySummary }) {
           {monthsText}
         </CardTitle>
         <CardDescription className="font-mono text-[11px]">
-          {formatMoney(runway.liquidCash, runway.baseCurrency, { compact: true })}{" "}
-          liquid covers{" "}
-          {formatMoney(runway.monthlyExpenses, runway.baseCurrency, { compact: true })}
-          /mo of expenses
+          {incomeCoversExpenses ? (
+            <>
+              {formatMoney(runway.monthlyIncome, runway.baseCurrency, {
+                compact: true,
+              })}
+              /mo income covers{" "}
+              {formatMoney(runway.monthlyExpenses, runway.baseCurrency, {
+                compact: true,
+              })}
+              /mo expenses — you&apos;re not drawing down liquid cash.
+            </>
+          ) : (
+            <>
+              {formatMoney(runway.liquidCash, runway.baseCurrency, {
+                compact: true,
+              })}{" "}
+              liquid covers{" "}
+              {formatMoney(runway.monthlyExpenses, runway.baseCurrency, {
+                compact: true,
+              })}
+              /mo of net burn
+            </>
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent className="border-t border-border pt-3 space-y-2">
@@ -120,17 +154,30 @@ export function RunwayCard({ runway }: { runway: RunwaySummary }) {
             </div>
           </div>
         </div>
-        {runway.monthsNetRunway != null &&
+        {!incomeCoversExpenses &&
         runway.monthsRunway != null &&
-        runway.monthsNetRunway > runway.monthsRunway ? (
+        runway.monthsRunway < (runway.monthsNetRunway ?? Infinity) ? (
           <p className="text-[11px] text-muted-foreground leading-snug">
-            With income factored in, coverage extends to{" "}
+            Without income, liquid cash alone would last{" "}
             <span className="font-mono tabular-nums">
-              {runway.monthsNetRunway >= 60
-                ? `${(runway.monthsNetRunway / 12).toFixed(0)}+ y`
-                : `${runway.monthsNetRunway.toFixed(1)} mo`}
+              {runway.monthsRunway >= 60
+                ? `${(runway.monthsRunway / 12).toFixed(0)}+ y`
+                : `${runway.monthsRunway.toFixed(1)} mo`}
             </span>
             .
+          </p>
+        ) : null}
+        {incomeCoversExpenses ? (
+          <p className="text-[11px] text-muted-foreground leading-snug">
+            Without this income stream, liquid cash alone would last{" "}
+            <span className="font-mono tabular-nums">
+              {runway.monthsRunway != null
+                ? runway.monthsRunway >= 60
+                  ? `${(runway.monthsRunway / 12).toFixed(0)}+ y`
+                  : `${runway.monthsRunway.toFixed(1)} mo`
+                : "—"}
+            </span>{" "}
+            against current expenses.
           </p>
         ) : null}
       </CardContent>
