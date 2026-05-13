@@ -40,6 +40,18 @@ function commonFields(formData: FormData) {
   };
 }
 
+function currentMonthKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function parseMonthKey(value: FormDataEntryValue | null): string | null {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  if (!/^\d{4}-\d{2}$/.test(raw)) return null;
+  return raw;
+}
+
 export async function createBudget(formData: FormData) {
   await assertAdmin();
   const fields = commonFields(formData);
@@ -54,6 +66,40 @@ export async function updateBudget(formData: FormData) {
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
   const fields = commonFields(formData);
   const owner = await getOwner();
+
+  // Month-scoped edit: when the user edits a budget while filtered
+  // to a FUTURE month, only the monthly cap / currency for that
+  // month should change. Category, account scope, and notes are not
+  // meaningfully per-month, so we ignore the scope for those.
+  const scoped = parseMonthKey(formData.get("month_key"));
+  const isFutureEdit = scoped != null && scoped > currentMonthKey();
+
+  if (isFutureEdit) {
+    const nowIso = new Date().toISOString();
+    await db
+      .insert(schema.budgetOverrides)
+      .values({
+        budgetId: id,
+        monthKey: scoped,
+        monthlyLimit: fields.monthlyLimit,
+        currency: fields.currency,
+        ownerUserId: owner,
+      })
+      .onConflictDoUpdate({
+        target: [
+          schema.budgetOverrides.budgetId,
+          schema.budgetOverrides.monthKey,
+        ],
+        set: {
+          monthlyLimit: fields.monthlyLimit,
+          currency: fields.currency,
+          updatedAt: nowIso,
+        },
+      });
+    revalidate();
+    return;
+  }
+
   await db
     .update(schema.budgets)
     .set({ ...fields, updatedAt: new Date().toISOString() })

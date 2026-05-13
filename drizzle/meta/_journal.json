@@ -141,6 +141,13 @@
       "when": 1778393820196,
       "tag": "0019_dazzling_lady_bullseye",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1778480000000,
+      "tag": "0020_future_month_overrides",
+      "breakpoints": true
     }
   ]
 }

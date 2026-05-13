@@ -78,7 +78,16 @@ export default async function DashboardPage({
     computeThisMonthActuals(baseCurrency, monthKey),
     listActiveAlerts(),
   ]);
-  const criticalAlerts = activeAlerts.filter((a) => a.severity === "critical");
+  // The alerts banner reflects RIGHT NOW (runway, over-budget, etc.).
+  // When the user is planning ahead in a future month, today's "0.0
+  // months of runway" is noise — they're modeling, not firefighting.
+  // Hide the banner in that view; sidebar badge still surfaces them.
+  const now = new Date();
+  const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const isFutureFilter = monthKey != null && monthKey > currentMonthKey;
+  const criticalAlerts = isFutureFilter
+    ? []
+    : activeAlerts.filter((a) => a.severity === "critical");
 
   // Personalize the page title with the active user's first name —
   // pulls from `users.name` for invited/isolated accounts, falls back

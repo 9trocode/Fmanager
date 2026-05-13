@@ -63,6 +63,11 @@ export type BudgetsManagerProps = {
    * each BudgetRow to render the linked account name (when set).
    */
   accountOptions?: Array<{ id: number; name: string; currency: string }>;
+  /** Active global month filter (YYYY-MM). When in the future, edits
+   *  are scoped to that month via the budget_overrides table. */
+  activeMonthKey?: string | null;
+  isFutureMonth?: boolean;
+  monthLabel?: string | null;
 };
 
 function barClass(percentUsed: number): string {
@@ -80,9 +85,15 @@ function pctLabelClass(percentUsed: number): string {
 function BudgetRow({
   row,
   accountOptions = [],
+  activeMonthKey = null,
+  isFutureMonth = false,
+  monthLabel = null,
 }: {
   row: BudgetStatus;
   accountOptions?: Array<{ id: number; name: string; currency: string }>;
+  activeMonthKey?: string | null;
+  isFutureMonth?: boolean;
+  monthLabel?: string | null;
 }) {
   const role = useRole();
   const [editOpen, setEditOpen] = useState(false);
@@ -214,6 +225,9 @@ function BudgetRow({
         open={editOpen}
         onOpenChange={setEditOpen}
         accountOptions={accountOptions}
+        activeMonthKey={activeMonthKey}
+        isFutureMonth={isFutureMonth}
+        monthLabel={monthLabel}
       />
     </div>
   );
@@ -230,6 +244,9 @@ export function BudgetsManager({
   liquidCash,
   monthsRunway,
   accountOptions = [],
+  activeMonthKey = null,
+  isFutureMonth = false,
+  monthLabel = null,
 }: BudgetsManagerProps) {
   const overallPct =
     totalLimit > 0 ? (totalSpent / totalLimit) * 100 : 0;
@@ -324,6 +341,9 @@ export function BudgetsManager({
               key={r.id}
               row={r}
               accountOptions={accountOptions}
+              activeMonthKey={activeMonthKey}
+              isFutureMonth={isFutureMonth}
+              monthLabel={monthLabel}
             />
           ))}
         </div>

@@ -270,6 +270,71 @@ export const recurringFlows = sqliteTable(
   }),
 );
 
+/**
+ * Per-month override of a recurring flow's amount/currency. Written when
+ * the user edits a flow while the global month filter is set to a FUTURE
+ * month — the base flow row stays unchanged so past/current projections
+ * don't get retroactively bumped. Projection code joins this table for
+ * the active monthKey before falling back to the base flow.
+ *
+ * No effect on auto-accrual (that posts real transactions using the
+ * base amount). Overrides are projection-only — once the future month
+ * arrives, the user can promote the override into the base flow if the
+ * change is permanent.
+ */
+export const recurringFlowOverrides = sqliteTable(
+  "recurring_flow_overrides",
+  {
+    id: id(),
+    flowId: integer("flow_id")
+      .notNull()
+      .references(() => recurringFlows.id, { onDelete: "cascade" }),
+    monthKey: text("month_key").notNull(), // YYYY-MM
+    amount: real("amount").notNull(),
+    currency: text("currency").notNull(),
+    ownerUserId: ownerUserId(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    flowIdx: index("recurring_flow_overrides_flow_idx").on(t.flowId),
+    monthIdx: index("recurring_flow_overrides_month_idx").on(t.monthKey),
+    flowMonthUniq: uniqueIndex("recurring_flow_overrides_flow_month_uniq").on(
+      t.flowId,
+      t.monthKey,
+    ),
+  }),
+);
+
+/**
+ * Per-month override of a budget's monthly cap. Mirror of
+ * `recurring_flow_overrides` for the budgets surface. Written when the
+ * user edits a budget while filtered to a future month.
+ */
+export const budgetOverrides = sqliteTable(
+  "budget_overrides",
+  {
+    id: id(),
+    budgetId: integer("budget_id")
+      .notNull()
+      .references(() => budgets.id, { onDelete: "cascade" }),
+    monthKey: text("month_key").notNull(),
+    monthlyLimit: real("monthly_limit").notNull(),
+    currency: text("currency").notNull(),
+    ownerUserId: ownerUserId(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    budgetIdx: index("budget_overrides_budget_idx").on(t.budgetId),
+    monthIdx: index("budget_overrides_month_idx").on(t.monthKey),
+    budgetMonthUniq: uniqueIndex("budget_overrides_budget_month_uniq").on(
+      t.budgetId,
+      t.monthKey,
+    ),
+  }),
+);
+
 export const settings = sqliteTable("settings", {
   key: text("key").primaryKey(),
   value: text("value"),

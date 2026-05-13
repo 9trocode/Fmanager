@@ -72,7 +72,10 @@ export default async function CashFlowPage() {
   const [flows, projected, accounts, recentTxs, budgets, monthActuals] =
     await Promise.all([
       listFlows({ includeArchived: true }),
-      computeMonthlyCashFlow(baseCurrency),
+      // Pass monthKey so future-month projections apply any per-month
+      // overrides the user has saved. Past/current months can skip it
+      // (overrides only target future months).
+      computeMonthlyCashFlow(baseCurrency, isFuture ? monthKey : undefined),
       listAccounts(),
       recentTxsPromise,
       listBudgets(),
@@ -135,6 +138,9 @@ export default async function CashFlowPage() {
         accountOptions={accountOptions}
         recentTransactions={recentTxs}
         budgetByCategory={budgetByCategory}
+        activeMonthKey={monthKey ?? null}
+        isFutureMonth={isFuture}
+        monthLabel={monthLabel}
       />
     </>
   );

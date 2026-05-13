@@ -10,7 +10,7 @@ import {
   listTransactionsBetween,
 } from "@/lib/db/queries";
 import { db, schema } from "@/lib/db";
-import { and, gt, inArray, lte, or, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, lte, or, sql } from "drizzle-orm";
 import { prefetchRates } from "@/lib/fx";
 import { getOwner, ownedBy } from "@/lib/db/scope";
 import { isLiability } from "@/lib/account-types";
@@ -394,8 +394,39 @@ export type CashFlowSummary = {
  */
 export const computeMonthlyCashFlow = cache(async function computeMonthlyCashFlowImpl(
   baseCurrency: string,
+  monthKey?: string,
 ): Promise<CashFlowSummary> {
   const flows = await listFlows();
+  // When the user is viewing a specific month, swap in any per-month
+  // override of (amount, currency) so a "raise next August" change
+  // doesn't bleed back into the current month's projection.
+  const overrideByFlowId = new Map<
+    number,
+    { amount: number; currency: string }
+  >();
+  if (monthKey) {
+    const owner = await getOwner();
+    const rows = await db
+      .select({
+        flowId: schema.recurringFlowOverrides.flowId,
+        amount: schema.recurringFlowOverrides.amount,
+        currency: schema.recurringFlowOverrides.currency,
+      })
+      .from(schema.recurringFlowOverrides)
+      .where(
+        and(
+          eq(schema.recurringFlowOverrides.monthKey, monthKey),
+          ownedBy(schema.recurringFlowOverrides.ownerUserId, owner),
+        ),
+      );
+    for (const r of rows) {
+      overrideByFlowId.set(r.flowId, {
+        amount: r.amount,
+        currency: r.currency,
+      });
+    }
+  }
+
   const result: CashFlowSummary = {
     baseCurrency,
     income: 0,
@@ -403,12 +434,20 @@ export const computeMonthlyCashFlow = cache(async function computeMonthlyCashFlo
     net: 0,
     byCategory: { income: {}, expense: {} },
   };
-  const rates = await prefetchRates(
-    flows.map((f) => [f.currency, baseCurrency] as const),
-  );
+  // Build the rate-prefetch list using effective (possibly overridden)
+  // currencies, so the convert() lookups below all hit warm cache.
+  const ratePairs: Array<readonly [string, string]> = [];
   for (const f of flows) {
-    const monthly = monthlyEquivalent(f.amount, f.cadence);
-    const inBase = rates.convert(monthly, f.currency, baseCurrency);
+    const ovr = overrideByFlowId.get(f.id);
+    ratePairs.push([ovr?.currency ?? f.currency, baseCurrency] as const);
+  }
+  const rates = await prefetchRates(ratePairs);
+  for (const f of flows) {
+    const ovr = overrideByFlowId.get(f.id);
+    const effectiveAmount = ovr ? ovr.amount : f.amount;
+    const effectiveCurrency = ovr ? ovr.currency : f.currency;
+    const monthly = monthlyEquivalent(effectiveAmount, f.cadence);
+    const inBase = rates.convert(monthly, effectiveCurrency, baseCurrency);
     const cat = f.category ?? "Other";
     if (f.kind === "income") {
       result.income += inBase;
@@ -547,8 +586,8 @@ export const computeBudgetStatus = cache(async function computeBudgetStatusImpl(
   baseCurrency: string,
   monthKey?: string,
 ): Promise<BudgetSummary> {
-  const budgets = await listBudgets();
-  if (budgets.length === 0) {
+  const rawBudgets = await listBudgets();
+  if (rawBudgets.length === 0) {
     return {
       baseCurrency,
       rows: [],
@@ -557,6 +596,41 @@ export const computeBudgetStatus = cache(async function computeBudgetStatusImpl(
       totalSpent: 0,
     };
   }
+
+  // Apply per-month overrides for the active month (if any). The
+  // override only swaps monthlyLimit + currency — the budget's
+  // category, accountId, and notes stay the same.
+  const overrideByBudgetId = new Map<
+    number,
+    { monthlyLimit: number; currency: string }
+  >();
+  if (monthKey) {
+    const owner = await getOwner();
+    const rows = await db
+      .select({
+        budgetId: schema.budgetOverrides.budgetId,
+        monthlyLimit: schema.budgetOverrides.monthlyLimit,
+        currency: schema.budgetOverrides.currency,
+      })
+      .from(schema.budgetOverrides)
+      .where(
+        and(
+          eq(schema.budgetOverrides.monthKey, monthKey),
+          ownedBy(schema.budgetOverrides.ownerUserId, owner),
+        ),
+      );
+    for (const r of rows) {
+      overrideByBudgetId.set(r.budgetId, {
+        monthlyLimit: r.monthlyLimit,
+        currency: r.currency,
+      });
+    }
+  }
+  const budgets = rawBudgets.map((b) => {
+    const ovr = overrideByBudgetId.get(b.id);
+    if (!ovr) return b;
+    return { ...b, monthlyLimit: ovr.monthlyLimit, currency: ovr.currency };
+  });
 
   const { from, to } = monthRange(monthKey);
   const monthTxs = await listTransactions({

@@ -446,12 +446,21 @@ function EditFlowDialog({
   onOpenChange,
   accountOptions,
   budgets,
+  activeMonthKey,
+  isFutureMonth,
+  monthLabel,
 }: {
   flow: FlowRow;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   accountOptions: Array<{ id: number; name: string; currency: string; type?: string }>;
   budgets: Array<{ id: number; category: string; currency: string }>;
+  /** Active global month filter (YYYY-MM). Passed via hidden input so
+   *  the server action can scope edits to that month when it's a
+   *  future month. */
+  activeMonthKey?: string | null;
+  isFutureMonth?: boolean;
+  monthLabel?: string | null;
 }) {
   const role = useRole();
   const [pending, startTransition] = useTransition();
@@ -460,7 +469,20 @@ function EditFlowDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Edit {flow.kind}</DialogTitle>
+          <DialogTitle>
+            Edit {flow.kind}
+            {isFutureMonth && monthLabel ? (
+              <span className="ml-2 text-xs font-normal text-muted-foreground">
+                — for {monthLabel} only
+              </span>
+            ) : null}
+          </DialogTitle>
+          {isFutureMonth && monthLabel ? (
+            <DialogDescription className="text-xs">
+              Changes here apply to <span className="font-medium">{monthLabel}</span>{" "}
+              only — previous months stay as-is.
+            </DialogDescription>
+          ) : null}
         </DialogHeader>
         <form
           action={(fd) =>
@@ -472,6 +494,9 @@ function EditFlowDialog({
           className="space-y-4"
         >
           <input type="hidden" name="id" value={flow.id} />
+          {isFutureMonth && activeMonthKey ? (
+            <input type="hidden" name="month_key" value={activeMonthKey} />
+          ) : null}
           <FlowFields
             defaults={flow}
             accountOptions={accountOptions}
@@ -493,6 +518,9 @@ function FlowRow({
   accountOptions,
   budget,
   allBudgets,
+  activeMonthKey,
+  isFutureMonth,
+  monthLabel,
 }: {
   flow: FlowRow;
   accountOptions: Array<{ id: number; name: string; currency: string; type?: string }>;
@@ -500,6 +528,9 @@ function FlowRow({
   budget?: { id: number; category: string; currency: string };
   /** Full budget list, forwarded to EditFlowDialog → FlowFields. */
   allBudgets: Array<{ id: number; category: string; currency: string }>;
+  activeMonthKey?: string | null;
+  isFutureMonth?: boolean;
+  monthLabel?: string | null;
 }) {
   const role = useRole();
   const [editOpen, setEditOpen] = useState(false);
@@ -722,6 +753,9 @@ function FlowRow({
         onOpenChange={setEditOpen}
         accountOptions={accountOptions}
         budgets={allBudgets}
+        activeMonthKey={activeMonthKey}
+        isFutureMonth={isFutureMonth}
+        monthLabel={monthLabel}
       />
     </div>
   );
@@ -735,6 +769,9 @@ export function FlowsManager({
   accountOptions,
   recentTransactions = [],
   budgetByCategory = {},
+  activeMonthKey = null,
+  isFutureMonth = false,
+  monthLabel = null,
 }: {
   flows: FlowRow[];
   baseCurrency: string;
@@ -756,6 +793,13 @@ export function FlowsManager({
     string,
     { id: number; category: string; currency: string }
   >;
+  /** Currently-active global month filter (YYYY-MM). */
+  activeMonthKey?: string | null;
+  /** True when the active month is in the future — drives the "edit
+   *  only this month" UI on the flow dialog. */
+  isFutureMonth?: boolean;
+  /** Human label for the active month, used in the dialog hint. */
+  monthLabel?: string | null;
 }) {
   const [tab, setTab] = useState<"all" | "expense" | "income">("all");
   const filtered = useMemo(
@@ -884,6 +928,9 @@ export function FlowsManager({
                         ? budgetByCategory[f.category.trim().toLowerCase()]
                         : undefined
                     }
+                    activeMonthKey={activeMonthKey}
+                    isFutureMonth={isFutureMonth}
+                    monthLabel={monthLabel}
                   />
                 ))}
               </div>
@@ -908,6 +955,9 @@ export function FlowsManager({
                         ? budgetByCategory[f.category.trim().toLowerCase()]
                         : undefined
                     }
+                    activeMonthKey={activeMonthKey}
+                    isFutureMonth={isFutureMonth}
+                    monthLabel={monthLabel}
                   />
                 ))}
               </div>

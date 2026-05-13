@@ -66,6 +66,23 @@ function commonFields(formData: FormData) {
   };
 }
 
+/**
+ * Returns the `YYYY-MM` of "right now" in local time. Used to decide
+ * whether a month-scoped edit lands in the overrides table or on the
+ * base flow row.
+ */
+function currentMonthKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function parseMonthKey(value: FormDataEntryValue | null): string | null {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  if (!/^\d{4}-\d{2}$/.test(raw)) return null;
+  return raw;
+}
+
 export async function createFlow(formData: FormData) {
   await assertAdmin();
   const fields = commonFields(formData);
@@ -148,6 +165,46 @@ export async function updateFlow(formData: FormData) {
   const fields = commonFields(formData);
   if (!fields.name) throw new Error("Name is required.");
   const owner = await getOwner();
+
+  // Month-scoped edit: when the user edits a flow while the global
+  // month filter is set to a FUTURE month, only the amount/currency
+  // for that month should change. Everything else (name, category,
+  // cadence, account, due date) is fundamentally not a per-month
+  // thing, so we ignore the scope for those and still apply on the
+  // base. We just diverge the amount via the overrides table.
+  const scoped = parseMonthKey(formData.get("month_key"));
+  const isFutureEdit = scoped != null && scoped > currentMonthKey();
+
+  if (isFutureEdit) {
+    const nowIso = new Date().toISOString();
+    // Upsert the override row. SQLite ON CONFLICT on the unique
+    // (flow_id, month_key) index → update amount/currency in place
+    // so repeated edits don't accumulate rows.
+    await db
+      .insert(schema.recurringFlowOverrides)
+      .values({
+        flowId: id,
+        monthKey: scoped,
+        amount: fields.amount,
+        currency: fields.currency,
+        ownerUserId: owner,
+      })
+      .onConflictDoUpdate({
+        target: [
+          schema.recurringFlowOverrides.flowId,
+          schema.recurringFlowOverrides.monthKey,
+        ],
+        set: {
+          amount: fields.amount,
+          currency: fields.currency,
+          updatedAt: nowIso,
+        },
+      });
+    revalidate();
+    return;
+  }
+
+  // Default path: edit base flow as before.
   await db
     .update(schema.recurringFlows)
     .set({ ...fields, updatedAt: new Date().toISOString() })

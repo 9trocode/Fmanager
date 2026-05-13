@@ -43,10 +43,24 @@ export default async function BudgetsPage({
   const lastDay = new Date(y, m, 0).getDate();
   const monthTo = `${y}-${String(m).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
 
+  // Detect future-month view so cash flow projection picks up any
+  // per-month flow overrides for the same month (a raise the user is
+  // modelling for next August, etc.). Past/current months use the
+  // base flow amounts.
+  const now = new Date();
+  const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const isFutureMonth = monthKey != null && monthKey > currentMonthKey;
+  const monthLabel = monthKey
+    ? new Date(y, m - 1, 1).toLocaleString("en-US", {
+        month: "long",
+        year: "numeric",
+      })
+    : null;
+
   const [summary, cashFlow, runway, monthExpenses, accounts] =
     await Promise.all([
       computeBudgetStatus(baseCurrency, monthKey),
-      computeMonthlyCashFlow(baseCurrency),
+      computeMonthlyCashFlow(baseCurrency, isFutureMonth ? monthKey : undefined),
       computeCashRunway(baseCurrency),
       listTransactions({
         kind: "expense",
@@ -104,6 +118,9 @@ export default async function BudgetsPage({
         liquidCash={runway.liquidCash}
         monthsRunway={runway.monthsRunway}
         accountOptions={accountOptions}
+        activeMonthKey={monthKey ?? null}
+        isFutureMonth={isFutureMonth}
+        monthLabel={monthLabel}
       />
     </>
   );

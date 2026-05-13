@@ -38,11 +38,19 @@ export function EditBudgetDialog({
   open,
   onOpenChange,
   accountOptions = [],
+  activeMonthKey = null,
+  isFutureMonth = false,
+  monthLabel = null,
 }: {
   budget: BudgetEditRow;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   accountOptions?: Array<{ id: number; name: string; currency: string }>;
+  /** Active global month filter (YYYY-MM). Passed so future-month
+   *  edits scope to that month and don't bleed back to previous months. */
+  activeMonthKey?: string | null;
+  isFutureMonth?: boolean;
+  monthLabel?: string | null;
 }) {
   const role = useRole();
   const [pending, startTransition] = useTransition();
@@ -51,7 +59,20 @@ export function EditBudgetDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Edit budget</DialogTitle>
+          <DialogTitle>
+            Edit budget
+            {isFutureMonth && monthLabel ? (
+              <span className="ml-2 text-xs font-normal text-muted-foreground">
+                — for {monthLabel} only
+              </span>
+            ) : null}
+          </DialogTitle>
+          {isFutureMonth && monthLabel ? (
+            <p className="text-xs text-muted-foreground">
+              Changes apply to <span className="font-medium">{monthLabel}</span>{" "}
+              only — previous months keep their original cap.
+            </p>
+          ) : null}
         </DialogHeader>
         <form
           action={(fd) =>
@@ -63,6 +84,9 @@ export function EditBudgetDialog({
           className="space-y-4"
         >
           <input type="hidden" name="id" value={budget.id} />
+          {isFutureMonth && activeMonthKey ? (
+            <input type="hidden" name="month_key" value={activeMonthKey} />
+          ) : null}
           <div className="space-y-1.5">
             <Label htmlFor="category">Category</Label>
             <Input
