@@ -396,6 +396,48 @@ export const computeMonthlyCashFlow = cache(async function computeMonthlyCashFlo
   baseCurrency: string,
   monthKey?: string,
 ): Promise<CashFlowSummary> {
+  // PAST MONTHS LOCK TO ACTUALS.
+  //
+  // Editing a recurring income flow today must not retroactively
+  // change March's income widget. If we built the past month from
+  // the live flow template, raising salary $5k → $7k today would
+  // also bump every past month's projected income to $7k everywhere
+  // BudgetsCashFlowPanel / runs the dashboard uses this number.
+  //
+  // Past months were lived through; what landed in transactions is
+  // the truth. Sum real income/expense rows in that month, grouped
+  // by category, in base currency. The flow template only feeds
+  // CURRENT and FUTURE months.
+  const currentKey = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+  if (monthKey && /^(\d{4})-(\d{2})$/.test(monthKey) && monthKey < currentKey) {
+    const { from, to } = monthRange(monthKey);
+    const monthTxs = await listTransactionsBetween(from, to);
+    const past: CashFlowSummary = {
+      baseCurrency,
+      income: 0,
+      expenses: 0,
+      net: 0,
+      byCategory: { income: {}, expense: {} },
+    };
+    const pastRates = await prefetchRates(
+      monthTxs.map((t) => [t.currency, baseCurrency] as const),
+    );
+    for (const t of monthTxs) {
+      if (t.kind === "transfer") continue;
+      const inBase = pastRates.convert(t.amount, t.currency, baseCurrency);
+      const cat = (t.category ?? "").trim() || "Other";
+      if (t.kind === "income") {
+        past.income += inBase;
+        past.byCategory.income[cat] = (past.byCategory.income[cat] ?? 0) + inBase;
+      } else {
+        past.expenses += inBase;
+        past.byCategory.expense[cat] = (past.byCategory.expense[cat] ?? 0) + inBase;
+      }
+    }
+    past.net = past.income - past.expenses;
+    return past;
+  }
+
   const flows = await listFlows();
   // When the user is viewing a specific month, swap in any per-month
   // override of (amount, currency) so a "raise next August" change

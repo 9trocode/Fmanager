@@ -72,10 +72,11 @@ export default async function CashFlowPage() {
   const [flows, projected, accounts, recentTxs, budgets, monthActuals] =
     await Promise.all([
       listFlows({ includeArchived: true }),
-      // Pass monthKey so future-month projections apply any per-month
-      // overrides the user has saved. Past/current months can skip it
-      // (overrides only target future months).
-      computeMonthlyCashFlow(baseCurrency, isFuture ? monthKey : undefined),
+      // Always forward monthKey: past → realized actuals, future →
+      // template + overrides, current/unset → live template. Locks
+      // past-month income to historical reality so a salary edit
+      // today can't retroactively reshape March's numbers.
+      computeMonthlyCashFlow(baseCurrency, monthKey),
       listAccounts(),
       recentTxsPromise,
       listBudgets(),

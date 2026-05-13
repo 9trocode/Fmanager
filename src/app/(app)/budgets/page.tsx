@@ -60,7 +60,11 @@ export default async function BudgetsPage({
   const [summary, cashFlow, runway, monthExpenses, accounts] =
     await Promise.all([
       computeBudgetStatus(baseCurrency, monthKey),
-      computeMonthlyCashFlow(baseCurrency, isFutureMonth ? monthKey : undefined),
+      // Always forward monthKey: past → realized actuals, future →
+      // template + overrides, current/unset → live template. Without
+      // this, editing income today would change past-month income on
+      // the BudgetsCashFlowPanel.
+      computeMonthlyCashFlow(baseCurrency, monthKey),
       computeCashRunway(baseCurrency),
       listTransactions({
         kind: "expense",

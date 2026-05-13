@@ -43,7 +43,11 @@ export async function MonthStatsRowLoader({
   const [budgets, month, flows] = await Promise.all([
     computeBudgetStatus(baseCurrency, monthKey),
     computeThisMonthActuals(baseCurrency, monthKey),
-    computeMonthlyCashFlow(baseCurrency),
+    // Pass monthKey so past months lock to realized actuals and
+    // future months pick up any per-month overrides. Without it,
+    // editing today's salary would retroactively bump past-month
+    // income on the dashboard widgets.
+    computeMonthlyCashFlow(baseCurrency, monthKey),
   ]);
   return <MonthStatsRow month={month} budgets={budgets} flows={flows} />;
 }
