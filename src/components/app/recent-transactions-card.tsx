@@ -35,9 +35,12 @@ function KindIcon({ kind }: { kind: TransactionKind }) {
 export function RecentTransactionsCard({
   txs,
   accountNameById,
+  monthLabel = null,
 }: {
   txs: Tx[];
   accountNameById: Map<number, string>;
+  /** When set, the card scopes its copy to that month (label string). */
+  monthLabel?: string | null;
 }) {
   return (
     <Card>
@@ -45,7 +48,13 @@ export function RecentTransactionsCard({
         <div className="flex items-start justify-between gap-3">
           <div className="space-y-1">
             <CardTitle className="text-base">Recent transactions</CardTitle>
-            <CardDescription>Your latest {txs.length} entries.</CardDescription>
+            <CardDescription>
+              {monthLabel
+                ? txs.length === 0
+                  ? `No transactions in ${monthLabel} yet.`
+                  : `${txs.length} entr${txs.length === 1 ? "y" : "ies"} in ${monthLabel}.`
+                : `Your latest ${txs.length} entries.`}
+            </CardDescription>
           </div>
           <Button asChild variant="ghost" size="sm" className="text-xs shrink-0">
             <Link href="/transactions">
@@ -57,7 +66,9 @@ export function RecentTransactionsCard({
       <CardContent className="space-y-1 pt-0">
         {txs.length === 0 ? (
           <p className="text-sm text-muted-foreground py-6 text-center">
-            No transactions yet. Log one from the transactions page.
+            {monthLabel
+              ? `Nothing posted in ${monthLabel}. Switch months from the sidebar to see other periods.`
+              : "No transactions yet. Log one from the transactions page."}
           </p>
         ) : (
           txs.map((t) => {

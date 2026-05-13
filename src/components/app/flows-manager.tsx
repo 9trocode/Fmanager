@@ -464,23 +464,35 @@ function EditFlowDialog({
 }) {
   const role = useRole();
   const [pending, startTransition] = useTransition();
+  // Even on a future-month view, the user may want to push the change
+  // back to the BASE flow (i.e. "this is a permanent raise, not a
+  // one-month spike"). Default to month-scoped (preserves the
+  // safety guarantee they asked for); offer the escape hatch as an
+  // explicit checkbox.
+  const [applyToBase, setApplyToBase] = useState(false);
   if (role === "viewer") return null;
+  const scoping = isFutureMonth && !applyToBase;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>
             Edit {flow.kind}
-            {isFutureMonth && monthLabel ? (
+            {scoping && monthLabel ? (
               <span className="ml-2 text-xs font-normal text-muted-foreground">
                 — for {monthLabel} only
               </span>
             ) : null}
           </DialogTitle>
-          {isFutureMonth && monthLabel ? (
+          {scoping && monthLabel ? (
             <DialogDescription className="text-xs">
               Changes here apply to <span className="font-medium">{monthLabel}</span>{" "}
               only — previous months stay as-is.
+            </DialogDescription>
+          ) : isFutureMonth && monthLabel ? (
+            <DialogDescription className="text-xs">
+              Editing the base flow — change applies to the current month
+              and every month going forward (including {monthLabel}).
             </DialogDescription>
           ) : null}
         </DialogHeader>
@@ -494,7 +506,7 @@ function EditFlowDialog({
           className="space-y-4"
         >
           <input type="hidden" name="id" value={flow.id} />
-          {isFutureMonth && activeMonthKey ? (
+          {scoping && activeMonthKey ? (
             <input type="hidden" name="month_key" value={activeMonthKey} />
           ) : null}
           <FlowFields
@@ -502,6 +514,22 @@ function EditFlowDialog({
             accountOptions={accountOptions}
             budgets={budgets}
           />
+          {isFutureMonth ? (
+            <label className="flex items-start gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={applyToBase}
+                onChange={(e) => setApplyToBase(e.target.checked)}
+                className="mt-0.5 size-3.5 accent-primary"
+              />
+              <span>
+                Apply to current month onward (edit the base flow).{" "}
+                Use this when the change is permanent — a raise, a new
+                rent, etc. — rather than a one-off bump for{" "}
+                {monthLabel ?? "the selected month"}.
+              </span>
+            </label>
+          ) : null}
           <DialogFooter>
             <Button type="submit" disabled={pending} loading={pending}>
               {pending ? "Saving…" : "Save"}

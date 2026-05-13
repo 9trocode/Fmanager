@@ -159,7 +159,7 @@ export default async function DashboardPage({
               <SavingsSummaryLoader />
             </Suspense>
             <Suspense fallback={<ListCardSkeleton />}>
-              <RecentTransactionsLoader />
+              <RecentTransactionsLoader monthKey={monthKey} />
             </Suspense>
           </div>
 

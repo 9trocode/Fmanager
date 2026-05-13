@@ -4,7 +4,12 @@ import { MonthStatsRow } from "@/components/app/month-stats-row";
 import { RecentTransactionsCard } from "@/components/app/recent-transactions-card";
 import { SavingsSummaryCard } from "@/components/app/savings-summary-card";
 import { NetWorthMiniCard } from "@/components/app/networth-mini-card";
-import { listAccounts, listLatestTransactions, listSavingsGoals } from "@/lib/db/queries";
+import {
+  listAccounts,
+  listLatestTransactions,
+  listSavingsGoals,
+  listTransactions,
+} from "@/lib/db/queries";
 import {
   computeNetWorth,
   computeCashRunway,
@@ -68,14 +73,49 @@ export async function SavingsSummaryLoader() {
   return <SavingsSummaryCard goals={goals} />;
 }
 
-export async function RecentTransactionsLoader() {
+export async function RecentTransactionsLoader({
+  monthKey,
+}: {
+  /** Active global month filter (YYYY-MM). When set, the list scopes
+   *  to transactions in that calendar month. When unset, falls back
+   *  to the latest 8 entries regardless of date. */
+  monthKey?: string;
+}) {
+  let txsPromise: Promise<Awaited<ReturnType<typeof listLatestTransactions>>>;
+  let scopedToMonth: { key: string; label: string } | null = null;
+  if (monthKey && /^(\d{4})-(\d{2})$/.test(monthKey)) {
+    const [y, m] = monthKey.split("-").map(Number);
+    const start = `${y}-${String(m).padStart(2, "0")}-01`;
+    const lastDay = new Date(y, m, 0).getDate();
+    const end = `${y}-${String(m).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+    txsPromise = listTransactions({ dateFrom: start, dateTo: end }) as Promise<
+      Awaited<ReturnType<typeof listLatestTransactions>>
+    >;
+    scopedToMonth = {
+      key: monthKey,
+      label: new Date(y, m - 1, 1).toLocaleString("en-US", {
+        month: "long",
+        year: "numeric",
+      }),
+    };
+  } else {
+    txsPromise = listLatestTransactions(8);
+  }
   const [accounts, recentTxs] = await Promise.all([
     listAccounts({ includeArchived: true }),
-    listLatestTransactions(8),
+    txsPromise,
   ]);
+  // When scoped to a month, cap to the 8 most recent of that month —
+  // the card layout assumes a short list and the user can hit "View
+  // all" for the full set.
+  const visible = scopedToMonth ? recentTxs.slice(0, 8) : recentTxs;
   const accountNameById = new Map(accounts.map((a) => [a.id, a.name]));
   return (
-    <RecentTransactionsCard txs={recentTxs} accountNameById={accountNameById} />
+    <RecentTransactionsCard
+      txs={visible}
+      accountNameById={accountNameById}
+      monthLabel={scopedToMonth?.label ?? null}
+    />
   );
 }
 
