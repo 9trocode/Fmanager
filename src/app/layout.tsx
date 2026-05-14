@@ -1,9 +1,10 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { cookies } from "next/headers";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/app/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
+import { PwaRegister } from "@/components/app/pwa-register";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -20,6 +21,36 @@ export const metadata: Metadata = {
   title: "Cairn",
   description:
     "Multi-currency net worth + decision co-pilot for professionals. Stack the truths, plan against the floor.",
+  // PWA + iOS standalone metadata. `manifest` points at the Next.js
+  // metadata-route handler at `src/app/manifest.ts`. `appleWebApp`
+  // mirrors the manifest's name/colors for Safari's add-to-home-
+  // screen path, which still doesn't read the manifest fully.
+  manifest: "/manifest.webmanifest",
+  applicationName: "Cairn",
+  appleWebApp: {
+    capable: true,
+    title: "Cairn",
+    statusBarStyle: "black-translucent",
+  },
+  formatDetection: {
+    telephone: false,
+  },
+};
+
+// Viewport / theme-color split out per Next.js 16's split metadata
+// API (theme-color in `metadata` is deprecated).
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#fafafa" },
+    { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
+  ],
+  width: "device-width",
+  initialScale: 1,
+  // Disable user scaling so the standalone install feels app-like
+  // (no double-tap zoom on numbers/forms). Buttons + tap targets
+  // are sized for thumbs already.
+  maximumScale: 1,
+  userScalable: false,
 };
 
 export default async function RootLayout({
@@ -48,6 +79,7 @@ export default async function RootLayout({
           <TooltipProvider>{children}</TooltipProvider>
           <Toaster richColors position="top-right" />
         </ThemeProvider>
+        <PwaRegister />
       </body>
     </html>
   );
