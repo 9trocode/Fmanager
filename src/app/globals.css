@@ -129,9 +129,36 @@
   }
   body {
     @apply bg-background text-foreground;
+    /* Kill the gray Android/iOS tap flash that fires on every tap
+       — interactive elements have their own hover/active states. */
+    -webkit-tap-highlight-color: transparent;
+    /* In PWA standalone mode we don't want the body's rubber-band
+       scroll to bleed past page bounds (which on iOS reveals the
+       background and breaks immersion). `contain` keeps scroll
+       chaining inside scrollable descendants. */
+    overscroll-behavior-y: contain;
   }
   html {
     @apply font-sans;
+    /* Inputs render at >=16px to skip iOS Safari's "zoom on focus
+       below 16px" behaviour, which otherwise zooms the whole page
+       every time the user taps a money input. */
+    -webkit-text-size-adjust: 100%;
+  }
+  /* iOS Safari auto-zooms when an input has computed font-size < 16px
+     on focus. Force the baseline. Desktop CSS can still shrink labels
+     etc. since we only touch the focusable form controls. */
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+  @media (min-width: 768px) {
+    input,
+    textarea,
+    select {
+      font-size: inherit;
+    }
   }
   }
 

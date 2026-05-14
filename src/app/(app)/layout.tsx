@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { MobileTopBar, Sidebar } from "@/components/app/sidebar";
+import { PullToRefresh } from "@/components/app/pull-to-refresh";
 import {
   getAdminProfile,
   getCurrentUser,
@@ -113,6 +114,10 @@ export default async function AppLayout({
         don't waste edge gutters; desktop keeps the breathable px-8 py-12.
       */}
       <div className="min-h-screen flex flex-col md:flex-row">
+        {/* Touch-only pull-to-refresh. Self-hides on desktop and
+            when not at scrollY=0. Triggers router.refresh() (RSC
+            soft re-fetch) instead of a full reload. */}
+        <PullToRefresh />
         <MobileTopBar
           alertCount={alertCount}
           alertCritical={alertCritical}
@@ -130,12 +135,18 @@ export default async function AppLayout({
             Bottom padding budget: the FloatingAdvisor FAB sits at
             ~16px from the bottom + safe-area-inset on mobile, with a
             ~48px button. Without extra page padding the last item in
-            any list scrolls under the FAB. pb-24 on mobile (~96px)
-            clears the button + a comfortable gap; desktop reverts
-            to the original spacing since the FAB's pill is small
-            enough that py-12 already provides headroom.
+            any list scrolls under the FAB. The mobile `pb-` clears
+            the button + accounts for the iOS home indicator via
+            safe-area-inset; desktop reverts to py-12 since the
+            FAB's pill is small enough that py-12 already provides
+            headroom.
+
+            The mobile horizontal padding uses `max(env(...), 1rem)`
+            so landscape on a notched phone widens the gutter to
+            clear the rounded corners while portrait keeps the 16px
+            edge gutter. Desktop overrides via `md:px-8`.
           */}
-          <div className="max-w-6xl mx-auto px-4 sm:px-6 md:px-8 pt-6 md:pt-12 pb-24 md:pb-12 relative">
+          <div className="max-w-6xl mx-auto relative pt-6 md:pt-12 pl-[max(env(safe-area-inset-left,0px),1rem)] sm:pl-[max(env(safe-area-inset-left,0px),1.5rem)] md:px-8 pr-[max(env(safe-area-inset-right,0px),1rem)] sm:pr-[max(env(safe-area-inset-right,0px),1.5rem)] pb-[calc(env(safe-area-inset-bottom,0px)+6rem)] md:pb-12">
             {children}
           </div>
         </main>

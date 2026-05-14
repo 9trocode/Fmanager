@@ -41,6 +41,16 @@ export const metadata: Metadata = {
 // API (theme-color in `metadata` is deprecated). Pinning maximum
 // scale or disabling user scaling breaks accessibility for users
 // who pinch-zoom — leave the defaults.
+//
+// `viewportFit: "cover"` is the iOS handshake: without it, the
+// browser pillarboxes content away from the notch and home
+// indicator and `env(safe-area-inset-*)` reports 0 everywhere,
+// which makes our PWA standalone install look cramped.
+//
+// `interactiveWidget: "resizes-content"` tells mobile browsers to
+// shrink the layout viewport when the on-screen keyboard opens
+// (instead of overlaying it on top of inputs), so focused fields
+// in dialogs aren't covered.
 export const viewport: Viewport = {
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#fafafa" },
@@ -48,6 +58,8 @@ export const viewport: Viewport = {
   ],
   width: "device-width",
   initialScale: 1,
+  viewportFit: "cover",
+  interactiveWidget: "resizes-content",
 };
 
 export default async function RootLayout({

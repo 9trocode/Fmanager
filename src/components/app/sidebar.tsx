@@ -302,7 +302,22 @@ export function MobileTopBar({
   }, [pathname]);
 
   return (
-    <header className="md:hidden sticky top-0 z-40 flex items-center justify-between gap-3 h-14 px-4 border-b border-border bg-background/85 backdrop-blur-md">
+    <header
+      className="md:hidden sticky top-0 z-40 flex items-center justify-between gap-3 h-14 border-b border-border bg-background/85 backdrop-blur-md"
+      style={{
+        // Pad against the notch / status bar when installed as a PWA
+        // standalone — otherwise the brand + hamburger sit under the
+        // iOS status bar. Falls back to 0 on Android / non-notched.
+        // Landscape safe-areas extend the side gutters so content
+        // doesn't get hidden by the rounded corners.
+        paddingTop: "env(safe-area-inset-top, 0px)",
+        paddingLeft: "calc(env(safe-area-inset-left, 0px) + 1rem)",
+        paddingRight: "calc(env(safe-area-inset-right, 0px) + 1rem)",
+        // Slightly grow the header height to make the title area
+        // visually balanced after the safe-area padding lifts it.
+        height: "calc(3.5rem + env(safe-area-inset-top, 0px))",
+      }}
+    >
       <Link href="/dashboard" className="flex items-center gap-2 min-w-0">
         <div className="size-8 rounded-md bg-gradient-to-br from-primary to-primary/70 text-primary-foreground grid place-items-center shrink-0">
           <CairnMark size={18} bare className="text-primary-foreground" />
