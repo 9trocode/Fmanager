@@ -38,7 +38,9 @@ export const metadata: Metadata = {
 };
 
 // Viewport / theme-color split out per Next.js 16's split metadata
-// API (theme-color in `metadata` is deprecated).
+// API (theme-color in `metadata` is deprecated). Pinning maximum
+// scale or disabling user scaling breaks accessibility for users
+// who pinch-zoom — leave the defaults.
 export const viewport: Viewport = {
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#fafafa" },
@@ -46,11 +48,6 @@ export const viewport: Viewport = {
   ],
   width: "device-width",
   initialScale: 1,
-  // Disable user scaling so the standalone install feels app-like
-  // (no double-tap zoom on numbers/forms). Buttons + tap targets
-  // are sized for thumbs already.
-  maximumScale: 1,
-  userScalable: false,
 };
 
 export default async function RootLayout({
