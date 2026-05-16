@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.3.0](https://github.com/9trocode/Cairn/compare/v1.2.0...v1.3.0) (2026-05-16)
+
+
+### Features
+
+* **exports:** reimagine PDF + Excel — charts, categories, goals, budgets ([0a5ff30](https://github.com/9trocode/Cairn/commit/0a5ff303967451934314db9f9c2dcbc255c1ea5a))
+* **exports:** reimagined CSV — single multi-section file + dashboard fix for no-equity ([03d278a](https://github.com/9trocode/Cairn/commit/03d278a6493691d0ac36915827be35cd706d3266))
+* **landing:** live GitHub stats + repo link in hero and footer ([83493e1](https://github.com/9trocode/Cairn/commit/83493e16585861b262fced4c64587c23396bbc8b))
+
+
+### Bug Fixes
+
+* **alerts:** host (NULL owner) was bypassing dedup, accumulating dupes ([6e9c5fd](https://github.com/9trocode/Cairn/commit/6e9c5fd073b2693f3aeeda98346f9c37eb5c65d4))
+* **dashboard:** collapse net-worth card to one column when there's no equity ([03d278a](https://github.com/9trocode/Cairn/commit/03d278a6493691d0ac36915827be35cd706d3266))
+* **migrations:** restore deleted 0018 as no-op so prod boot stops crashing ([6d907da](https://github.com/9trocode/Cairn/commit/6d907da876a52bd3102cea255a4abb8ba74a07ef))
+* **mobile:** floating advisor no longer overlaps page content / iOS chrome ([5591b49](https://github.com/9trocode/Cairn/commit/5591b49e85c5febd373f4d0aa899b4fcf6a8ba38))
+
+
+### Performance Improvements
+
+* **boot:** warm DB at server start + tree-shake lucide/radix barrels ([34b33fd](https://github.com/9trocode/Cairn/commit/34b33fdb4877823af9417ee40ae50318565d25d8))
+* **db:** composite indexes for the dominant 100K-tx query shapes ([929a16c](https://github.com/9trocode/Cairn/commit/929a16cce929d66655da271031916880dbf559a2))
+* **memory:** right-size sqlite, cap throttle maps, stream PDF to response ([9ca9741](https://github.com/9trocode/Cairn/commit/9ca974154b472d51e9cf3e6f819049dcb7d7dcfb))
+* **pages:** parallelise the leading awaits across every list page ([76157ce](https://github.com/9trocode/Cairn/commit/76157cee1d59e46ed134dc53e9b5009836d5294c))
+* prefetch FX rates across every per-tx loop ([df6b798](https://github.com/9trocode/Cairn/commit/df6b798fce0dea87ab0a205bd762392eb2334650))
+* prefetch FX rates in projections + savings detail; bulk seed inserts ([65a140d](https://github.com/9trocode/Cairn/commit/65a140d67332ade94eddc6bf093f90b9455f4bca))
+* **prod:** kill duplicate boot work, cache brand assets, add owner+date composite ([b05f65c](https://github.com/9trocode/Cairn/commit/b05f65c04098c9066441b9d7b3815b5f6c2708bd))
+* **startup:** memoise auth + parallelise layout, move accrual off response path, auto-migrate on open ([400ff61](https://github.com/9trocode/Cairn/commit/400ff619f229e9aa07bb0635bad1674415895d37))
+
 ## [1.2.0](https://github.com/9trocode/Cairn/compare/v1.1.0...v1.2.0) (2026-05-09)
 
 
