@@ -16,6 +16,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { isAdminConfigured, isAuthenticated } from "@/lib/auth/session";
 import { getSetting } from "@/lib/db/queries";
 import { registerWithCode } from "@/lib/actions/members";
+import { PasswordInput } from "@/components/app/password-input";
 
 // Reads registration state from DB on every request.
 export const dynamic = "force-dynamic";
@@ -121,8 +122,8 @@ export default async function RegisterPage({
                   <Sparkles className="size-3 text-primary mt-0.5 shrink-0" />
                   <span>
                     Your accounts, transactions, budgets, goals, and equity
-                    grants will be stored in your own isolated workspace.
-                    The host of this instance and other users cannot see them.
+                    grants will be stored in your own isolated workspace. The
+                    host of this instance and other users cannot see them.
                   </span>
                 </div>
               )}
@@ -147,27 +148,20 @@ export default async function RegisterPage({
                   placeholder="What should we call you?"
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  name="password"
-                  type="password"
-                  autoComplete="new-password"
-                  placeholder="At least 8 characters"
-                  required
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="confirm">Confirm password</Label>
-                <Input
-                  id="confirm"
-                  name="confirm"
-                  type="password"
-                  autoComplete="new-password"
-                  required
-                />
-              </div>
+              <PasswordInput
+                name="password"
+                required
+                autoComplete={"new-password"}
+                placeholder={"At least 8 characters"}
+              />
+              <PasswordInput
+                label="Confirm password"
+                id={"confirm"}
+                name="confirm"
+                required
+                autoComplete={"new-password"}
+                placeholder={"Confirm password"}
+              />
               {errorMessage ? (
                 <Alert variant="destructive">
                   <AlertDescription>{errorMessage}</AlertDescription>
