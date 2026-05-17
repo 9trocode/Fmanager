@@ -29,6 +29,7 @@ import {
   isKnownModel,
   type AdvisorProvider,
 } from "@/lib/ai/providers";
+import { PasswordInput } from "@/components/app/password-input";
 
 export function BaseCurrencyForm({ current }: { current: string }) {
   const role = useRole();
@@ -71,7 +72,8 @@ export function BaseCurrencyForm({ current }: { current: string }) {
 }
 
 const PROVIDER_HINT: Record<AdvisorProvider, string> = {
-  anthropic: "Claude Opus / Sonnet / Haiku. Best for nuanced advice + reasoning.",
+  anthropic:
+    "Claude Opus / Sonnet / Haiku. Best for nuanced advice + reasoning.",
   openai: "GPT-4o / GPT-4.1 / GPT-5. Best for structured output + tool use.",
   google: "Gemini 2.0 Flash / 1.5 Pro. Cheap, fast, large context.",
 };
@@ -119,14 +121,18 @@ export function AdvisorProviderForm({
                   {keysSet[p] ? (
                     <span className="text-[10px] text-emerald-300">●</span>
                   ) : (
-                    <span className="text-[10px] text-muted-foreground/60">○</span>
+                    <span className="text-[10px] text-muted-foreground/60">
+                      ○
+                    </span>
                   )}
                 </span>
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
-        <p className="text-xs text-muted-foreground">{PROVIDER_HINT[provider]}</p>
+        <p className="text-xs text-muted-foreground">
+          {PROVIDER_HINT[provider]}
+        </p>
       </div>
       <Button type="submit" disabled={pending || provider === current}>
         {pending ? "Saving…" : "Switch provider"}
@@ -147,9 +153,7 @@ export function AdvisorKeyForm({
   if (role === "viewer") return null;
 
   const placeholders: Record<AdvisorProvider, string> = {
-    anthropic: keySet
-      ? "•••• stored — paste a new key to replace"
-      : "sk-ant-…",
+    anthropic: keySet ? "•••• stored — paste a new key to replace" : "sk-ant-…",
     openai: keySet ? "•••• stored — paste a new key to replace" : "sk-…",
     google: keySet ? "•••• stored — paste a new key to replace" : "AIza…",
   };
@@ -170,11 +174,10 @@ export function AdvisorKeyForm({
     >
       <input type="hidden" name="provider" value={provider} />
       <div className="space-y-1.5 max-w-md">
-        <Label htmlFor="api_key">{PROVIDER_LABEL[provider]} API key</Label>
-        <Input
+        <PasswordInput
+          label={`${PROVIDER_LABEL[provider]} API key`}
           id="api_key"
           name="api_key"
-          type="password"
           placeholder={placeholders[provider]}
           autoComplete="off"
         />
