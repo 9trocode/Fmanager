@@ -92,6 +92,7 @@ export default async function LoginPage({
               </div>
               <PasswordInput
                 name="password"
+                label="Password"
                 required
                 autoComplete={"current-password"}
               />

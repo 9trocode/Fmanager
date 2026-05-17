@@ -150,6 +150,7 @@ export default async function RegisterPage({
               </div>
               <PasswordInput
                 name="password"
+                label="Password"
                 required
                 autoComplete={"new-password"}
                 placeholder={"At least 8 characters"}
