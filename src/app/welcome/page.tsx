@@ -47,6 +47,7 @@ import {
   isAdminConfigured,
   isAuthenticated,
 } from "@/lib/auth/session";
+import { PasswordInput } from "@/components/app/password-input";
 
 const TOTAL_STEPS = 5;
 
@@ -64,8 +65,7 @@ export default async function WelcomePage({
 
   // Force the setup step if there is no admin yet OR the user explicitly asked
   // for step=0. Once admin exists, /welcome?step=0 falls back to step 1.
-  const showSetup =
-    !adminExists || (requestedStep === 0 && !authed);
+  const showSetup = !adminExists || (requestedStep === 0 && !authed);
 
   if (showSetup) {
     return (
@@ -149,44 +149,38 @@ async function Step0Setup({ error }: { error: string | null }) {
               />
             </div>
           </div>
-          <div className="grid sm:grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="password">Password</Label>
-              <Input
+          <div className="">
+            <div className="grid sm:grid-cols-2 gap-3 space-y-1.5">
+              <PasswordInput
+                label="Password"
                 id="password"
                 name="password"
-                type="password"
                 autoComplete="new-password"
                 placeholder="At least 8 characters"
                 required
               />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="confirm">Confirm password</Label>
-              <Input
+              <PasswordInput
+                label="Confirm password"
                 id="confirm"
                 name="confirm"
-                type="password"
                 autoComplete="new-password"
                 required
               />
             </div>
+            {error === "mismatch" ? (
+              <p className="text-xs text-destructive">
+                Passwords didn&apos;t match.
+              </p>
+            ) : null}
+            {error === "weak" ? (
+              <p className="text-xs text-destructive">
+                Password must be at least 8 characters.
+              </p>
+            ) : null}
+            {error === "email" ? (
+              <p className="text-xs text-destructive">Enter a valid email.</p>
+            ) : null}
           </div>
-          {error === "mismatch" ? (
-            <p className="text-xs text-destructive">
-              Passwords didn&apos;t match.
-            </p>
-          ) : null}
-          {error === "weak" ? (
-            <p className="text-xs text-destructive">
-              Password must be at least 8 characters.
-            </p>
-          ) : null}
-          {error === "email" ? (
-            <p className="text-xs text-destructive">
-              Enter a valid email.
-            </p>
-          ) : null}
           <p className="text-[10px] text-muted-foreground leading-relaxed">
             Stored as a salted scrypt hash in your local SQLite. Anyone with
             disk access can&apos;t recover your password — and neither can we.
@@ -219,9 +213,7 @@ function Header({ step }: { step: number }) {
             <CairnMark size={18} bare className="text-primary-foreground" />
           </div>
           <div className="leading-tight">
-            <div className="text-sm font-semibold tracking-tight">
-              Cairn
-            </div>
+            <div className="text-sm font-semibold tracking-tight">Cairn</div>
             <div className="text-[10px] text-muted-foreground">
               welcome aboard
             </div>
@@ -342,9 +334,8 @@ function Step1() {
       </div>
       <p className="text-[11px] text-muted-foreground text-center mt-3 leading-relaxed">
         The demo seeds a realistic sample dataset (multi-currency accounts,
-        equity grants, budgets, transactions) so you can explore before
-        entering your real numbers. You can wipe it any time from
-        Settings → Admin.
+        equity grants, budgets, transactions) so you can explore before entering
+        your real numbers. You can wipe it any time from Settings → Admin.
       </p>
     </StepShell>
   );
@@ -401,18 +392,16 @@ function Step3() {
       title="Add your Anthropic key for the AI advisor."
       subtitle="Skip this — the advisor + receipt scan + voice input are all optional. You can paste a key later in Settings → Advisor at any time."
     >
-      <form action={welcomeAdvisorKey} className="space-y-6">
+      <form action={welcomeAdvisorKey} className="space-y-6" autoComplete="off">
         <div className="rounded-xl border border-border bg-card p-6 space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="anthropic_api_key" className="text-base">
-              Anthropic API key
-            </Label>
-            <Input
+            <PasswordInput
               id="anthropic_api_key"
               name="anthropic_api_key"
-              type="password"
               placeholder="sk-ant-…"
               autoComplete="off"
+              label="Anthropic API key"
+              labelClassName="text-base"
             />
             <p className="text-xs text-muted-foreground">
               Stored in your local SQLite. Sent only to Anthropic when the
