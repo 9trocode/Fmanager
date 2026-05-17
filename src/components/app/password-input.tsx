@@ -2,7 +2,7 @@
 
 import { EyeIcon, EyeOffIcon } from "lucide-react";
 
-import { Field, FieldLabel } from "@/components/ui/field";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import {
   InputGroup,
   InputGroupButton,
@@ -14,19 +14,27 @@ interface PasswordInputProps extends React.ComponentProps<"input"> {
   label?: string;
   id?: string;
   placeholder?: string;
+  labelClassName?: string;
+  error?: string | null;
 }
 
 export function PasswordInput({
-  label = "Password",
+  label,
   id = "password",
   placeholder = "Enter Password",
+  labelClassName,
+  error,
   ...props
 }: PasswordInputProps) {
   const [show, setShow] = useState<boolean>(false);
 
   return (
-    <Field className="max-w-sm gap-0 space-y-1.5">
-      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+    <Field className="gap-0 space-y-1.5">
+      {label && (
+        <FieldLabel htmlFor={id} className={labelClassName}>
+          {label}
+        </FieldLabel>
+      )}
       <InputGroup>
         <InputGroupInput
           id={id}
@@ -48,6 +56,11 @@ export function PasswordInput({
           )}{" "}
         </InputGroupButton>
       </InputGroup>
+      {error && (
+        <FieldDescription className="text-destructive text-[0.75rem]">
+          {error}
+        </FieldDescription>
+      )}
     </Field>
   );
 }
