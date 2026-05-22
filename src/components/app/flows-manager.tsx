@@ -475,8 +475,15 @@ function AddFlowDialog({
         <form
           action={(fd) =>
             startTransition(async () => {
-              await createFlow(fd);
-              setOpen(false);
+              try {
+                await createFlow(fd);
+                toast.success(`Added recurring ${defaultKind}.`);
+                setOpen(false);
+              } catch (err) {
+                toast.error(
+                  err instanceof Error ? err.message : "Couldn't save.",
+                );
+              }
             })
           }
           className="space-y-4"
@@ -546,8 +553,19 @@ function EditFlowDialog({
         <form
           action={(fd) =>
             startTransition(async () => {
-              await updateFlow(fd);
-              onOpenChange(false);
+              try {
+                await updateFlow(fd);
+                toast.success(
+                  isFutureMonth && monthLabel
+                    ? `Updated ${flow.name} for ${monthLabel}.`
+                    : `Updated ${flow.name}.`,
+                );
+                onOpenChange(false);
+              } catch (err) {
+                toast.error(
+                  err instanceof Error ? err.message : "Couldn't save.",
+                );
+              }
             })
           }
           className="space-y-4"
