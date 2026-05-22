@@ -6,7 +6,7 @@
 
 ALTER TABLE `fx_rates`
   ADD COLUMN `source` text NOT NULL DEFAULT 'api';
-
+--> statement-breakpoint
 -- Lets getRate() find "latest manual for pair" in one b-tree walk.
 CREATE INDEX `fx_rates_pair_source_fetched_idx`
   ON `fx_rates` (`base`, `quote`, `source`, `fetched_at`);
