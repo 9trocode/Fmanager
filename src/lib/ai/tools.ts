@@ -23,6 +23,7 @@ import {
   computeNetWorth,
 } from "@/lib/aggregation";
 import { getRate, convert } from "@/lib/fx";
+import { setFxOverride, clearFxOverride } from "@/lib/actions/fx";
 import { listActiveAlerts } from "@/lib/advisor-alerts";
 import { localToday } from "@/lib/dates";
 import { and, eq } from "drizzle-orm";
@@ -443,6 +444,64 @@ const getExchangeRateTool = tool({
       rate,
       summary: `1 ${base.toUpperCase()} = ${rate} ${quote.toUpperCase()}`,
     };
+  },
+});
+
+const setExchangeRateTool = tool({
+  description:
+    "Set a MANUAL exchange rate override for a currency pair. Use when the user says the cached rate is wrong (e.g. 'use 1650 for USD/NGN, the parallel rate is way off the official one'). The override beats the cached upstream rate everywhere — net worth, budgets, projections — until cleared. The inverse pair is set automatically. Host-only; isolated tenants share the host's FX cache.",
+  inputSchema: z.object({
+    base: z.string().min(3).max(3).describe("Source currency, e.g. USD"),
+    quote: z.string().min(3).max(3).describe("Target currency, e.g. NGN"),
+    rate: z
+      .number()
+      .positive()
+      .describe("How many units of `quote` equal 1 unit of `base`."),
+  }),
+  execute: async ({ base, quote, rate }) => {
+    try {
+      const res = await setFxOverride({ base, quote, rate });
+      return {
+        ok: true,
+        base: res.base,
+        quote: res.quote,
+        rate: res.rate,
+        summary: `Override saved: 1 ${res.base} = ${res.rate} ${res.quote} (inverse auto-set).`,
+      };
+    } catch (e) {
+      return {
+        ok: false,
+        error: e instanceof Error ? e.message : "Failed to set override.",
+      };
+    }
+  },
+});
+
+const clearExchangeRateOverrideTool = tool({
+  description:
+    "Remove a manual FX override for a pair (both directions). After clearing, the app falls back to the most recent fetched rate from the provider. Use when the user says 'go back to the live rate' or after they've refreshed FX themselves.",
+  inputSchema: z.object({
+    base: z.string().min(3).max(3),
+    quote: z.string().min(3).max(3),
+  }),
+  execute: async ({ base, quote }) => {
+    try {
+      const res = await clearFxOverride({ base, quote });
+      return {
+        ok: true,
+        base: res.base,
+        quote: res.quote,
+        cleared: res.cleared,
+        summary: res.cleared
+          ? `Cleared manual override for ${res.base} ↔ ${res.quote}.`
+          : `No manual override existed for ${res.base} ↔ ${res.quote}.`,
+      };
+    } catch (e) {
+      return {
+        ok: false,
+        error: e instanceof Error ? e.message : "Failed to clear override.",
+      };
+    }
   },
 });
 
@@ -1085,9 +1144,11 @@ export const advisorTools = {
   getBudgetStatus: getBudgetStatusTool,
   getCashFlow: getCashFlowTool,
   getAccountBalances: getAccountBalancesTool,
-  // FX (cached)
+  // FX (cached + manual overrides)
   getExchangeRate: getExchangeRateTool,
   convertCurrency: convertCurrencyTool,
+  setExchangeRate: setExchangeRateTool,
+  clearExchangeRateOverride: clearExchangeRateOverrideTool,
   // Proactive surface
   listActiveAlerts: listActiveAlertsTool,
   // Projections

@@ -27,6 +27,23 @@ export const getRate = cache(
   async (base: string, quote: string): Promise<number> => {
     if (base === quote) return 1;
 
+    // Manual overrides ALWAYS beat fetched rates — no staleness check.
+    // The host explicitly chose this rate because the provider's
+    // number disagreed with reality, so we keep it until they clear it.
+    const manual = await db
+      .select()
+      .from(schema.fxRates)
+      .where(
+        and(
+          eq(schema.fxRates.base, base),
+          eq(schema.fxRates.quote, quote),
+          eq(schema.fxRates.source, "manual"),
+        ),
+      )
+      .orderBy(desc(schema.fxRates.fetchedAt))
+      .limit(1);
+    if (manual[0]) return manual[0].rate;
+
     const cutoff = new Date(
       Date.now() - STALE_HOURS * 60 * 60 * 1000,
     ).toISOString();

@@ -162,6 +162,13 @@
       "when": 1778500000000,
       "tag": "0022_flow_dest_account",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1779000000000,
+      "tag": "0023_fx_rate_source",
+      "breakpoints": true
     }
   ]
 }

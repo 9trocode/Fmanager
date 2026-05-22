@@ -24,6 +24,8 @@ import {
 } from "@/lib/ai/provider";
 import { DecisionsManager } from "@/components/app/decisions-manager";
 import { FxRefreshButton } from "@/components/app/fx-refresh-button";
+import { FxOverridesManager } from "@/components/app/fx-overrides-manager";
+import { listFxOverrides } from "@/lib/actions/fx";
 import { SecuritySettings } from "@/components/app/security-settings";
 import { AdminDataTools } from "@/components/app/admin-data-tools";
 import { DataTools } from "@/components/app/data-tools";
@@ -38,26 +40,34 @@ export default async function SettingsPage() {
   // a single SQLite query (was 4 separate getSetting() calls + the
   // bigger getSettings() — now all keys travel together). Reduces the
   // settings-table reads from 5 queries to 1.
-  const [allSettings, decisions, members, invites, ownerProfile, currentUser] =
-    await Promise.all([
-      getSettings([
-        "base_currency",
-        "advisor_provider",
-        "advisor_model",
-        "anthropic_api_key",
-        "openai_api_key",
-        "google_api_key",
-        "fx_last_refresh",
-        "screen_lock_timeout_minutes",
-        "panic_redirect_url",
-        "registration_mode",
-      ]),
-      listDecisions(),
-      listUsers(),
-      listActiveInvites(),
-      getAdminProfile(),
-      getCurrentUser(),
-    ]);
+  const [
+    allSettings,
+    decisions,
+    members,
+    invites,
+    ownerProfile,
+    currentUser,
+    fxOverrides,
+  ] = await Promise.all([
+    getSettings([
+      "base_currency",
+      "advisor_provider",
+      "advisor_model",
+      "anthropic_api_key",
+      "openai_api_key",
+      "google_api_key",
+      "fx_last_refresh",
+      "screen_lock_timeout_minutes",
+      "panic_redirect_url",
+      "registration_mode",
+    ]),
+    listDecisions(),
+    listUsers(),
+    listActiveInvites(),
+    getAdminProfile(),
+    getCurrentUser(),
+    listFxOverrides(),
+  ]);
   const settings = allSettings;
   const fxLastRefresh = allSettings.fx_last_refresh;
   const idleMinutesRaw = allSettings.screen_lock_timeout_minutes;
@@ -133,27 +143,43 @@ export default async function SettingsPage() {
             has refreshed most recently.
           */}
           {isHost ? (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">FX rates</CardTitle>
-                <CardDescription>
-                  Free provider (open.er-api.com). Refresh manually; rates are cached for
-                  12 hours otherwise.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="flex items-center gap-3">
-                <FxRefreshButton base={settings.base_currency ?? "USD"} />
-                {fxLastRefresh ? (
-                  <span className="text-xs text-muted-foreground font-mono">
-                    last: {new Date(fxLastRefresh).toLocaleString()}
-                  </span>
-                ) : (
-                  <span className="text-xs text-muted-foreground">
-                    never refreshed — using fallback rates
-                  </span>
-                )}
-              </CardContent>
-            </Card>
+            <>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">FX rates</CardTitle>
+                  <CardDescription>
+                    Free provider (open.er-api.com). Refresh manually; rates are cached for
+                    12 hours otherwise.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="flex items-center gap-3">
+                  <FxRefreshButton base={settings.base_currency ?? "USD"} />
+                  {fxLastRefresh ? (
+                    <span className="text-xs text-muted-foreground font-mono">
+                      last: {new Date(fxLastRefresh).toLocaleString()}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">
+                      never refreshed — using fallback rates
+                    </span>
+                  )}
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">FX rate overrides</CardTitle>
+                  <CardDescription>
+                    Set your own rate for a pair when the provider disagrees
+                    with reality (e.g. NGN parallel-market). Overrides beat
+                    fetched rates everywhere — net worth, projections, the
+                    advisor — until you clear them.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <FxOverridesManager initialOverrides={fxOverrides} />
+                </CardContent>
+              </Card>
+            </>
           ) : null}
         </TabsContent>
 

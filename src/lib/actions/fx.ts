@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { and, eq, or } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { SUPPORTED_CURRENCIES } from "@/lib/format";
 import { assertAdmin, getCurrentUser } from "@/lib/auth/session";
@@ -64,4 +65,112 @@ export async function refreshFxRates(base = "USD") {
 
   revalidatePath("/", "layout");
   return { fetchedAt, count: inserts.length / 2 };
+}
+
+/**
+ * Set a manual FX override for one direction (and its inverse). Manual
+ * rows beat any "api" row in `getRate()` regardless of fetched_at age,
+ * so the host can correct the provider when reality disagrees (e.g.
+ * NGN parallel-market rates).
+ *
+ * Host-only — isolated tenants share the host's FX cache and can't
+ * rewrite it. Setting the same pair twice just stamps a fresher
+ * fetched_at so the latest manual override wins.
+ */
+export async function setFxOverride(input: {
+  base: string;
+  quote: string;
+  rate: number;
+}) {
+  await assertAdmin();
+  const user = await getCurrentUser();
+  if (user?.dataScope === "isolated") {
+    throw new Error(
+      "FX overrides are managed by the instance host.",
+    );
+  }
+  const base = input.base.toUpperCase();
+  const quote = input.quote.toUpperCase();
+  if (base === quote) {
+    throw new Error("Base and quote must differ.");
+  }
+  if (!Number.isFinite(input.rate) || input.rate <= 0) {
+    throw new Error("Rate must be a positive number.");
+  }
+
+  const fetchedAt = new Date().toISOString();
+  await db.insert(schema.fxRates).values([
+    { base, quote, rate: input.rate, fetchedAt, source: "manual" },
+    {
+      base: quote,
+      quote: base,
+      rate: 1 / input.rate,
+      fetchedAt,
+      source: "manual",
+    },
+  ]);
+
+  revalidatePath("/", "layout");
+  return { base, quote, rate: input.rate, fetchedAt };
+}
+
+/**
+ * Drop the manual override for a pair (both directions). Subsequent
+ * lookups fall back to the most recent "api" row, then to the
+ * hard-coded FALLBACK table.
+ */
+export async function clearFxOverride(input: {
+  base: string;
+  quote: string;
+}) {
+  await assertAdmin();
+  const user = await getCurrentUser();
+  if (user?.dataScope === "isolated") {
+    throw new Error(
+      "FX overrides are managed by the instance host.",
+    );
+  }
+  const base = input.base.toUpperCase();
+  const quote = input.quote.toUpperCase();
+
+  const deleted = await db
+    .delete(schema.fxRates)
+    .where(
+      and(
+        eq(schema.fxRates.source, "manual"),
+        or(
+          and(
+            eq(schema.fxRates.base, base),
+            eq(schema.fxRates.quote, quote),
+          ),
+          and(
+            eq(schema.fxRates.base, quote),
+            eq(schema.fxRates.quote, base),
+          ),
+        ),
+      ),
+    )
+    .returning({ id: schema.fxRates.id });
+
+  revalidatePath("/", "layout");
+  return { base, quote, cleared: deleted.length > 0 };
+}
+
+/**
+ * List all currently-active manual overrides (one row per direction).
+ * Used by the settings UI to render the existing-override list.
+ */
+export async function listFxOverrides() {
+  const rows = await db
+    .select()
+    .from(schema.fxRates)
+    .where(eq(schema.fxRates.source, "manual"))
+    .orderBy(schema.fxRates.base, schema.fxRates.quote);
+  return rows.map((r) => ({
+    id: r.id,
+    base: r.base,
+    quote: r.quote,
+    rate: r.rate,
+    fetchedAt: r.fetchedAt,
+  }));
 }

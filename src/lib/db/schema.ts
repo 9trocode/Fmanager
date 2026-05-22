@@ -158,6 +158,9 @@ export const equityGrants = sqliteTable(
   }),
 );
 
+export const fxRateSources = ["api", "manual"] as const;
+export type FxRateSource = (typeof fxRateSources)[number];
+
 export const fxRates = sqliteTable(
   "fx_rates",
   {
@@ -165,6 +168,13 @@ export const fxRates = sqliteTable(
     base: text("base").notNull(),
     quote: text("quote").notNull(),
     rate: real("rate").notNull(),
+    /**
+     * "api" rows come from the upstream provider (open.er-api.com).
+     * "manual" rows are host-entered overrides that beat any api row
+     * regardless of fetched_at age — used when the provider's rate
+     * disagrees with the user's real-world market (e.g. NGN parallel).
+     */
+    source: text("source", { enum: fxRateSources }).notNull().default("api"),
     fetchedAt: text("fetched_at")
       .notNull()
       .default(sql`(CURRENT_TIMESTAMP)`),
@@ -176,6 +186,15 @@ export const fxRates = sqliteTable(
     pairFetchedIdx: index("fx_rates_pair_fetched_idx").on(
       t.base,
       t.quote,
+      t.fetchedAt,
+    ),
+    // For the "find latest manual override for pair" lookup that
+    // getRate() does on every conversion. With this, the manual-row
+    // check is a constant-time index seek instead of a scan.
+    pairSourceFetchedIdx: index("fx_rates_pair_source_fetched_idx").on(
+      t.base,
+      t.quote,
+      t.source,
       t.fetchedAt,
     ),
   }),
