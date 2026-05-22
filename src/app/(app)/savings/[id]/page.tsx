@@ -40,11 +40,10 @@ import { computeNetWorth } from "@/lib/aggregation";
 import { prefetchRates } from "@/lib/fx";
 import { formatMoney } from "@/lib/format";
 import {
-  monthsToTarget,
-  progressPct,
   projectedEndValue,
   addMonths,
 } from "@/lib/savings";
+import { computeGoalState, type Goal } from "@/lib/goals";
 import { projectNetWorth } from "@/lib/projections";
 
 export default async function SavingsGoalDetailPage({
@@ -119,14 +118,25 @@ export default async function SavingsGoalDetailPage({
   );
   const nwAtEnd = nwProjection[nwProjection.length - 1];
 
-  const pct = progressPct(goal);
-  const months = monthsToTarget(goal);
-  const endValue = projectedEndValue(goal);
+  // Reuse the same state computation the listing page uses so the
+  // gauge agrees across pages. For goals linked to a funding account,
+  // `state.current` reflects the actual balance (not the manual
+  // `goal.currentAmount` field, which was 0 for new goals and made the
+  // detail page show 0% even when the account had real money).
+  const state = await computeGoalState(goal as Goal, baseCurrency);
+  const pct = state.percent;
+  const months = state.etaMonths;
+  // End-of-horizon math projects forward from the same starting point
+  // the gauge reports, so contributions / growth / vs-target line up
+  // with what the user actually has today.
+  const projectionStart = state.current;
+  const goalForProjection = { ...goal, currentAmount: projectionStart };
+  const endValue = projectedEndValue(goalForProjection);
   const completionDate = addMonths(
     new Date(goal.startedAt),
     goal.horizonMonths,
   );
-  const remaining = goal.targetAmount != null ? goal.targetAmount - endValue : null;
+  const remaining = state.target != null ? state.target - endValue : null;
 
   return (
     <>
@@ -201,22 +211,29 @@ export default async function SavingsGoalDetailPage({
       <div className="grid md:grid-cols-3 gap-4 mb-6">
         <Card className="md:col-span-2">
           <CardHeader>
-            <CardDescription>Saved so far</CardDescription>
+            <CardDescription>
+              Saved so far
+              {state.fundingAccount ? (
+                <span className="ml-2 text-[10px] font-mono">
+                  · from {state.fundingAccount.name}
+                </span>
+              ) : null}
+            </CardDescription>
             <CardTitle className="text-3xl font-semibold tabular-nums mt-1">
-              {formatMoney(goal.currentAmount, goal.currency)}
-              {goal.targetAmount != null ? (
+              {formatMoney(state.current, goal.currency)}
+              {state.target != null ? (
                 <span className="text-base text-muted-foreground font-normal">
                   {" "}
-                  of {formatMoney(goal.targetAmount, goal.currency)}
+                  of {formatMoney(state.target, goal.currency)}
                 </span>
               ) : null}
             </CardTitle>
-            {goal.targetAmount != null ? (
+            {state.target != null ? (
               <div className="mt-3 space-y-1.5">
                 <div className="h-2 rounded-full bg-secondary overflow-hidden">
                   <div
                     className={pct >= 100 ? "h-full bg-emerald-400" : "h-full bg-primary"}
-                    style={{ width: `${Math.min(100, pct)}%` }}
+                    style={{ width: `${Math.max(0, Math.min(100, pct))}%` }}
                   />
                 </div>
                 <div className="flex items-center justify-between text-[11px] text-muted-foreground font-mono">
@@ -259,7 +276,7 @@ export default async function SavingsGoalDetailPage({
               <span className="font-mono tabular-nums">
                 {formatMoney(
                   endValue -
-                    goal.currentAmount -
+                    projectionStart -
                     goal.monthlyContribution * goal.horizonMonths,
                   goal.currency,
                   { compact: true },
@@ -291,13 +308,13 @@ export default async function SavingsGoalDetailPage({
           <CardTitle className="text-base">Goal projection</CardTitle>
           <CardDescription>
             Projected balance over {goal.horizonMonths} months. Grows from{" "}
-            {formatMoney(goal.currentAmount, goal.currency, { compact: true })}{" "}
+            {formatMoney(projectionStart, goal.currency, { compact: true })}{" "}
             with {formatMoney(goal.monthlyContribution, goal.currency, { compact: true })}/mo
             at {goal.expectedReturnPct}%/yr blended.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <SavingsProjectionChart goal={goal} currency={goal.currency} />
+          <SavingsProjectionChart goal={goalForProjection} currency={goal.currency} />
         </CardContent>
       </Card>
 
