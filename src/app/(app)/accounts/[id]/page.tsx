@@ -216,6 +216,19 @@ export default async function AccountDetailPage({
       const inAccount = isCrossCurrency
         ? sinceRates.convert(t.amount, t.currency, account.currency)
         : t.amount;
+      // Orphaned auto-post notes: when a recurring flow is deleted, the
+      // FK becomes NULL but the templated "Auto-posted from <flow name>"
+      // / "Auto-accrued from <flow name>" string lingered. New deletes
+      // scrub these eagerly; this filter cleans up rows that pre-date
+      // that fix so the deleted flow's name doesn't keep haunting the
+      // account derivation list.
+      const notes =
+        t.flowId == null &&
+        t.notes != null &&
+        (t.notes.startsWith("Auto-posted from ") ||
+          t.notes.startsWith("Auto-accrued from "))
+          ? null
+          : t.notes;
       return {
         id: t.id,
         occurredAt: t.occurredAt,
@@ -224,7 +237,7 @@ export default async function AccountDetailPage({
         nativeCurrency: t.currency,
         contribution: sign * inAccount,
         isCrossCurrency,
-        notes: t.notes,
+        notes,
         category: t.category,
       };
     });

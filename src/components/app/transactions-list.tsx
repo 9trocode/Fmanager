@@ -195,11 +195,21 @@ export function TransactionItem({
               {transaction.occurredAt}
             </span>
           </div>
-          {transaction.notes ? (
-            <div className="text-xs text-muted-foreground truncate">
-              {transaction.notes}
-            </div>
-          ) : null}
+          {(() => {
+            // Skip rendering notes that are stale auto-post templates
+            // from a flow that was since deleted (flowId now null but
+            // the "Auto-posted from <flow>" string still lingers).
+            const isOrphanAutoNote =
+              transaction.flowId == null &&
+              transaction.notes != null &&
+              (transaction.notes.startsWith("Auto-posted from ") ||
+                transaction.notes.startsWith("Auto-accrued from "));
+            return transaction.notes && !isOrphanAutoNote ? (
+              <div className="text-xs text-muted-foreground truncate">
+                {transaction.notes}
+              </div>
+            ) : null;
+          })()}
         </div>
       </div>
       <div
