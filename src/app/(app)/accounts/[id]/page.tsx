@@ -40,6 +40,10 @@ import {
 import { PageHeader } from "@/components/app/page-header";
 import { EditAccountDialog } from "@/components/app/edit-account-dialog";
 import { AddSnapshotDialog } from "@/components/app/add-snapshot-dialog";
+import {
+  DerivationTxActions,
+  SnapshotRowActions,
+} from "@/components/app/derivation-row-actions";
 import { AddTransactionDialog } from "@/components/app/add-transaction-dialog";
 import { TransactionItem } from "@/components/app/transactions-list";
 import {
@@ -175,13 +179,16 @@ export default async function AccountDetailPage({
   type DerivationRow = {
     id: number;
     occurredAt: string;
-    kind: string;
+    kind: "income" | "expense" | "transfer";
     nativeAmount: number;
     nativeCurrency: string;
     contribution: number;
     isCrossCurrency: boolean;
     notes: string | null;
     category: string | null;
+    /** Source account on the underlying tx — needed by edit dialog. */
+    accountId: number;
+    destAccountId: number | null;
   };
   let derivationRows: DerivationRow[] = [];
   let futureRows: DerivationRow[] = [];
@@ -239,6 +246,8 @@ export default async function AccountDetailPage({
         isCrossCurrency,
         notes,
         category: t.category,
+        accountId: t.accountId,
+        destAccountId: t.destAccountId ?? null,
       };
     });
     // Split: anything dated on/before today contributes to the
@@ -434,13 +443,22 @@ export default async function AccountDetailPage({
             </CardDescription>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="px-4 py-2.5 border-t border-border bg-secondary/20 flex items-center justify-between text-xs">
+            <div className="px-4 py-2.5 border-t border-border bg-secondary/20 flex items-center justify-between gap-3 text-xs">
               <span className="text-muted-foreground">
                 Snapshot {latest.asOf}
               </span>
-              <span className="font-mono tabular-nums">
-                {formatMoney(latest.value, account.currency)}
-              </span>
+              <div className="flex items-center gap-1">
+                <span className="font-mono tabular-nums">
+                  {formatMoney(latest.value, account.currency)}
+                </span>
+                <SnapshotRowActions
+                  snapshotId={latest.id}
+                  accountId={account.id}
+                  defaultValue={latest.value}
+                  defaultAsOf={latest.asOf}
+                  currency={account.currency}
+                />
+              </div>
             </div>
             <ul className="divide-y divide-border/60">
               {derivationRows.map((r) => (
@@ -474,30 +492,46 @@ export default async function AccountDetailPage({
                       </div>
                     ) : null}
                   </div>
-                  <div className="text-right shrink-0">
-                    {r.isCrossCurrency ? (
-                      <div className="text-[10px] text-muted-foreground/80 font-mono">
-                        {r.kind === "expense" || r.kind === "transfer"
-                          ? "−"
-                          : "+"}
-                        {formatMoney(r.nativeAmount, r.nativeCurrency, {
-                          compact: true,
-                        })}
+                  <div className="flex items-center gap-1 shrink-0">
+                    <div className="text-right">
+                      {r.isCrossCurrency ? (
+                        <div className="text-[10px] text-muted-foreground/80 font-mono">
+                          {r.kind === "expense" || r.kind === "transfer"
+                            ? "−"
+                            : "+"}
+                          {formatMoney(r.nativeAmount, r.nativeCurrency, {
+                            compact: true,
+                          })}
+                        </div>
+                      ) : null}
+                      <div
+                        className={
+                          "font-mono tabular-nums " +
+                          (r.contribution > 0
+                            ? "text-emerald-400"
+                            : r.contribution < 0
+                              ? "text-destructive"
+                              : "text-muted-foreground")
+                        }
+                      >
+                        {r.contribution > 0 ? "+" : ""}
+                        {formatMoney(r.contribution, account.currency)}
                       </div>
-                    ) : null}
-                    <div
-                      className={
-                        "font-mono tabular-nums " +
-                        (r.contribution > 0
-                          ? "text-emerald-400"
-                          : r.contribution < 0
-                            ? "text-destructive"
-                            : "text-muted-foreground")
-                      }
-                    >
-                      {r.contribution > 0 ? "+" : ""}
-                      {formatMoney(r.contribution, account.currency)}
                     </div>
+                    <DerivationTxActions
+                      accounts={accountOptions}
+                      transaction={{
+                        id: r.id,
+                        kind: r.kind,
+                        amount: r.nativeAmount,
+                        currency: r.nativeCurrency,
+                        accountId: r.accountId,
+                        destAccountId: r.destAccountId,
+                        occurredAt: r.occurredAt,
+                        category: r.category,
+                        notes: r.notes,
+                      }}
+                    />
                   </div>
                 </li>
               ))}
@@ -572,18 +606,34 @@ export default async function AccountDetailPage({
                           </div>
                         ) : null}
                       </div>
-                      <div
-                        className={
-                          "font-mono tabular-nums shrink-0 " +
-                          (r.contribution > 0
-                            ? "text-emerald-400"
-                            : r.contribution < 0
-                              ? "text-destructive"
-                              : "text-muted-foreground")
-                        }
-                      >
-                        {r.contribution > 0 ? "+" : ""}
-                        {formatMoney(r.contribution, account.currency)}
+                      <div className="flex items-center gap-1 shrink-0">
+                        <div
+                          className={
+                            "font-mono tabular-nums " +
+                            (r.contribution > 0
+                              ? "text-emerald-400"
+                              : r.contribution < 0
+                                ? "text-destructive"
+                                : "text-muted-foreground")
+                          }
+                        >
+                          {r.contribution > 0 ? "+" : ""}
+                          {formatMoney(r.contribution, account.currency)}
+                        </div>
+                        <DerivationTxActions
+                          accounts={accountOptions}
+                          transaction={{
+                            id: r.id,
+                            kind: r.kind,
+                            amount: r.nativeAmount,
+                            currency: r.nativeCurrency,
+                            accountId: r.accountId,
+                            destAccountId: r.destAccountId,
+                            occurredAt: r.occurredAt,
+                            category: r.category,
+                            notes: r.notes,
+                          }}
+                        />
                       </div>
                     </li>
                   ))}

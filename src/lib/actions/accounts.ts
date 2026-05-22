@@ -216,6 +216,27 @@ export async function addSnapshot(formData: FormData) {
   revalidate(`/accounts/${accountId}`);
 }
 
+export async function updateSnapshot(formData: FormData) {
+  await assertAdmin();
+  const id = Number(formData.get("id"));
+  const accountId = Number(formData.get("account_id"));
+  if (!Number.isFinite(id)) throw new Error("Invalid id.");
+  const value = parseAmount(formData.get("value"));
+  const asOf = String(formData.get("as_of") ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf)) throw new Error("Invalid date.");
+  const owner = await getOwner();
+  await db
+    .update(schema.valueSnapshots)
+    .set({ value, asOf })
+    .where(
+      and(
+        eq(schema.valueSnapshots.id, id),
+        ownedBy(schema.valueSnapshots.ownerUserId, owner),
+      ),
+    );
+  revalidate(Number.isFinite(accountId) ? `/accounts/${accountId}` : undefined);
+}
+
 export async function deleteSnapshot(formData: FormData) {
   await assertAdmin();
   const id = Number(formData.get("id"));
