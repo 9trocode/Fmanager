@@ -818,7 +818,10 @@ function FlowRow({
                   <AlertDialogHeader>
                     <AlertDialogTitle>Delete this flow?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      Permanent. Archive instead if you might need it again.
+                      Permanent — removes the flow AND every transaction
+                      it auto-posted, so account balances reset to what
+                      they would have been without it. Archive instead
+                      if you want to stop future posts but keep history.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>

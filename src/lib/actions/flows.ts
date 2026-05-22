@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq, or } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { flowCadences, flowKinds } from "@/lib/db/schema";
 import { assertAdmin } from "@/lib/auth/session";
@@ -242,40 +242,22 @@ export async function deleteFlow(formData: FormData) {
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
   const owner = await getOwner();
 
-  // Auto-posted transactions stamp `notes` with the flow's name at post
-  // time. The FK is `onDelete: set null` so the row survives the delete
-  // (it's real money that moved), but without clearing the notes the
-  // account detail page keeps showing "Auto-posted from <deleted flow
-  // name>" forever. Wipe the templated string while the flow still
-  // exists so we know what to match. Only clear notes that EXACTLY match
-  // the templates — user-edited notes are preserved.
-  const [flow] = await db
-    .select({ name: schema.recurringFlows.name })
-    .from(schema.recurringFlows)
+  // Cascade the auto-posted transactions. The FK on `transactions.flowId`
+  // is `onDelete: set null`, which leaves the rows behind — they keep
+  // contributing to account balances and the account-detail derivation
+  // panel keeps showing "Auto-posted from <deleted flow name>" forever.
+  // Treat a recurring flow as the canonical owner of its auto-posted
+  // transactions: deleting the flow deletes its history too. If the
+  // user wanted to keep the history, the dropdown's "Archive" stops
+  // future accruals without removing past posts.
+  await db
+    .delete(schema.transactions)
     .where(
       and(
-        eq(schema.recurringFlows.id, id),
-        ownedBy(schema.recurringFlows.ownerUserId, owner),
+        eq(schema.transactions.flowId, id),
+        ownedBy(schema.transactions.ownerUserId, owner),
       ),
-    )
-    .limit(1);
-  if (flow) {
-    const autoPosted = `Auto-posted from ${flow.name}`;
-    const autoAccrued = `Auto-accrued from ${flow.name}`;
-    await db
-      .update(schema.transactions)
-      .set({ notes: null, updatedAt: new Date().toISOString() })
-      .where(
-        and(
-          eq(schema.transactions.flowId, id),
-          ownedBy(schema.transactions.ownerUserId, owner),
-          or(
-            eq(schema.transactions.notes, autoPosted),
-            eq(schema.transactions.notes, autoAccrued),
-          ),
-        ),
-      );
-  }
+    );
 
   await db
     .delete(schema.recurringFlows)
