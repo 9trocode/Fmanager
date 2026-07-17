@@ -41,7 +41,9 @@ function parseAccountId(
   return n;
 }
 
-function parseOptionalAccountId(value: FormDataEntryValue | null): number | null {
+function parseOptionalAccountId(
+  value: FormDataEntryValue | null,
+): number | null {
   const raw = String(value ?? "").trim();
   if (!raw) return null;
   const n = Number(raw);
@@ -80,8 +82,7 @@ function commonFields(formData: FormData) {
   if (!currency) throw new Error("Currency is required.");
 
   const occurredAt =
-    String(formData.get("occurred_at") ?? "").trim() ||
-    localToday();
+    String(formData.get("occurred_at") ?? "").trim() || localToday();
 
   const category = String(formData.get("category") ?? "").trim() || null;
   const notes = String(formData.get("notes") ?? "").trim() || null;
@@ -114,8 +115,23 @@ export async function updateTransaction(formData: FormData) {
   await assertAdmin();
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
-  const fields = commonFields(formData);
   const owner = await getOwner();
+  const existing = await db
+    .select({ debtPaymentId: schema.transactions.debtPaymentId })
+    .from(schema.transactions)
+    .where(
+      and(
+        eq(schema.transactions.id, id),
+        ownedBy(schema.transactions.ownerUserId, owner),
+      ),
+    )
+    .limit(1);
+  if (existing[0]?.debtPaymentId != null) {
+    throw new Error(
+      "Correct generated repayment entries from the debt payment history.",
+    );
+  }
+  const fields = commonFields(formData);
   await db
     .update(schema.transactions)
     .set({ ...fields, updatedAt: new Date().toISOString() })
@@ -143,6 +159,11 @@ export async function deleteTransaction(formData: FormData) {
       ),
     )
     .limit(1);
+  if (existing[0]?.debtPaymentId != null) {
+    throw new Error(
+      "Correct generated repayment entries from the debt payment history.",
+    );
+  }
   await db
     .delete(schema.transactions)
     .where(

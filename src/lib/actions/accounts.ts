@@ -9,6 +9,10 @@ import { assertAdmin } from "@/lib/auth/session";
 import { getOwner, ownedBy } from "@/lib/db/scope";
 import { isValidYmdOnOrBefore, localToday } from "@/lib/dates";
 import { SUPPORTED_CURRENCIES } from "@/lib/format";
+import {
+  getDebtPlanByLoanAccount,
+  getDebtPlanBySourceAccount,
+} from "@/lib/db/queries";
 
 function revalidate(path?: string) {
   if (path) revalidatePath(path);
@@ -31,7 +35,9 @@ function parseAmount(value: FormDataEntryValue | null): number {
 }
 
 function parseOptionalNumber(value: FormDataEntryValue | null): number | null {
-  const raw = String(value ?? "").trim().replace(/,/g, "");
+  const raw = String(value ?? "")
+    .trim()
+    .replace(/,/g, "");
   if (!raw) return null;
   const n = Number(raw);
   return Number.isFinite(n) ? n : null;
@@ -44,24 +50,19 @@ function parseOptionalInt(value: FormDataEntryValue | null): number | null {
 
 function parseDetailFields(formData: FormData) {
   return {
-    accountNumber:
-      String(formData.get("account_number") ?? "").trim() || null,
-    routingOrIban:
-      String(formData.get("routing_or_iban") ?? "").trim() || null,
+    accountNumber: String(formData.get("account_number") ?? "").trim() || null,
+    routingOrIban: String(formData.get("routing_or_iban") ?? "").trim() || null,
     swiftBic: String(formData.get("swift_bic") ?? "").trim() || null,
     holderName: String(formData.get("holder_name") ?? "").trim() || null,
     branch: String(formData.get("branch") ?? "").trim() || null,
     loginUrl: String(formData.get("login_url") ?? "").trim() || null,
     contactPhone: String(formData.get("contact_phone") ?? "").trim() || null,
-    statementsUrl:
-      String(formData.get("statements_url") ?? "").trim() || null,
+    statementsUrl: String(formData.get("statements_url") ?? "").trim() || null,
     // Loan-only — null on every other account type. Form should only
     // submit these when the type is "loan", but we accept them
     // unconditionally; they're harmless for non-loans.
     interestRatePct: parseOptionalNumber(formData.get("interest_rate_pct")),
-    originalPrincipal: parseOptionalNumber(
-      formData.get("original_principal"),
-    ),
+    originalPrincipal: parseOptionalNumber(formData.get("original_principal")),
     loanTermMonths: parseOptionalInt(formData.get("loan_term_months")),
     paymentDayOfMonth: parseOptionalInt(formData.get("payment_day_of_month")),
   };
@@ -200,6 +201,15 @@ export async function deleteAccount(formData: FormData) {
   await assertAdmin();
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id)) throw new Error("Invalid id.");
+  const [loanPlan, fundingPlan] = await Promise.all([
+    getDebtPlanByLoanAccount(id),
+    getDebtPlanBySourceAccount(id),
+  ]);
+  if (loanPlan || fundingPlan) {
+    throw new Error(
+      "Remove or reassign the linked repayment plan before deleting this account.",
+    );
+  }
   const owner = await getOwner();
   await db
     .delete(schema.accounts)
@@ -219,9 +229,7 @@ export async function addSnapshot(formData: FormData) {
   if (!Number.isFinite(accountId)) throw new Error("Invalid account id.");
   const value = parseAmount(formData.get("value"));
   const currency = String(formData.get("currency") ?? "USD").toUpperCase();
-  const asOf =
-    String(formData.get("as_of") ?? "").trim() ||
-    localToday();
+  const asOf = String(formData.get("as_of") ?? "").trim() || localToday();
   const owner = await getOwner();
 
   await db.insert(schema.valueSnapshots).values({

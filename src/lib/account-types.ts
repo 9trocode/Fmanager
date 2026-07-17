@@ -1,4 +1,4 @@
-import type { AccountType } from "@/lib/db/schema";
+import type { AccountType, TransactionKind } from "@/lib/db/schema";
 
 export const ACCOUNT_TYPE_LABEL: Record<AccountType, string> = {
   cash: "Cash",
@@ -33,4 +33,22 @@ export function netWorthContribution(
   effectiveValue: number,
 ): number {
   return isLiability(type) ? -effectiveValue : effectiveValue;
+}
+
+/** A transfer repays a liability but increases an asset balance. */
+export function destinationTransferDelta(
+  type: AccountType,
+  amount: number,
+): number {
+  return isLiability(type) ? -amount : amount;
+}
+
+/** Source-side activity has the opposite sign for liabilities and assets. */
+export function sourceTransactionDelta(
+  type: AccountType,
+  kind: TransactionKind,
+  amount: number,
+): number {
+  const assetDelta = kind === "income" ? amount : -amount;
+  return isLiability(type) ? -assetDelta : assetDelta;
 }

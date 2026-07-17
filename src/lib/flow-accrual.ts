@@ -279,32 +279,32 @@ export async function accrueDueFlows(): Promise<{ posted: number }> {
 
   const nowIso = new Date().toISOString();
 
-  await db.transaction(async (tx) => {
+  db.transaction((tx) => {
     if (plan.inserts.length > 0) {
       // onConflictDoNothing leans on the partial unique index
       // (flow_id, occurred_at) WHERE flow_id IS NOT NULL added in
       // migration 0008. If the same period was posted by an earlier
       // (crashed) run, this is a no-op for that row.
-      await tx
-        .insert(schema.transactions)
+      tx.insert(schema.transactions)
         .values(plan.inserts)
-        .onConflictDoNothing();
+        .onConflictDoNothing()
+        .run();
     }
     for (const u of plan.updates) {
-      await tx
-        .update(schema.recurringFlows)
+      tx.update(schema.recurringFlows)
         .set({
           lastPostedAt: u.lastPostedAt,
           ...(u.nextDueAt != null ? { nextDueAt: u.nextDueAt } : {}),
           updatedAt: nowIso,
         })
-        .where(eq(schema.recurringFlows.id, u.flowId));
+        .where(eq(schema.recurringFlows.id, u.flowId))
+        .run();
     }
     if (plan.seedLastPosted.length > 0) {
-      await tx
-        .update(schema.recurringFlows)
+      tx.update(schema.recurringFlows)
         .set({ lastPostedAt: today, updatedAt: nowIso })
-        .where(inArray(schema.recurringFlows.id, plan.seedLastPosted));
+        .where(inArray(schema.recurringFlows.id, plan.seedLastPosted))
+        .run();
     }
   });
 

@@ -52,6 +52,47 @@ test("deleting a member cascades through their isolated financial data", () => {
            VALUES (?, ?, ?, ?)`,
         )
         .run("Private investment", "investment", "USD", user.lastInsertRowid);
+      const loanAccount = database
+        .prepare(
+          `INSERT INTO accounts
+             (name, type, currency, interest_rate_pct, owner_user_id)
+           VALUES (?, ?, ?, ?, ?)`,
+        )
+        .run("Private debt", "loan", "USD", 12, user.lastInsertRowid);
+      const debtPlan = database
+        .prepare(
+          `INSERT INTO debt_plans
+             (loan_account_id, source_account_id, monthly_payment, currency,
+              next_payment_date, owner_user_id)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          loanAccount.lastInsertRowid,
+          account.lastInsertRowid,
+          500,
+          "USD",
+          "2026-08-17",
+          user.lastInsertRowid,
+        );
+      database
+        .prepare(
+          `INSERT INTO debt_payments
+              (plan_id, paid_at, total_amount, principal_amount,
+              interest_amount, remaining_balance, currency,
+              previous_next_payment_date, owner_user_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          debtPlan.lastInsertRowid,
+          "2026-07-17",
+          500,
+          400,
+          100,
+          9_600,
+          "USD",
+          "2026-07-17",
+          user.lastInsertRowid,
+        );
 
       database
         .prepare(
@@ -173,6 +214,8 @@ test("deleting a member cascades through their isolated financial data", () => {
         "budgets",
         "chat_sessions",
         "decisions",
+        "debt_payments",
+        "debt_plans",
         "equity_grants",
         "prediction_sessions",
         "recurring_flows",
@@ -207,7 +250,12 @@ test("the corrective migration upgrades a populated pre-fix database", () => {
     database.pragma("foreign_keys = ON");
     database.exec(`
       DROP TRIGGER users_delete_owned_data;
-      DELETE FROM __drizzle_migrations WHERE created_at = 1784286642845;
+      DROP INDEX transactions_debt_payment_idx;
+      ALTER TABLE transactions DROP COLUMN debt_payment_id;
+      DROP TABLE debt_payments;
+      DROP TABLE debt_plans;
+      DELETE FROM __drizzle_migrations
+      WHERE created_at IN (1784286642845, 1784289900000);
     `);
     const user = database
       .prepare(
@@ -381,6 +429,83 @@ test("member deletion fails closed instead of cascading another owner's data", (
         database.prepare("SELECT count(*) AS count FROM transactions").get()
           .count,
         0,
+      );
+    } finally {
+      database.close();
+    }
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("member deletion fails closed for a cross-owner debt plan", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "cairn-debt-boundary-"));
+  const databasePath = join(tempDir, "debt-boundary.db");
+
+  try {
+    applyMigrations(databasePath);
+    const database = new Database(databasePath);
+    try {
+      database.pragma("foreign_keys = ON");
+      const victim = database
+        .prepare(
+          `INSERT INTO users (email, password_hash, role, data_scope)
+           VALUES (?, ?, ?, ?)`,
+        )
+        .run("debt-victim@example.com", "test", "viewer", "isolated");
+      const other = database
+        .prepare(
+          `INSERT INTO users (email, password_hash, role, data_scope)
+           VALUES (?, ?, ?, ?)`,
+        )
+        .run("debt-other@example.com", "test", "viewer", "isolated");
+      const source = database
+        .prepare(
+          `INSERT INTO accounts (name, type, currency, owner_user_id)
+           VALUES (?, ?, ?, ?)`,
+        )
+        .run("Victim cash", "cash", "USD", victim.lastInsertRowid);
+      const loan = database
+        .prepare(
+          `INSERT INTO accounts (name, type, currency, owner_user_id)
+           VALUES (?, ?, ?, ?)`,
+        )
+        .run("Victim debt", "loan", "USD", victim.lastInsertRowid);
+      database
+        .prepare(
+          `INSERT INTO debt_plans
+             (loan_account_id, source_account_id, monthly_payment, currency,
+              next_payment_date, owner_user_id)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          loan.lastInsertRowid,
+          source.lastInsertRowid,
+          500,
+          "USD",
+          "2026-08-17",
+          other.lastInsertRowid,
+        );
+
+      assert.throws(
+        () =>
+          database
+            .prepare("DELETE FROM users WHERE id = ?")
+            .run(victim.lastInsertRowid),
+        /cross-owner reference prevents member deletion/,
+      );
+      assert.equal(
+        database.prepare("SELECT count(*) AS count FROM users").get().count,
+        2,
+      );
+      assert.equal(
+        database.prepare("SELECT count(*) AS count FROM accounts").get().count,
+        2,
+      );
+      assert.equal(
+        database.prepare("SELECT count(*) AS count FROM debt_plans").get()
+          .count,
+        1,
       );
     } finally {
       database.close();

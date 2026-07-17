@@ -16,7 +16,11 @@ import {
 import { prefetchRates } from "@/lib/fx";
 import { localToday } from "@/lib/dates";
 import { formatMoney } from "@/lib/format";
-import { isLiability } from "@/lib/account-types";
+import {
+  destinationTransferDelta,
+  isLiability,
+  sourceTransactionDelta,
+} from "@/lib/account-types";
 
 /**
  * Server-rendered breakdown of how the FLOOR net-worth number was
@@ -56,9 +60,7 @@ export async function NetWorthBreakdown() {
       // dated transactions are intent, not realized events; they don't
       // contribute to the current balance.
       const sinceTxs = latest
-        ? txs.filter(
-            (t) => t.occurredAt > latest.asOf && t.occurredAt <= today,
-          )
+        ? txs.filter((t) => t.occurredAt > latest.asOf && t.occurredAt <= today)
         : txs.filter((t) => t.occurredAt <= today);
       // Prefetch every (txCcy → accountCcy) pair before the loop so
       // FX conversion is sync. Was per-tx awaited convert().
@@ -77,12 +79,10 @@ export async function NetWorthBreakdown() {
             ? t.amount
             : sinceRates.convert(t.amount, t.currency, a.currency);
         if (isSource) {
-          if (t.kind === "expense" || t.kind === "transfer")
-            delta -= amountInAccountCcy;
-          else if (t.kind === "income") delta += amountInAccountCcy;
+          delta += sourceTransactionDelta(a.type, t.kind, amountInAccountCcy);
         }
         if (isDest) {
-          delta += amountInAccountCcy;
+          delta += destinationTransferDelta(a.type, amountInAccountCcy);
         }
       }
       const latestValue = latest?.value ?? null;
@@ -103,9 +103,8 @@ export async function NetWorthBreakdown() {
       <CardHeader>
         <CardTitle className="text-base">How this is computed</CardTitle>
         <CardDescription>
-          Latest snapshot per account, plus signed transactions posted
-          since. Tap a row to see the transactions that moved the
-          balance.
+          Latest snapshot per account, plus signed transactions posted since.
+          Tap a row to see the transactions that moved the balance.
         </CardDescription>
       </CardHeader>
       <CardContent className="p-0">
@@ -140,7 +139,10 @@ export async function NetWorthBreakdown() {
                       <Badge variant="secondary" className="text-[10px]">
                         {a.type}
                       </Badge>
-                      <Badge variant="outline" className="text-[10px] font-mono">
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] font-mono"
+                      >
                         {a.currency}
                       </Badge>
                       {isLiability(a.type) ? (
@@ -152,7 +154,9 @@ export async function NetWorthBreakdown() {
                     {r.latest ? (
                       <div className="text-[11px] font-mono text-muted-foreground mt-0.5">
                         snapshot {r.latest.asOf}:{" "}
-                        {formatMoney(r.latest.value, a.currency, { compact: true })}
+                        {formatMoney(r.latest.value, a.currency, {
+                          compact: true,
+                        })}
                         {r.sinceCount > 0 ? (
                           <>
                             {"  "}·{"  "}
@@ -166,20 +170,23 @@ export async function NetWorthBreakdown() {
                               }
                             >
                               {r.delta > 0 ? "+" : ""}
-                              {formatMoney(r.delta, a.currency, { compact: true })}
+                              {formatMoney(r.delta, a.currency, {
+                                compact: true,
+                              })}
                             </span>{" "}
                             from {r.sinceCount}{" "}
                             {r.sinceCount === 1 ? "tx" : "txs"} since
                             {r.crossCurrencyCount > 0 ? (
                               <span className="text-amber-500 ml-1">
-                                ·{" "}
-                                {r.crossCurrencyCount} converted from another
+                                · {r.crossCurrencyCount} converted from another
                                 currency
                               </span>
                             ) : null}
                           </>
                         ) : (
-                          <>{"  "}·{"  "}no txs since</>
+                          <>
+                            {"  "}·{"  "}no txs since
+                          </>
                         )}
                       </div>
                     ) : (
@@ -190,7 +197,9 @@ export async function NetWorthBreakdown() {
                     )}
                   </div>
                   <div className="text-right shrink-0">
-                    <div className={`font-mono tabular-nums text-sm ${accentClass}`}>
+                    <div
+                      className={`font-mono tabular-nums text-sm ${accentClass}`}
+                    >
                       {r.effective != null
                         ? `${signedEffective! < 0 ? "−" : ""}${formatMoney(
                             Math.abs(r.effective),

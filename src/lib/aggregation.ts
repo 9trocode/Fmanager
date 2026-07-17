@@ -4,6 +4,8 @@ import {
   listAccounts,
   listAccountsWithEffective,
   listBudgets,
+  listDebtPlans,
+  listDebtPaymentsBetween,
   listFlows,
   listGrants,
   listTransactions,
@@ -14,10 +16,13 @@ import { and, eq, gt, inArray, lte, or, sql } from "drizzle-orm";
 import { convert, prefetchRates } from "@/lib/fx";
 import { getOwner, ownedBy } from "@/lib/db/scope";
 import {
+  destinationTransferDelta,
   isLiability,
   netWorthContribution,
+  sourceTransactionDelta,
 } from "@/lib/account-types";
 import { monthlyEquivalent } from "@/lib/flows";
+import { debtPaymentForMonth } from "@/lib/debt-calculations";
 import {
   SCENARIOS,
   equityValueForScenario,
@@ -93,9 +98,7 @@ export async function computeNetWorthAsOf(
         )`,
       ),
     );
-  const latestByAccount = new Map(
-    latestSnapshots.map((s) => [s.accountId, s]),
-  );
+  const latestByAccount = new Map(latestSnapshots.map((s) => [s.accountId, s]));
 
   // Earliest snapshot date across the set — lower bound for the tx
   // scan so we don't pull years of unneeded rows.
@@ -173,10 +176,9 @@ export async function computeNetWorthAsOf(
           ? t.amount
           : rates.convert(t.amount, t.currency, a.currency);
       if (isSource) {
-        if (t.kind === "expense" || t.kind === "transfer") delta -= inAccountCcy;
-        else if (t.kind === "income") delta += inAccountCcy;
+        delta += sourceTransactionDelta(a.type, t.kind, inAccountCcy);
       }
-      if (isDest) delta += inAccountCcy;
+      if (isDest) delta += destinationTransferDelta(a.type, inAccountCcy);
     }
     const effective = latest.value + delta;
     const signed = isLiability(a.type) ? -effective : effective;
@@ -345,45 +347,47 @@ export type MonthActuals = {
  * Per-request memo. Used by the dashboard headline + sometimes by
  * other surfaces — collapsing repeats inside one render is free perf.
  */
-export const computeThisMonthActuals = cache(async function computeThisMonthActualsImpl(
-  baseCurrency: string,
-  monthKey?: string,
-): Promise<MonthActuals> {
-  const target = parseMonthKey(monthKey);
-  const y = target.getFullYear();
-  const m = target.getMonth();
-  const start = ymd(new Date(y, m, 1));
-  const end = ymd(new Date(y, m + 1, 0));
+export const computeThisMonthActuals = cache(
+  async function computeThisMonthActualsImpl(
+    baseCurrency: string,
+    monthKey?: string,
+  ): Promise<MonthActuals> {
+    const target = parseMonthKey(monthKey);
+    const y = target.getFullYear();
+    const m = target.getMonth();
+    const start = ymd(new Date(y, m, 1));
+    const end = ymd(new Date(y, m + 1, 0));
 
-  const txs = await listTransactionsBetween(start, end);
+    const txs = await listTransactionsBetween(start, end);
 
-  const rates = await prefetchRates(
-    txs.map((t) => [t.currency, baseCurrency] as const),
-  );
+    const rates = await prefetchRates(
+      txs.map((t) => [t.currency, baseCurrency] as const),
+    );
 
-  let income = 0;
-  let expenses = 0;
-  let count = 0;
-  for (const t of txs) {
-    if (t.kind === "transfer") continue;
-    const inBase = rates.convert(t.amount, t.currency, baseCurrency);
-    if (t.kind === "income") income += inBase;
-    else expenses += inBase;
-    count++;
-  }
-  const monthLabel = target.toLocaleString("en-US", {
-    month: "long",
-    year: "numeric",
-  });
-  return {
-    baseCurrency,
-    income,
-    expenses,
-    net: income - expenses,
-    txCount: count,
-    monthLabel,
-  };
-});
+    let income = 0;
+    let expenses = 0;
+    let count = 0;
+    for (const t of txs) {
+      if (t.kind === "transfer") continue;
+      const inBase = rates.convert(t.amount, t.currency, baseCurrency);
+      if (t.kind === "income") income += inBase;
+      else expenses += inBase;
+      count++;
+    }
+    const monthLabel = target.toLocaleString("en-US", {
+      month: "long",
+      year: "numeric",
+    });
+    return {
+      baseCurrency,
+      income,
+      expenses,
+      net: income - expenses,
+      txCount: count,
+      monthLabel,
+    };
+  },
+);
 
 export type CashFlowSummary = {
   baseCurrency: string;
@@ -398,8 +402,14 @@ export type CashFlowSummary = {
    *  runway can compute true burn (`expenses - internalTransfers`)
    *  without double-counting savings contributions as a loss. */
   internalTransfers: number;
+  /** Contractual monthly debt repayments. Unlike savings transfers, the full
+   * payment is kept in runway because it leaves liquid cash each month. */
+  debtPayments: number;
   net: number;
-  byCategory: { income: Record<string, number>; expense: Record<string, number> };
+  byCategory: {
+    income: Record<string, number>;
+    expense: Record<string, number>;
+  };
 };
 
 /**
@@ -407,133 +417,206 @@ export type CashFlowSummary = {
  * AND transitively from `computeCashRunway` — without this, every
  * dashboard render fired this twice.
  */
-export const computeMonthlyCashFlow = cache(async function computeMonthlyCashFlowImpl(
-  baseCurrency: string,
-  monthKey?: string,
-): Promise<CashFlowSummary> {
-  // PAST MONTHS LOCK TO ACTUALS.
-  //
-  // Editing a recurring income flow today must not retroactively
-  // change March's income widget. If we built the past month from
-  // the live flow template, raising salary $5k → $7k today would
-  // also bump every past month's projected income to $7k everywhere
-  // BudgetsCashFlowPanel / runs the dashboard uses this number.
-  //
-  // Past months were lived through; what landed in transactions is
-  // the truth. Sum real income/expense rows in that month, grouped
-  // by category, in base currency. The flow template only feeds
-  // CURRENT and FUTURE months.
-  const currentKey = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
-  if (monthKey && /^(\d{4})-(\d{2})$/.test(monthKey) && monthKey < currentKey) {
-    const { from, to } = monthRange(monthKey);
-    const monthTxs = await listTransactionsBetween(from, to);
-    const past: CashFlowSummary = {
+export const computeMonthlyCashFlow = cache(
+  async function computeMonthlyCashFlowImpl(
+    baseCurrency: string,
+    monthKey?: string,
+  ): Promise<CashFlowSummary> {
+    // PAST MONTHS LOCK TO ACTUALS.
+    //
+    // Editing a recurring income flow today must not retroactively
+    // change March's income widget. If we built the past month from
+    // the live flow template, raising salary $5k → $7k today would
+    // also bump every past month's projected income to $7k everywhere
+    // BudgetsCashFlowPanel / runs the dashboard uses this number.
+    //
+    // Past months were lived through; what landed in transactions is
+    // the truth. Sum real income/expense rows in that month, grouped
+    // by category, in base currency. The flow template only feeds
+    // CURRENT and FUTURE months.
+    const currentKey = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+    if (
+      monthKey &&
+      /^(\d{4})-(\d{2})$/.test(monthKey) &&
+      monthKey < currentKey
+    ) {
+      const { from, to } = monthRange(monthKey);
+      const monthTxs = await listTransactionsBetween(from, to);
+      const past: CashFlowSummary = {
+        baseCurrency,
+        income: 0,
+        expenses: 0,
+        internalTransfers: 0,
+        debtPayments: 0,
+        net: 0,
+        byCategory: { income: {}, expense: {} },
+      };
+      const pastRates = await prefetchRates(
+        monthTxs.map((t) => [t.currency, baseCurrency] as const),
+      );
+      for (const t of monthTxs) {
+        const inBase = pastRates.convert(t.amount, t.currency, baseCurrency);
+        const cat = (t.category ?? "").trim() || "Other";
+        if (t.kind === "income") {
+          past.income += inBase;
+          past.byCategory.income[cat] =
+            (past.byCategory.income[cat] ?? 0) + inBase;
+        } else if (t.kind === "transfer") {
+          // Transfer is wallet outflow from the source account. Reflect
+          // it in `expenses` so the cash-flow page's "Monthly expenses"
+          // matches the eyeball sum of recurring outflows, and track
+          // separately so runway can subtract it for true burn.
+          past.expenses += inBase;
+          past.internalTransfers += inBase;
+          past.byCategory.expense[cat] =
+            (past.byCategory.expense[cat] ?? 0) + inBase;
+        } else {
+          past.expenses += inBase;
+          past.byCategory.expense[cat] =
+            (past.byCategory.expense[cat] ?? 0) + inBase;
+        }
+      }
+      past.net = past.income - past.expenses;
+      return past;
+    }
+
+    const targetMonth = monthKey ?? currentKey;
+    const targetRange = monthRange(targetMonth);
+    const [flows, debtPlans, debtAccounts, realizedDebtPayments] =
+      await Promise.all([
+        listFlows(),
+        listDebtPlans({ includeInactive: true }),
+        listAccountsWithEffective(),
+        listDebtPaymentsBetween(targetRange.from, targetRange.to),
+      ]);
+    const realizedByPlan = new Map<number, number>();
+    for (const payment of realizedDebtPayments) {
+      realizedByPlan.set(
+        payment.planId,
+        (realizedByPlan.get(payment.planId) ?? 0) + payment.totalAmount,
+      );
+    }
+    const debtAccountById = new Map(
+      debtAccounts.map((account) => [account.id, account]),
+    );
+    const coveredDebtLoanIds = new Set(
+      debtPlans
+        .filter((plan) => plan.active || realizedByPlan.has(plan.id))
+        .map((plan) => plan.loanAccountId),
+    );
+    // A debt plan replaces the legacy recurring-transfer representation for
+    // that loan. Keeping both in the forecast would count one payment twice.
+    const forecastFlows = flows.filter(
+      (flow) =>
+        flow.destAccountId == null ||
+        !coveredDebtLoanIds.has(flow.destAccountId),
+    );
+    // When the user is viewing a specific month, swap in any per-month
+    // override of (amount, currency) so a "raise next August" change
+    // doesn't bleed back into the current month's projection.
+    const overrideByFlowId = new Map<
+      number,
+      { amount: number; currency: string }
+    >();
+    if (monthKey) {
+      const owner = await getOwner();
+      const rows = await db
+        .select({
+          flowId: schema.recurringFlowOverrides.flowId,
+          amount: schema.recurringFlowOverrides.amount,
+          currency: schema.recurringFlowOverrides.currency,
+        })
+        .from(schema.recurringFlowOverrides)
+        .where(
+          and(
+            eq(schema.recurringFlowOverrides.monthKey, monthKey),
+            ownedBy(schema.recurringFlowOverrides.ownerUserId, owner),
+          ),
+        );
+      for (const r of rows) {
+        overrideByFlowId.set(r.flowId, {
+          amount: r.amount,
+          currency: r.currency,
+        });
+      }
+    }
+
+    const result: CashFlowSummary = {
       baseCurrency,
       income: 0,
       expenses: 0,
       internalTransfers: 0,
+      debtPayments: 0,
       net: 0,
       byCategory: { income: {}, expense: {} },
     };
-    const pastRates = await prefetchRates(
-      monthTxs.map((t) => [t.currency, baseCurrency] as const),
-    );
-    for (const t of monthTxs) {
-      const inBase = pastRates.convert(t.amount, t.currency, baseCurrency);
-      const cat = (t.category ?? "").trim() || "Other";
-      if (t.kind === "income") {
-        past.income += inBase;
-        past.byCategory.income[cat] = (past.byCategory.income[cat] ?? 0) + inBase;
-      } else if (t.kind === "transfer") {
-        // Transfer is wallet outflow from the source account. Reflect
-        // it in `expenses` so the cash-flow page's "Monthly expenses"
-        // matches the eyeball sum of recurring outflows, and track
-        // separately so runway can subtract it for true burn.
-        past.expenses += inBase;
-        past.internalTransfers += inBase;
-        past.byCategory.expense[cat] = (past.byCategory.expense[cat] ?? 0) + inBase;
+    // Build the rate-prefetch list using effective (possibly overridden)
+    // currencies, so the convert() lookups below all hit warm cache.
+    const ratePairs: Array<readonly [string, string]> = [];
+    for (const f of forecastFlows) {
+      const ovr = overrideByFlowId.get(f.id);
+      ratePairs.push([ovr?.currency ?? f.currency, baseCurrency] as const);
+    }
+    for (const plan of debtPlans) {
+      ratePairs.push([plan.currency, baseCurrency] as const);
+    }
+    const rates = await prefetchRates(ratePairs);
+    for (const f of forecastFlows) {
+      const ovr = overrideByFlowId.get(f.id);
+      const effectiveAmount = ovr ? ovr.amount : f.amount;
+      const effectiveCurrency = ovr ? ovr.currency : f.currency;
+      const monthly = monthlyEquivalent(effectiveAmount, f.cadence);
+      const inBase = rates.convert(monthly, effectiveCurrency, baseCurrency);
+      const cat = f.category ?? "Other";
+      if (f.kind === "income") {
+        result.income += inBase;
+        result.byCategory.income[cat] =
+          (result.byCategory.income[cat] ?? 0) + inBase;
       } else {
-        past.expenses += inBase;
-        past.byCategory.expense[cat] = (past.byCategory.expense[cat] ?? 0) + inBase;
+        // Both plain expenses and internal-transfer flows are wallet
+        // outflows from `accountId`. Sum both into `expenses` so the
+        // cash-flow page's stat reflects the full list the user sees.
+        // Track the internal-transfer subset so runway can subtract it
+        // for true burn (transfers don't reduce wealth, just move it).
+        result.expenses += inBase;
+        result.byCategory.expense[cat] =
+          (result.byCategory.expense[cat] ?? 0) + inBase;
+        if (f.kind === "expense" && f.destAccountId != null) {
+          result.internalTransfers += inBase;
+        }
       }
     }
-    past.net = past.income - past.expenses;
-    return past;
-  }
-
-  const flows = await listFlows();
-  // When the user is viewing a specific month, swap in any per-month
-  // override of (amount, currency) so a "raise next August" change
-  // doesn't bleed back into the current month's projection.
-  const overrideByFlowId = new Map<
-    number,
-    { amount: number; currency: string }
-  >();
-  if (monthKey) {
-    const owner = await getOwner();
-    const rows = await db
-      .select({
-        flowId: schema.recurringFlowOverrides.flowId,
-        amount: schema.recurringFlowOverrides.amount,
-        currency: schema.recurringFlowOverrides.currency,
-      })
-      .from(schema.recurringFlowOverrides)
-      .where(
-        and(
-          eq(schema.recurringFlowOverrides.monthKey, monthKey),
-          ownedBy(schema.recurringFlowOverrides.ownerUserId, owner),
-        ),
+    for (const plan of debtPlans) {
+      const realizedPayment = realizedByPlan.get(plan.id);
+      if (!plan.active && realizedPayment == null) continue;
+      const loan = debtAccountById.get(plan.loanAccountId);
+      if (!loan || loan.type !== "loan") continue;
+      const scheduledPayment =
+        realizedPayment ??
+        debtPaymentForMonth(
+          {
+            balance: Math.max(0, loan.effectiveValue ?? 0),
+            annualRatePct: loan.interestRatePct ?? 0,
+            monthlyPayment: plan.monthlyPayment,
+            nextPaymentDate: plan.nextPaymentDate,
+          },
+          targetMonth,
+        );
+      if (scheduledPayment <= 0) continue;
+      const inBase = rates.convert(
+        scheduledPayment,
+        plan.currency,
+        baseCurrency,
       );
-    for (const r of rows) {
-      overrideByFlowId.set(r.flowId, {
-        amount: r.amount,
-        currency: r.currency,
-      });
-    }
-  }
-
-  const result: CashFlowSummary = {
-    baseCurrency,
-    income: 0,
-    expenses: 0,
-    internalTransfers: 0,
-    net: 0,
-    byCategory: { income: {}, expense: {} },
-  };
-  // Build the rate-prefetch list using effective (possibly overridden)
-  // currencies, so the convert() lookups below all hit warm cache.
-  const ratePairs: Array<readonly [string, string]> = [];
-  for (const f of flows) {
-    const ovr = overrideByFlowId.get(f.id);
-    ratePairs.push([ovr?.currency ?? f.currency, baseCurrency] as const);
-  }
-  const rates = await prefetchRates(ratePairs);
-  for (const f of flows) {
-    const ovr = overrideByFlowId.get(f.id);
-    const effectiveAmount = ovr ? ovr.amount : f.amount;
-    const effectiveCurrency = ovr ? ovr.currency : f.currency;
-    const monthly = monthlyEquivalent(effectiveAmount, f.cadence);
-    const inBase = rates.convert(monthly, effectiveCurrency, baseCurrency);
-    const cat = f.category ?? "Other";
-    if (f.kind === "income") {
-      result.income += inBase;
-      result.byCategory.income[cat] = (result.byCategory.income[cat] ?? 0) + inBase;
-    } else {
-      // Both plain expenses and internal-transfer flows are wallet
-      // outflows from `accountId`. Sum both into `expenses` so the
-      // cash-flow page's stat reflects the full list the user sees.
-      // Track the internal-transfer subset so runway can subtract it
-      // for true burn (transfers don't reduce wealth, just move it).
       result.expenses += inBase;
-      result.byCategory.expense[cat] = (result.byCategory.expense[cat] ?? 0) + inBase;
-      if (f.kind === "expense" && f.destAccountId != null) {
-        result.internalTransfers += inBase;
-      }
+      result.debtPayments += inBase;
+      result.byCategory.expense["Debt repayments"] =
+        (result.byCategory.expense["Debt repayments"] ?? 0) + inBase;
     }
-  }
-  result.net = result.income - result.expenses;
-  return result;
-});
+    result.net = result.income - result.expenses;
+    return result;
+  },
+);
 
 export type RunwaySummary = {
   baseCurrency: string;
@@ -552,6 +635,7 @@ export type RunwaySummary = {
    *  burn number comes from. All values in base currency. */
   breakdown: {
     flowExpenses: number;
+    debtPayments: number;
     /** Sum of budget caps for categories NOT already represented by a
      *  recurring flow. Added on top of flow expenses since budgets
      *  represent committed spend the user has signalled they intend
@@ -621,11 +705,11 @@ export async function computeCashRunway(
     monthsNetRunway,
     breakdown: {
       flowExpenses: flowBurn,
+      debtPayments: flow.debtPayments,
       unflowedBudgetCaps,
     },
   };
 }
-
 
 export type BudgetStatus = {
   id: number;
@@ -719,10 +803,12 @@ export const computeBudgetStatus = cache(async function computeBudgetStatusImpl(
   // when no filter is set. This makes "new budget added on the
   // August view" invisible to May (current) and to any earlier
   // month — they only show up from August onward.
-  const viewMonth = monthKey ?? (() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-  })();
+  const viewMonth =
+    monthKey ??
+    (() => {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    })();
   const rawBudgets = allBudgets.filter((b) => {
     if (!b.effectiveFrom) return true;
     return b.effectiveFrom <= viewMonth;
@@ -866,8 +952,7 @@ export const computeBudgetStatus = cache(async function computeBudgetStatusImpl(
       }
     }
     const remaining = b.monthlyLimit - spent;
-    const percentUsed =
-      b.monthlyLimit > 0 ? (spent / b.monthlyLimit) * 100 : 0;
+    const percentUsed = b.monthlyLimit > 0 ? (spent / b.monthlyLimit) * 100 : 0;
     const status: BudgetStatus = {
       id: b.id,
       category: b.category,

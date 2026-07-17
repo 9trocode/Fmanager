@@ -6,6 +6,10 @@ import { getOwner, ownedBy } from "@/lib/db/scope";
 import { convert, prefetchRates } from "@/lib/fx";
 import { localToday } from "@/lib/dates";
 import type { AccountType, TransactionKind } from "@/lib/db/schema";
+import {
+  destinationTransferDelta,
+  sourceTransactionDelta,
+} from "@/lib/account-types";
 
 /**
  * Settings come in three flavors:
@@ -340,10 +344,7 @@ export async function getEffectiveBalance(
         ownedBy(schema.valueSnapshots.ownerUserId, owner),
       ),
     )
-    .orderBy(
-      desc(schema.valueSnapshots.asOf),
-      desc(schema.valueSnapshots.id),
-    )
+    .orderBy(desc(schema.valueSnapshots.asOf), desc(schema.valueSnapshots.id))
     .limit(1);
   const latest = snapRows[0] ?? null;
   if (!latest) {
@@ -396,11 +397,17 @@ export async function getEffectiveBalance(
         ? t.amount
         : rates.convert(t.amount, t.currency, accountCurrency);
     if (t.accountId === accountId) {
-      if (t.kind === "expense" || t.kind === "transfer") delta -= amountInAccountCcy;
-      else if (t.kind === "income") delta += amountInAccountCcy;
+      delta += sourceTransactionDelta(
+        account?.type ?? "other",
+        t.kind,
+        amountInAccountCcy,
+      );
     }
     if (t.destAccountId === accountId && t.kind === "transfer") {
-      delta += amountInAccountCcy;
+      delta += destinationTransferDelta(
+        account?.type ?? "other",
+        amountInAccountCcy,
+      );
     }
   }
 
@@ -452,9 +459,7 @@ export async function listAccountsWithEffective(
         )`,
       ),
     );
-  const latestByAccount = new Map(
-    latestSnapshots.map((s) => [s.accountId, s]),
-  );
+  const latestByAccount = new Map(latestSnapshots.map((s) => [s.accountId, s]));
 
   // Earliest snapshot date across the set — used as the lower bound
   // for the transactions scan so we don't pull years of unneeded rows
@@ -527,12 +532,10 @@ export async function listAccountsWithEffective(
           ? t.amount
           : rates.convert(t.amount, t.currency, a.currency);
       if (isSource) {
-        if (t.kind === "expense" || t.kind === "transfer")
-          delta -= amountInAccountCcy;
-        else if (t.kind === "income") delta += amountInAccountCcy;
+        delta += sourceTransactionDelta(a.type, t.kind, amountInAccountCcy);
       }
       if (isDest) {
-        delta += amountInAccountCcy;
+        delta += destinationTransferDelta(a.type, amountInAccountCcy);
       }
     }
     return {
@@ -642,7 +645,9 @@ export async function accountsByTypes(types: AccountType[]) {
     );
 }
 
-export async function listSavingsGoals(opts: { includeArchived?: boolean } = {}) {
+export async function listSavingsGoals(
+  opts: { includeArchived?: boolean } = {},
+) {
   const owner = await getOwner();
   return db
     .select()
@@ -710,7 +715,10 @@ export async function listTransactions(filter: TransactionFilter = {}) {
     .select()
     .from(schema.transactions)
     .where(and(...conditions))
-    .orderBy(desc(schema.transactions.occurredAt), desc(schema.transactions.id));
+    .orderBy(
+      desc(schema.transactions.occurredAt),
+      desc(schema.transactions.id),
+    );
 
   if (filter.limit && filter.limit > 0) {
     return baseQuery.limit(filter.limit);
@@ -765,7 +773,10 @@ export async function listAccountTransactions(
     .select()
     .from(schema.transactions)
     .where(where)
-    .orderBy(desc(schema.transactions.occurredAt), desc(schema.transactions.id));
+    .orderBy(
+      desc(schema.transactions.occurredAt),
+      desc(schema.transactions.id),
+    );
   if (limit && limit > 0) return baseQuery.limit(limit);
   return baseQuery;
 }
@@ -790,7 +801,10 @@ export async function listRecentTransactions(days = 30) {
         ownedBy(schema.transactions.ownerUserId, owner),
       ),
     )
-    .orderBy(desc(schema.transactions.occurredAt), desc(schema.transactions.id));
+    .orderBy(
+      desc(schema.transactions.occurredAt),
+      desc(schema.transactions.id),
+    );
 }
 
 /**
@@ -824,7 +838,10 @@ export async function listTransactionsBetween(
         ownedBy(schema.transactions.ownerUserId, owner),
       ),
     )
-    .orderBy(desc(schema.transactions.occurredAt), desc(schema.transactions.id));
+    .orderBy(
+      desc(schema.transactions.occurredAt),
+      desc(schema.transactions.id),
+    );
 }
 
 export async function listBudgets() {
@@ -834,6 +851,112 @@ export async function listBudgets() {
     .from(schema.budgets)
     .where(ownedBy(schema.budgets.ownerUserId, owner))
     .orderBy(asc(schema.budgets.category));
+}
+
+export async function listDebtPlans(opts: { includeInactive?: boolean } = {}) {
+  const owner = await getOwner();
+  return db
+    .select()
+    .from(schema.debtPlans)
+    .where(
+      opts.includeInactive
+        ? ownedBy(schema.debtPlans.ownerUserId, owner)
+        : and(
+            eq(schema.debtPlans.active, true),
+            ownedBy(schema.debtPlans.ownerUserId, owner),
+          ),
+    )
+    .orderBy(asc(schema.debtPlans.nextPaymentDate));
+}
+
+export async function getDebtPlan(id: number) {
+  const owner = await getOwner();
+  const rows = await db
+    .select()
+    .from(schema.debtPlans)
+    .where(
+      and(
+        eq(schema.debtPlans.id, id),
+        ownedBy(schema.debtPlans.ownerUserId, owner),
+      ),
+    )
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function getDebtPlanByLoanAccount(loanAccountId: number) {
+  const owner = await getOwner();
+  const rows = await db
+    .select()
+    .from(schema.debtPlans)
+    .where(
+      and(
+        eq(schema.debtPlans.loanAccountId, loanAccountId),
+        ownedBy(schema.debtPlans.ownerUserId, owner),
+      ),
+    )
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function getDebtPlanBySourceAccount(sourceAccountId: number) {
+  const owner = await getOwner();
+  const rows = await db
+    .select()
+    .from(schema.debtPlans)
+    .where(
+      and(
+        eq(schema.debtPlans.sourceAccountId, sourceAccountId),
+        ownedBy(schema.debtPlans.ownerUserId, owner),
+      ),
+    )
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function getDebtPayment(id: number) {
+  const owner = await getOwner();
+  const rows = await db
+    .select()
+    .from(schema.debtPayments)
+    .where(
+      and(
+        eq(schema.debtPayments.id, id),
+        ownedBy(schema.debtPayments.ownerUserId, owner),
+      ),
+    )
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function listDebtPayments(planId: number, limit = 12) {
+  const owner = await getOwner();
+  return db
+    .select()
+    .from(schema.debtPayments)
+    .where(
+      and(
+        eq(schema.debtPayments.planId, planId),
+        ownedBy(schema.debtPayments.ownerUserId, owner),
+      ),
+    )
+    .orderBy(desc(schema.debtPayments.paidAt), desc(schema.debtPayments.id))
+    .limit(limit);
+}
+
+export async function listDebtPaymentsBetween(from: string, to: string) {
+  const owner = await getOwner();
+  return db
+    .select()
+    .from(schema.debtPayments)
+    .where(
+      and(
+        gte(schema.debtPayments.paidAt, from),
+        lte(schema.debtPayments.paidAt, to),
+        ownedBy(schema.debtPayments.ownerUserId, owner),
+      ),
+    )
+    .orderBy(asc(schema.debtPayments.paidAt));
 }
 
 export async function getBudget(id: number) {

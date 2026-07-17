@@ -118,8 +118,7 @@ export default async function TransactionsPage({
 
   const userSetDates = Boolean(sp.from || sp.to);
   const scope = sp.scope === "all" ? "all" : userSetDates ? "custom" : "month";
-  const effectiveFrom =
-    scope === "month" ? month.start : sp.from || undefined;
+  const effectiveFrom = scope === "month" ? month.start : sp.from || undefined;
   const effectiveTo = scope === "month" ? month.end : sp.to || undefined;
 
   const accountIdParam = sp.account ? Number(sp.account) : undefined;
@@ -158,6 +157,7 @@ export default async function TransactionsPage({
     id: a.id,
     name: a.name,
     currency: a.currency,
+    type: a.type,
   }));
   const budgetOptions = budgetRows.map((b) => ({
     id: b.id,

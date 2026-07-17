@@ -1,8 +1,10 @@
 import "server-only";
 import { computeMonthlyCashFlow, computeNetWorth } from "@/lib/aggregation";
 import { getAccount, getEffectiveBalance } from "@/lib/db/queries";
+import { getDebtPlanByLoanAccount } from "@/lib/db/queries";
 import { convert } from "@/lib/fx";
 import type { GoalKind } from "@/lib/db/schema";
+import { calculateDebtProjection } from "@/lib/debt-calculations";
 
 export type Goal = {
   id: number;
@@ -169,9 +171,7 @@ export async function computeGoalState(
       // "in the hole" as 0% reached; the deficit is conveyed by the
       // distance-to-target widget elsewhere.
       const percent =
-        target && target > 0
-          ? Math.max(0, (current / target) * 100)
-          : 0;
+        target && target > 0 ? Math.max(0, (current / target) * 100) : 0;
       const eta =
         target == null
           ? null
@@ -238,31 +238,39 @@ export async function computeGoalState(
           description: "No loan account linked. Edit the goal to link one.",
         };
       }
-      const [balance, fundingAccount] = await Promise.all([
-        getEffectiveBalance(goal.accountId),
-        resolveFundingAccount(goal),
-      ]);
+      const [balance, fundingAccount, loanAccount, debtPlan] =
+        await Promise.all([
+          getEffectiveBalance(goal.accountId),
+          resolveFundingAccount(goal),
+          getAccount(goal.accountId),
+          getDebtPlanByLoanAccount(goal.accountId),
+        ]);
       const principalNow = Math.max(0, balance.effectiveValue ?? 0);
       // currentAmount stores the original principal at goal creation time.
-      const principalStart = goal.currentAmount > 0
-        ? goal.currentAmount
-        : principalNow;
+      const principalStart =
+        goal.currentAmount > 0 ? goal.currentAmount : principalNow;
       const paidDown = Math.max(0, principalStart - principalNow);
       const percent =
         principalStart > 0 ? (paidDown / principalStart) * 100 : 0;
-      // Months to zero at current monthlyContribution (ignoring interest).
-      const eta =
-        goal.monthlyContribution > 0
-          ? Math.ceil(principalNow / goal.monthlyContribution)
-          : null;
+      const monthlyPayment = debtPlan?.active
+        ? debtPlan.monthlyPayment
+        : goal.monthlyContribution;
+      const projection = calculateDebtProjection({
+        balance: principalNow,
+        annualRatePct: loanAccount?.interestRatePct ?? 0,
+        monthlyPayment,
+        nextPaymentDate: debtPlan?.nextPaymentDate,
+      });
       return {
         goal,
         current: principalNow,
         target: 0,
         percent,
-        etaMonths: eta,
+        etaMonths: projection.monthsToPayoff,
         done: principalNow <= 0,
-        description: `Pay down loan to zero. Started at ${goal.currency} ${principalStart.toLocaleString()}.`,
+        description: debtPlan
+          ? `Repaying ${goal.currency} ${monthlyPayment.toLocaleString()} / mo at ${(loanAccount?.interestRatePct ?? 0).toFixed(2)}% APR.`
+          : `Pay down loan to zero. Started at ${goal.currency} ${principalStart.toLocaleString()}.`,
         fundingAccount,
       };
     }

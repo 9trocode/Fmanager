@@ -60,7 +60,12 @@ import {
   deleteAccount,
   deleteSnapshot,
 } from "@/lib/actions/accounts";
-import { ACCOUNT_TYPE_LABEL, isLiability } from "@/lib/account-types";
+import {
+  ACCOUNT_TYPE_LABEL,
+  destinationTransferDelta,
+  isLiability,
+  sourceTransactionDelta,
+} from "@/lib/account-types";
 import { FLOW_CADENCE_LABEL, monthlyEquivalent } from "@/lib/flows";
 import { formatMoney } from "@/lib/format";
 import { prefetchRates } from "@/lib/fx";
@@ -153,6 +158,7 @@ export default async function AccountDetailPage({
     id: a.id,
     name: a.name,
     currency: a.currency,
+    type: a.type,
   }));
 
   // Lookup so transaction rows can surface a "from {flow name}" badge
@@ -166,8 +172,7 @@ export default async function AccountDetailPage({
     { name: string; kind: "income" | "expense" }
   >(flows.map((f) => [f.id, { name: f.name, kind: f.kind }]));
 
-  const displayValue =
-    effective.effectiveValue ?? latest?.value ?? null;
+  const displayValue = effective.effectiveValue ?? latest?.value ?? null;
 
   // Per-transaction derivation. For every tx posted strictly AFTER
   // the latest snapshot date that touches this account (as source or
@@ -211,13 +216,9 @@ export default async function AccountDetailPage({
       const isSource = t.accountId === id;
       const isDest = t.destAccountId === id && t.kind === "transfer";
       const sign = isSource
-        ? t.kind === "expense" || t.kind === "transfer"
-          ? -1
-          : t.kind === "income"
-            ? 1
-            : 0
+        ? sourceTransactionDelta(account.type, t.kind, 1)
         : isDest
-          ? 1
+          ? destinationTransferDelta(account.type, 1)
           : 0;
       const isCrossCurrency = t.currency !== account.currency;
       const inAccount = isCrossCurrency
@@ -267,7 +268,12 @@ export default async function AccountDetailPage({
   return (
     <>
       <div className="mb-2">
-        <Button asChild variant="ghost" size="sm" className="-ml-2 text-muted-foreground">
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="-ml-2 text-muted-foreground"
+        >
           <Link href="/accounts">
             <ArrowLeft className="size-4" />
             All accounts
@@ -304,7 +310,11 @@ export default async function AccountDetailPage({
             )}
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="outline" size="sm" className="text-destructive">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-destructive"
+                >
                   <Trash2 className="size-4" />
                   Delete
                 </Button>
@@ -313,8 +323,8 @@ export default async function AccountDetailPage({
                 <AlertDialogHeader>
                   <AlertDialogTitle>Delete this account?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    Removes the account and all its snapshots. Permanent. Archive instead
-                    if you want to keep history.
+                    Removes the account and all its snapshots. Permanent.
+                    Archive instead if you want to keep history.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -340,7 +350,9 @@ export default async function AccountDetailPage({
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardDescription>Current balance</CardDescription>
-              {account.archived ? <Badge variant="outline">Archived</Badge> : null}
+              {account.archived ? (
+                <Badge variant="outline">Archived</Badge>
+              ) : null}
             </div>
             <CardTitle
               className={
@@ -357,7 +369,8 @@ export default async function AccountDetailPage({
             </CardTitle>
             {latest ? (
               <CardDescription className="font-mono">
-                effective · snapshot {formatMoney(
+                effective · snapshot{" "}
+                {formatMoney(
                   liability ? -latest.value : latest.value,
                   account.currency,
                 )}{" "}
@@ -372,8 +385,8 @@ export default async function AccountDetailPage({
               <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
                 {monthlyIncomeSameCcy > 0 ? (
                   <span className="font-mono tabular-nums text-emerald-300">
-                    + {formatMoney(monthlyIncomeSameCcy, account.currency)} /
-                    mo income
+                    + {formatMoney(monthlyIncomeSameCcy, account.currency)} / mo
+                    income
                   </span>
                 ) : null}
                 {monthlyExpenseSameCcy > 0 ? (
@@ -382,7 +395,7 @@ export default async function AccountDetailPage({
                     mo expenses
                   </span>
                 ) : null}
-                {(monthlyIncomeSameCcy > 0 || monthlyExpenseSameCcy > 0) ? (
+                {monthlyIncomeSameCcy > 0 || monthlyExpenseSameCcy > 0 ? (
                   <span
                     className={
                       "font-mono tabular-nums " +
@@ -417,9 +430,13 @@ export default async function AccountDetailPage({
             <CardDescription>{snapshots.length} entries</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <AddSnapshotDialog accountId={account.id} currency={account.currency} />
+            <AddSnapshotDialog
+              accountId={account.id}
+              currency={account.currency}
+            />
             <p className="text-xs text-muted-foreground">
-              The latest snapshot drives net worth. Older entries are kept for history.
+              The latest snapshot drives net worth. Older entries are kept for
+              history.
             </p>
           </CardContent>
         </Card>
@@ -436,8 +453,8 @@ export default async function AccountDetailPage({
           <CardHeader>
             <CardTitle className="text-base">How this is computed</CardTitle>
             <CardDescription>
-              Snapshot value plus every transaction posted since.
-              Cross-currency transactions are FX-converted into{" "}
+              Snapshot value plus every transaction posted since. Cross-currency
+              transactions are FX-converted into{" "}
               <span className="font-mono">{account.currency}</span> at
               today&apos;s cached rate.
             </CardDescription>
@@ -496,12 +513,14 @@ export default async function AccountDetailPage({
                     <div className="text-right">
                       {r.isCrossCurrency ? (
                         <div className="text-[10px] text-muted-foreground/80 font-mono">
-                          {r.kind === "expense" || r.kind === "transfer"
-                            ? "−"
-                            : "+"}
-                          {formatMoney(r.nativeAmount, r.nativeCurrency, {
-                            compact: true,
-                          })}
+                          {r.contribution < 0 ? "−" : "+"}
+                          {formatMoney(
+                            Math.abs(r.nativeAmount),
+                            r.nativeCurrency,
+                            {
+                              compact: true,
+                            },
+                          )}
                         </div>
                       ) : null}
                       <div
@@ -552,10 +571,10 @@ export default async function AccountDetailPage({
             {sameDaySkipCount > 0 ? (
               <div className="px-4 py-2 border-t border-border text-[11px] text-muted-foreground">
                 {sameDaySkipCount}{" "}
-                {sameDaySkipCount === 1 ? "transaction" : "transactions"} on
-                the snapshot date ({latest.asOf}) were intentionally
-                skipped — the snapshot wins on its own date. To include
-                them, set the snapshot date one day earlier.
+                {sameDaySkipCount === 1 ? "transaction" : "transactions"} on the
+                snapshot date ({latest.asOf}) were intentionally skipped — the
+                snapshot wins on its own date. To include them, set the snapshot
+                date one day earlier.
               </div>
             ) : null}
             {futureRows.length > 0 ? (
@@ -567,8 +586,7 @@ export default async function AccountDetailPage({
                       : "Scheduled · dated after today, not in the running balance yet"}
                   </span>
                   <span className="font-mono">
-                    {futureRows.length}{" "}
-                    {futureRows.length === 1 ? "tx" : "txs"}
+                    {futureRows.length} {futureRows.length === 1 ? "tx" : "txs"}
                   </span>
                 </div>
                 <ul className="divide-y divide-border/60">
@@ -584,10 +602,7 @@ export default async function AccountDetailPage({
                           </span>
                           <span className="capitalize">{r.kind}</span>
                           {r.category ? (
-                            <Badge
-                              variant="secondary"
-                              className="text-[10px]"
-                            >
+                            <Badge variant="secondary" className="text-[10px]">
                               {r.category}
                             </Badge>
                           ) : null}
@@ -667,8 +682,7 @@ export default async function AccountDetailPage({
         {flows.length === 0 ? (
           <CardContent>
             <p className="text-sm text-muted-foreground">
-              Add a recurring inflow (e.g. salary) or outflow (e.g. rent) on
-              the{" "}
+              Add a recurring inflow (e.g. salary) or outflow (e.g. rent) on the{" "}
               <Link
                 href="/cash-flow"
                 className="underline underline-offset-3 hover:text-foreground"
@@ -779,7 +793,9 @@ export default async function AccountDetailPage({
                   const delta = prev ? s.value - prev.value : null;
                   return (
                     <TableRow key={s.id}>
-                      <TableCell className="font-mono text-xs">{s.asOf}</TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {s.asOf}
+                      </TableCell>
                       <TableCell className="text-right font-mono tabular-nums">
                         {formatMoney(
                           liability ? -s.value : s.value,
@@ -789,12 +805,18 @@ export default async function AccountDetailPage({
                       <TableCell className="text-right font-mono text-xs tabular-nums text-muted-foreground">
                         {delta == null
                           ? "—"
-                          : formatMoney(delta, account.currency, { signed: true })}
+                          : formatMoney(delta, account.currency, {
+                              signed: true,
+                            })}
                       </TableCell>
                       <TableCell>
                         <form action={deleteSnapshot}>
                           <input type="hidden" name="id" value={s.id} />
-                          <input type="hidden" name="account_id" value={account.id} />
+                          <input
+                            type="hidden"
+                            name="account_id"
+                            value={account.id}
+                          />
                           <Button
                             type="submit"
                             variant="ghost"
@@ -929,7 +951,8 @@ function AccountDetailsCard({ account }: { account: AccountWithDetails }) {
       <CardHeader className="pb-3">
         <CardTitle className="text-base">Bank details</CardTitle>
         <CardDescription>
-          Stored locally in your SQLite database. Edit on this account to add or change.
+          Stored locally in your SQLite database. Edit on this account to add or
+          change.
         </CardDescription>
       </CardHeader>
       <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
@@ -942,7 +965,9 @@ function AccountDetailsCard({ account }: { account: AccountWithDetails }) {
               <a
                 href={r.href}
                 target={r.href.startsWith("http") ? "_blank" : undefined}
-                rel={r.href.startsWith("http") ? "noopener noreferrer" : undefined}
+                rel={
+                  r.href.startsWith("http") ? "noopener noreferrer" : undefined
+                }
                 className="font-mono tabular-nums text-foreground hover:underline truncate block"
               >
                 {r.value}

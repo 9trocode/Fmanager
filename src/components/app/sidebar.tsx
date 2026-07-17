@@ -12,6 +12,7 @@ import {
   LineChart,
   Wallet,
   Coins,
+  TrendingDown,
   Award,
   Sparkles,
   Bell,
@@ -68,6 +69,7 @@ const SECTIONS: NavSection[] = [
     label: "Wealth",
     items: [
       { href: "/accounts", label: "Accounts", icon: Wallet },
+      { href: "/debts", label: "Debt", icon: TrendingDown },
       { href: "/net-worth", label: "Net worth", icon: Coins },
       { href: "/equity", label: "Equity", icon: Award },
     ],

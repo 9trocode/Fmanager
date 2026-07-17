@@ -37,6 +37,10 @@ import { deleteTransaction } from "@/lib/actions/transactions";
 import { formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { TransactionKind } from "@/lib/db/schema";
+import {
+  destinationTransferDelta,
+  sourceTransactionDelta,
+} from "@/lib/account-types";
 
 export type TransactionDetailRow = {
   id: number;
@@ -49,6 +53,7 @@ export type TransactionDetailRow = {
   occurredAt: string;
   notes: string | null;
   flowId?: number | null;
+  debtPaymentId?: number | null;
 };
 
 const KIND_LABEL: Record<TransactionKind, string> = {
@@ -102,14 +107,30 @@ export function TransactionDetailSheet({
   } else if (transaction.kind === "expense") {
     amountSigned = "−" + amountSigned;
     amountTone = "text-destructive";
-  } else if (transaction.kind === "transfer" && contextAccountId != null) {
-    if (transaction.accountId === contextAccountId) {
-      amountSigned = "−" + formatMoney(transaction.amount, transaction.currency);
-      amountTone = "text-destructive";
-    } else if (transaction.destAccountId === contextAccountId) {
-      amountSigned = "+" + formatMoney(transaction.amount, transaction.currency);
-      amountTone = "text-emerald-400";
-    }
+  }
+  if (contextAccountId != null && transaction.accountId === contextAccountId) {
+    const delta = sourceTransactionDelta(
+      sourceAcc?.type ?? "other",
+      transaction.kind,
+      transaction.amount,
+    );
+    amountSigned =
+      (delta < 0 ? "−" : "+") +
+      formatMoney(Math.abs(delta), transaction.currency);
+    amountTone = delta < 0 ? "text-destructive" : "text-emerald-400";
+  } else if (
+    transaction.kind === "transfer" &&
+    contextAccountId != null &&
+    transaction.destAccountId === contextAccountId
+  ) {
+    const delta = destinationTransferDelta(
+      destAcc?.type ?? "other",
+      transaction.amount,
+    );
+    amountSigned =
+      (delta < 0 ? "−" : "+") +
+      formatMoney(Math.abs(delta), transaction.currency);
+    amountTone = delta < 0 ? "text-destructive" : "text-emerald-400";
   }
 
   const KindIcon =
@@ -172,7 +193,9 @@ export function TransactionDetailSheet({
               </SheetDescription>
             </div>
           </div>
-          <div className={cn("font-mono tabular-nums text-2xl mt-3", amountTone)}>
+          <div
+            className={cn("font-mono tabular-nums text-2xl mt-3", amountTone)}
+          >
             {amountSigned}
           </div>
         </SheetHeader>
@@ -216,9 +239,7 @@ export function TransactionDetailSheet({
 
           <div className="text-[10px] font-mono text-muted-foreground/60 pt-2">
             id #{transaction.id}
-            {transaction.flowId != null
-              ? ` · flow #${transaction.flowId}`
-              : ""}
+            {transaction.flowId != null ? ` · flow #${transaction.flowId}` : ""}
           </div>
         </div>
 

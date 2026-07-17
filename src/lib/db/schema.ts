@@ -231,62 +231,64 @@ export type FlowKind = (typeof flowKinds)[number];
 export const recurringFlows = sqliteTable(
   "recurring_flows",
   {
-  id: id(),
-  name: text("name").notNull(),
-  kind: text("kind", { enum: flowKinds }).notNull(),
-  category: text("category"),
-  amount: real("amount").notNull(),
-  currency: text("currency").notNull(),
-  cadence: text("cadence", { enum: flowCadences }).notNull().default("monthly"),
-  /**
-   * Account the cash flows from (kind=expense) or to (kind=income).
-   * Optional for back-compat with existing rows. New entries should require it.
-   */
-  accountId: integer("account_id").references(() => accounts.id, {
-    onDelete: "set null",
-  }),
-  /**
-   * Optional destination account. Only meaningful for `kind=expense`
-   * flows where the money LEAVES `accountId` and LANDS in
-   * `destAccountId` (savings transfer, contributing to a goal-linked
-   * account, paying down a loan, etc.). When set, the accruer posts
-   * a `transfer` transaction instead of an `expense` one, and the
-   * monthly cash-flow / runway calc EXCLUDES this flow from burn
-   * (it's not money leaving the user's wealth — just being moved).
-   */
-  destAccountId: integer("dest_account_id").references(() => accounts.id, {
-    onDelete: "set null",
-  }),
-  /**
-   * Last calendar period (`YYYY-MM-DD`) for which an auto-accrued
-   * transaction has already been posted. Drives `accrueDueFlows()` so a
-   * monthly salary turns into a real transaction on the linked account
-   * once each month has elapsed — making net worth actually reflect the
-   * recurring inflow instead of it being a "plan" that never materialises.
-   *
-   * Null means the flow has never been accrued. New flows are seeded with
-   * the period boundary at creation time so the first accrual fires after
-   * one full cadence has passed (no surprise back-dated transactions).
-   */
-  lastPostedAt: text("last_posted_at"),
-  /**
-   * Optional explicit next-due date (`YYYY-MM-DD`). When set, the
-   * accruer posts the next transaction ON THIS DATE (rather than
-   * `lastPostedAt + cadence`). On each post the date is advanced by
-   * one cadence, so a monthly salary anchored to the 25th keeps
-   * landing on the 25th forever — even if the user opens the app
-   * weeks late.
-   *
-   * When null, falls back to the original "since lastPostedAt"
-   * behavior. Editable from the flow form so the user can retarget
-   * payday ("starting next month it's the 30th").
-   */
-  nextDueAt: text("next_due_at"),
-  archived: integer("archived", { mode: "boolean" }).notNull().default(false),
-  notes: text("notes"),
-  ownerUserId: ownerUserId(),
-  createdAt: createdAt(),
-  updatedAt: updatedAt(),
+    id: id(),
+    name: text("name").notNull(),
+    kind: text("kind", { enum: flowKinds }).notNull(),
+    category: text("category"),
+    amount: real("amount").notNull(),
+    currency: text("currency").notNull(),
+    cadence: text("cadence", { enum: flowCadences })
+      .notNull()
+      .default("monthly"),
+    /**
+     * Account the cash flows from (kind=expense) or to (kind=income).
+     * Optional for back-compat with existing rows. New entries should require it.
+     */
+    accountId: integer("account_id").references(() => accounts.id, {
+      onDelete: "set null",
+    }),
+    /**
+     * Optional destination account. Only meaningful for `kind=expense`
+     * flows where the money LEAVES `accountId` and LANDS in
+     * `destAccountId` (savings transfer, contributing to a goal-linked
+     * account, paying down a loan, etc.). When set, the accruer posts
+     * a `transfer` transaction instead of an `expense` one, and the
+     * monthly cash-flow / runway calc EXCLUDES this flow from burn
+     * (it's not money leaving the user's wealth — just being moved).
+     */
+    destAccountId: integer("dest_account_id").references(() => accounts.id, {
+      onDelete: "set null",
+    }),
+    /**
+     * Last calendar period (`YYYY-MM-DD`) for which an auto-accrued
+     * transaction has already been posted. Drives `accrueDueFlows()` so a
+     * monthly salary turns into a real transaction on the linked account
+     * once each month has elapsed — making net worth actually reflect the
+     * recurring inflow instead of it being a "plan" that never materialises.
+     *
+     * Null means the flow has never been accrued. New flows are seeded with
+     * the period boundary at creation time so the first accrual fires after
+     * one full cadence has passed (no surprise back-dated transactions).
+     */
+    lastPostedAt: text("last_posted_at"),
+    /**
+     * Optional explicit next-due date (`YYYY-MM-DD`). When set, the
+     * accruer posts the next transaction ON THIS DATE (rather than
+     * `lastPostedAt + cadence`). On each post the date is advanced by
+     * one cadence, so a monthly salary anchored to the 25th keeps
+     * landing on the 25th forever — even if the user opens the app
+     * weeks late.
+     *
+     * When null, falls back to the original "since lastPostedAt"
+     * behavior. Editable from the flow form so the user can retarget
+     * payday ("starting next month it's the 30th").
+     */
+    nextDueAt: text("next_due_at"),
+    archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+    notes: text("notes"),
+    ownerUserId: ownerUserId(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
   },
   (t) => ({
     accountIdx: index("recurring_flows_account_idx").on(t.accountId),
@@ -492,6 +494,9 @@ export const transactions = sqliteTable(
     flowId: integer("flow_id").references(() => recurringFlows.id, {
       onDelete: "set null",
     }),
+    /** Links the principal/interest ledger rows created by a debt payment.
+     * Generated rows are corrected from the debt page, never independently. */
+    debtPaymentId: integer("debt_payment_id"),
     ownerUserId: ownerUserId(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -502,6 +507,7 @@ export const transactions = sqliteTable(
     destAccountIdx: index("transactions_dest_account_idx").on(t.destAccountId),
     categoryIdx: index("transactions_category_idx").on(t.category),
     flowIdx: index("transactions_flow_idx").on(t.flowId),
+    debtPaymentIdx: index("transactions_debt_payment_idx").on(t.debtPaymentId),
     accountOccurredIdx: index("transactions_account_occurred_idx").on(
       t.accountId,
       t.occurredAt,
@@ -530,13 +536,80 @@ export const transactions = sqliteTable(
     // listTransactions with kind=expense / kind=income filter. With
     // 100K txs split ~70/30 expense/income, the kind filter cuts the
     // scan in half before the date range applies.
-    ownerKindOccurredIdx: index(
-      "transactions_owner_kind_occurred_idx",
-    ).on(t.ownerUserId, t.kind, t.occurredAt),
+    ownerKindOccurredIdx: index("transactions_owner_kind_occurred_idx").on(
+      t.ownerUserId,
+      t.kind,
+      t.occurredAt,
+    ),
     ownerIdx: index("transactions_owner_idx").on(t.ownerUserId),
     flowOccurredUniq: uniqueIndex("transactions_flow_occurred_uniq")
       .on(t.flowId, t.occurredAt)
       .where(sql`${t.flowId} IS NOT NULL`),
+  }),
+);
+
+/**
+ * Repayment plan for a loan account. The loan balance itself remains in the
+ * account/snapshot/transaction ledger; this row stores the forward-looking
+ * commitment and the cash account that funds it.
+ */
+export const debtPlans = sqliteTable(
+  "debt_plans",
+  {
+    id: id(),
+    loanAccountId: integer("loan_account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    sourceAccountId: integer("source_account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "restrict" }),
+    monthlyPayment: real("monthly_payment").notNull(),
+    currency: text("currency").notNull(),
+    nextPaymentDate: text("next_payment_date").notNull(),
+    active: integer("active", { mode: "boolean" }).notNull().default(true),
+    notes: text("notes"),
+    ownerUserId: ownerUserId(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    loanAccountUniq: uniqueIndex("debt_plans_loan_account_uniq").on(
+      t.loanAccountId,
+    ),
+    ownerIdx: index("debt_plans_owner_idx").on(t.ownerUserId),
+    activeDueIdx: index("debt_plans_owner_active_due_idx").on(
+      t.ownerUserId,
+      t.active,
+      t.nextPaymentDate,
+    ),
+  }),
+);
+
+/**
+ * One realized repayment. The paired transaction rows update the cash and
+ * loan balances; this ledger preserves the principal/interest split used for
+ * payoff history and reporting.
+ */
+export const debtPayments = sqliteTable(
+  "debt_payments",
+  {
+    id: id(),
+    planId: integer("plan_id")
+      .notNull()
+      .references(() => debtPlans.id, { onDelete: "cascade" }),
+    paidAt: text("paid_at").notNull(),
+    totalAmount: real("total_amount").notNull(),
+    principalAmount: real("principal_amount").notNull(),
+    interestAmount: real("interest_amount").notNull(),
+    remainingBalance: real("remaining_balance").notNull(),
+    currency: text("currency").notNull(),
+    previousNextPaymentDate: text("previous_next_payment_date").notNull(),
+    ownerUserId: ownerUserId(),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    planPaidIdx: index("debt_payments_plan_paid_idx").on(t.planId, t.paidAt),
+    ownerIdx: index("debt_payments_owner_idx").on(t.ownerUserId),
   }),
 );
 
@@ -835,7 +908,7 @@ export const invites = sqliteTable(
      * Whether the invited user joins the host's shared data (default,
      * for family/partner use) or gets their own isolated tenant
      * (for resell / hosted-for-others use).
-     */    dataScope: text("data_scope", { enum: dataScopes })
+     */ dataScope: text("data_scope", { enum: dataScopes })
       .notNull()
       .default("shared"),
     expiresAt: text("expires_at"),

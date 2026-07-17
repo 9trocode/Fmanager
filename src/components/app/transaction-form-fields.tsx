@@ -17,13 +17,14 @@ import {
   SUGGESTED_EXPENSE_CATEGORIES,
   SUGGESTED_INCOME_CATEGORIES,
 } from "@/lib/flows";
-import type { TransactionKind } from "@/lib/db/schema";
+import type { AccountType, TransactionKind } from "@/lib/db/schema";
 import { localToday } from "@/lib/dates";
 
 export type TransactionAccountOption = {
   id: number;
   name: string;
   currency: string;
+  type?: AccountType;
 };
 
 export type TransactionDefaults = {
@@ -234,8 +235,8 @@ export function TransactionFields({
             </SelectContent>
           </Select>
           <p className="text-[10px] text-muted-foreground leading-relaxed">
-            One-time spends counted toward this month&apos;s budget for
-            the chosen category.
+            One-time spends counted toward this month&apos;s budget for the
+            chosen category.
           </p>
         </div>
       ) : null}
@@ -265,11 +266,7 @@ export function TransactionFields({
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="currency">Currency</Label>
-          <Select
-            value={currency}
-            onValueChange={setCurrency}
-            name="currency"
-          >
+          <Select value={currency} onValueChange={setCurrency} name="currency">
             <SelectTrigger id="currency">
               <SelectValue />
             </SelectTrigger>

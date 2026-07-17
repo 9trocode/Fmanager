@@ -35,6 +35,10 @@ import { TransactionDetailSheet } from "@/components/app/transaction-detail-shee
 import type { TransactionAccountOption } from "@/components/app/transaction-form-fields";
 import { deleteTransaction } from "@/lib/actions/transactions";
 import { formatMoney } from "@/lib/format";
+import {
+  destinationTransferDelta,
+  sourceTransactionDelta,
+} from "@/lib/account-types";
 import type { TransactionKind } from "@/lib/db/schema";
 import { useRole } from "@/components/app/role-context";
 
@@ -56,6 +60,7 @@ export type TransactionRow = {
    * transactions from its "Recent one-time" section.
    */
   flowId?: number | null;
+  debtPaymentId?: number | null;
 };
 
 function KindIcon({ kind }: { kind: TransactionKind }) {
@@ -105,7 +110,7 @@ export function TransactionItem({
   flowsById?: Map<number, { name: string; kind: "income" | "expense" }>;
 }) {
   const role = useRole();
-  const readOnly = role === "viewer";
+  const readOnly = role === "viewer" || transaction.debtPaymentId != null;
   const [detailOpen, setDetailOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [, startTransition] = useTransition();
@@ -121,14 +126,29 @@ export function TransactionItem({
   if (transaction.kind === "income") amountClass = "text-emerald-300";
   if (transaction.kind === "expense") amountClass = "text-destructive";
 
-  if (transaction.kind === "transfer" && contextAccountId != null) {
-    if (transaction.accountId === contextAccountId) {
-      amountDisplay = "−" + formatMoney(transaction.amount, transaction.currency);
-      amountClass = "text-destructive";
-    } else if (transaction.destAccountId === contextAccountId) {
-      amountDisplay = "+" + formatMoney(transaction.amount, transaction.currency);
-      amountClass = "text-emerald-300";
-    }
+  if (contextAccountId != null && transaction.accountId === contextAccountId) {
+    const delta = sourceTransactionDelta(
+      sourceAcc?.type ?? "other",
+      transaction.kind,
+      transaction.amount,
+    );
+    amountDisplay =
+      (delta < 0 ? "−" : "+") +
+      formatMoney(Math.abs(delta), transaction.currency);
+    amountClass = delta < 0 ? "text-destructive" : "text-emerald-300";
+  } else if (
+    transaction.kind === "transfer" &&
+    contextAccountId != null &&
+    transaction.destAccountId === contextAccountId
+  ) {
+    const delta = destinationTransferDelta(
+      destAcc?.type ?? "other",
+      transaction.amount,
+    );
+    amountDisplay =
+      (delta < 0 ? "−" : "+") +
+      formatMoney(Math.abs(delta), transaction.currency);
+    amountClass = delta < 0 ? "text-destructive" : "text-emerald-300";
   }
 
   function handleDelete() {
@@ -181,7 +201,8 @@ export function TransactionItem({
                 {transaction.category}
               </Badge>
             ) : null}
-            {transaction.flowId != null && flowsById?.get(transaction.flowId) ? (
+            {transaction.flowId != null &&
+            flowsById?.get(transaction.flowId) ? (
               <Badge
                 variant="outline"
                 className="text-[10px] inline-flex items-center gap-1"
@@ -189,6 +210,11 @@ export function TransactionItem({
               >
                 <Repeat className="size-2.5" />
                 from {flowsById.get(transaction.flowId)!.name}
+              </Badge>
+            ) : null}
+            {transaction.debtPaymentId != null ? (
+              <Badge variant="outline" className="text-[10px]">
+                managed debt payment
               </Badge>
             ) : null}
             <span className="text-[10px] font-mono text-muted-foreground">
@@ -216,55 +242,55 @@ export function TransactionItem({
         className="flex items-center gap-3 shrink-0"
         onClick={(e) => e.stopPropagation()}
       >
-        <div
-          className={"font-mono tabular-nums text-sm " + amountClass}
-        >
+        <div className={"font-mono tabular-nums text-sm " + amountClass}>
           {amountDisplay}
         </div>
         {readOnly ? null : (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="size-8">
-              <MoreHorizontal className="size-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onSelect={() => setEditOpen(true)}>
-              <Pencil className="size-4" />
-              Edit
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <DropdownMenuItem
-                  onSelect={(e) => e.preventDefault()}
-                  className="text-destructive focus:text-destructive"
-                >
-                  <Trash2 className="size-4" />
-                  Delete
-                </DropdownMenuItem>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Delete this transaction?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Permanent. The effective balance for the account(s) will
-                    update immediately.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={handleDelete}
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="size-8">
+                <MoreHorizontal className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => setEditOpen(true)}>
+                <Pencil className="size-4" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <DropdownMenuItem
+                    onSelect={(e) => e.preventDefault()}
+                    className="text-destructive focus:text-destructive"
                   >
+                    <Trash2 className="size-4" />
                     Delete
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          </DropdownMenuContent>
-        </DropdownMenu>
+                  </DropdownMenuItem>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>
+                      Delete this transaction?
+                    </AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Permanent. The effective balance for the account(s) will
+                      update immediately.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={handleDelete}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      Delete
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
       </div>
 
