@@ -9,7 +9,8 @@
   --color-foreground: var(--foreground);
   --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace;
-  --font-heading: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  --font-heading:
+    "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -160,9 +161,47 @@
       font-size: inherit;
     }
   }
-  }
 
-  @layer utilities {
+  /* Shared phone guardrails. Keep dense app surfaces usable without every
+     page having to solve the same clipping and keyboard problems itself. */
+  @media (max-width: 767px) {
+    [data-slot="dialog-content"] {
+      max-height: calc(
+        100dvh -
+          max(
+            2rem,
+            env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)
+          )
+      );
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
+
+    [data-slot="alert-dialog-content"] {
+      width: calc(
+        100% -
+          max(
+            2rem,
+            env(safe-area-inset-left, 0px) + env(safe-area-inset-right, 0px)
+          )
+      );
+      max-height: calc(100dvh - 2rem);
+      overflow-y: auto;
+    }
+
+    [data-slot="card-title"],
+    [data-slot="card-description"] {
+      overflow-wrap: anywhere;
+    }
+
+    [data-slot="table-container"] {
+      overscroll-behavior-x: contain;
+      -webkit-overflow-scrolling: touch;
+    }
+  }
+}
+
+@layer utilities {
   .glass {
     background: var(--color-glass-bg);
     backdrop-filter: blur(12px);
@@ -181,20 +220,48 @@
     the elements react-markdown + remark-gfm actually emit in chat:
     paragraphs, headings, lists, links, code, tables, blockquotes.
   */
-  .prose-chat p { margin: 0; }
-  .prose-chat p + p { margin-top: 0.5rem; }
-  .prose-chat ul, .prose-chat ol { margin: 0.25rem 0 0.25rem 1.25rem; }
-  .prose-chat ul { list-style: disc; }
-  .prose-chat ol { list-style: decimal; }
-  .prose-chat li + li { margin-top: 0.125rem; }
-  .prose-chat h1, .prose-chat h2, .prose-chat h3 {
-    font-weight: 600; line-height: 1.25; margin: 0.5rem 0 0.25rem;
+  .prose-chat p {
+    margin: 0;
   }
-  .prose-chat h1 { font-size: 1.05rem; }
-  .prose-chat h2 { font-size: 1rem; }
-  .prose-chat h3 { font-size: 0.9rem; color: var(--muted-foreground); }
-  .prose-chat strong { font-weight: 600; }
-  .prose-chat em { font-style: italic; }
+  .prose-chat p + p {
+    margin-top: 0.5rem;
+  }
+  .prose-chat ul,
+  .prose-chat ol {
+    margin: 0.25rem 0 0.25rem 1.25rem;
+  }
+  .prose-chat ul {
+    list-style: disc;
+  }
+  .prose-chat ol {
+    list-style: decimal;
+  }
+  .prose-chat li + li {
+    margin-top: 0.125rem;
+  }
+  .prose-chat h1,
+  .prose-chat h2,
+  .prose-chat h3 {
+    font-weight: 600;
+    line-height: 1.25;
+    margin: 0.5rem 0 0.25rem;
+  }
+  .prose-chat h1 {
+    font-size: 1.05rem;
+  }
+  .prose-chat h2 {
+    font-size: 1rem;
+  }
+  .prose-chat h3 {
+    font-size: 0.9rem;
+    color: var(--muted-foreground);
+  }
+  .prose-chat strong {
+    font-weight: 600;
+  }
+  .prose-chat em {
+    font-style: italic;
+  }
   .prose-chat code {
     font-family: var(--font-geist-mono, ui-monospace, monospace);
     font-size: 0.85em;
@@ -211,7 +278,10 @@
     font-size: 0.8rem;
     margin: 0.5rem 0;
   }
-  .prose-chat pre code { background: transparent; padding: 0; }
+  .prose-chat pre code {
+    background: transparent;
+    padding: 0;
+  }
   .prose-chat a {
     color: inherit;
     text-decoration: underline;
@@ -222,16 +292,19 @@
     margin: 0.5rem 0;
     font-size: 0.8rem;
   }
-  .prose-chat th, .prose-chat td {
+  .prose-chat th,
+  .prose-chat td {
     border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
     padding: 0.25rem 0.5rem;
     text-align: left;
   }
-  .prose-chat th { font-weight: 600; }
+  .prose-chat th {
+    font-weight: 600;
+  }
   .prose-chat blockquote {
     border-left: 2px solid color-mix(in oklab, var(--border) 80%, transparent);
     padding-left: 0.75rem;
     margin: 0.5rem 0;
     color: var(--muted-foreground);
   }
-  }
+}
