@@ -321,16 +321,32 @@ export async function destroySession() {
 // isAuthenticated, getRole, getCurrentUser, getActiveOwnerUserId
 // in sequence — without this each one re-runs `await cookies()` +
 // the HMAC verify in `unpack()`. Tiny on its own, ~free to dedupe.
-const getUnpackedToken = cache(async (): Promise<{
-  role: Role;
-  userId: number | null;
-  expiresAt: number;
-} | null> => {
-  const jar = await cookies();
-  const token = jar.get(COOKIE_NAME)?.value;
-  if (!token) return null;
-  return unpack(token);
-});
+const getUnpackedToken = cache(
+  async (): Promise<{
+    role: Role;
+    userId: number | null;
+    expiresAt: number;
+  } | null> => {
+    const jar = await cookies();
+    const token = jar.get(COOKIE_NAME)?.value;
+    if (!token) return null;
+    const unpacked = unpack(token);
+    if (!unpacked || unpacked.userId == null) return unpacked;
+
+    // A signed token is not sufficient for table-backed members: deleting a
+    // member must revoke their still-valid cookie on the next request. Checking
+    // the row here also prevents a stale token from retaining an old role after
+    // an administrator changes it.
+    const users = await hostDb
+      .select({ role: schema.users.role })
+      .from(schema.users)
+      .where(eq(schema.users.id, unpacked.userId))
+      .limit(1);
+    if (!users[0] || users[0].role !== unpacked.role) return null;
+
+    return unpacked;
+  },
+);
 
 /** True only when a configured admin exists AND a valid session cookie is present. */
 export const isAuthenticated = cache(async (): Promise<boolean> => {
