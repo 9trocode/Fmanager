@@ -101,7 +101,7 @@ export function BudgetsCashFlowPanel({
     <Card>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div>
+          <div className="min-w-0">
             <CardTitle className="text-base flex items-center gap-2">
               <Wallet className="size-4 text-muted-foreground" />
               Budgets vs cash flow
@@ -126,7 +126,7 @@ export function BudgetsCashFlowPanel({
             </CardDescription>
           </div>
           {!noIncome ? (
-            <div className="text-right">
+            <div className="text-left sm:text-right">
               <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
                 Monthly income
               </div>
@@ -178,7 +178,7 @@ export function BudgetsCashFlowPanel({
             ) : null}
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-5 text-sm sm:grid-cols-5 sm:gap-3 sm:text-xs">
             <LegendItem
               swatch="bg-blue-500/80"
               label="Budgeted"
@@ -206,9 +206,7 @@ export function BudgetsCashFlowPanel({
               amount={safeOneTime}
               currency={baseCurrency}
               share={
-                monthlyIncome > 0
-                  ? (safeOneTime / monthlyIncome) * 100
-                  : null
+                monthlyIncome > 0 ? (safeOneTime / monthlyIncome) * 100 : null
               }
               hint="MTD posted spend with no matching budget"
             />
@@ -229,14 +227,12 @@ export function BudgetsCashFlowPanel({
                 amount={unallocated}
                 currency={baseCurrency}
                 share={
-                  monthlyIncome > 0
-                    ? (unallocated / monthlyIncome) * 100
-                    : null
+                  monthlyIncome > 0 ? (unallocated / monthlyIncome) * 100 : null
                 }
                 hint="Unallocated — could go to savings"
               />
             )}
-            <div className="space-y-0.5">
+            <div className="min-w-0 space-y-1 sm:space-y-0.5">
               <div className="flex items-center gap-2">
                 <span className="size-2 rounded-sm bg-secondary" />
                 <span className="font-medium text-muted-foreground">
@@ -246,7 +242,7 @@ export function BudgetsCashFlowPanel({
               <div className="font-mono tabular-nums">
                 {formatMoney(liquidCash, baseCurrency)}
               </div>
-              <div className="text-[10px] text-muted-foreground">
+              <div className="text-xs leading-relaxed text-muted-foreground sm:text-[10px]">
                 {monthsRunway != null
                   ? `${monthsRunway.toFixed(1)} mo of runway`
                   : "Income covers expenses"}
@@ -266,12 +262,11 @@ export function BudgetsCashFlowPanel({
                   {formatMoney(overAllocated, baseCurrency)}.
                 </div>
                 <div className="text-muted-foreground leading-relaxed">
-                  You&apos;ve committed{" "}
-                  {formatMoney(allocated, baseCurrency)} to budgets +
-                  recurring outflows but only bring in{" "}
+                  You&apos;ve committed {formatMoney(allocated, baseCurrency)}{" "}
+                  to budgets + recurring outflows but only bring in{" "}
                   {formatMoney(monthlyIncome, baseCurrency)} per month. Either
-                  trim a budget, drop a recurring outflow, or treat the gap as
-                  a planned drawdown from liquid cash.
+                  trim a budget, drop a recurring outflow, or treat the gap as a
+                  planned drawdown from liquid cash.
                 </div>
               </div>
             </div>
@@ -285,7 +280,8 @@ export function BudgetsCashFlowPanel({
               <span className="font-mono tabular-nums text-foreground">
                 {formatMoney(monthlyIncome, baseCurrency)}
               </span>{" "}
-              ({monthlyIncome > 0
+              (
+              {monthlyIncome > 0
                 ? ((allocated / monthlyIncome) * 100).toFixed(0)
                 : 0}
               %).{" "}
@@ -327,7 +323,7 @@ export function BudgetsCashFlowPanel({
                   : `${overlappingCategories.length} recurring flows auto-fill budgets`}
                 .
               </div>
-              <div className="text-muted-foreground leading-relaxed">
+              <div className="break-words text-muted-foreground leading-relaxed [overflow-wrap:anywhere]">
                 Recurring{" "}
                 {overlappingCategories.map((c, i) => (
                   <span key={c.name}>
@@ -336,8 +332,8 @@ export function BudgetsCashFlowPanel({
                   </span>
                 ))}{" "}
                 ({formatMoney(recurringOverlap, baseCurrency)} / mo) accrues
-                straight into the matching budget — no double-count, the
-                budget cap is the source of truth.
+                straight into the matching budget — no double-count, the budget
+                cap is the source of truth.
               </div>
             </div>
           </div>
@@ -365,7 +361,7 @@ function LegendItem({
   emphasize?: boolean;
 }) {
   return (
-    <div className="space-y-0.5">
+    <div className="min-w-0 space-y-1 sm:space-y-0.5">
       <div className="flex items-center gap-2">
         <span className={"size-2 rounded-sm " + swatch} />
         <span
@@ -380,13 +376,15 @@ function LegendItem({
       <div className="font-mono tabular-nums">
         {formatMoney(amount, currency)}
         {share != null ? (
-          <span className="text-muted-foreground text-[10px] ml-1">
+          <span className="ml-1 text-xs text-muted-foreground sm:text-[10px]">
             ({share.toFixed(0)}%)
           </span>
         ) : null}
       </div>
       {hint ? (
-        <div className="text-[10px] text-muted-foreground">{hint}</div>
+        <div className="text-xs leading-relaxed text-muted-foreground sm:text-[10px]">
+          {hint}
+        </div>
       ) : null}
     </div>
   );

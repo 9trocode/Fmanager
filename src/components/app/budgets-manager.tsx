@@ -2,7 +2,13 @@
 
 import Link from "next/link";
 import { useState, useTransition } from "react";
-import { ChevronRight, MoreHorizontal, Pencil, Target, Trash2 } from "lucide-react";
+import {
+  ChevronRight,
+  MoreHorizontal,
+  Pencil,
+  Target,
+  Trash2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -121,17 +127,20 @@ function BudgetRow({
   const widthPct = Math.min(100, Math.max(0, row.percentUsed));
 
   return (
-    <div className="flex items-start justify-between gap-4 px-4 py-3 rounded-md border border-border hover:bg-secondary/40 transition-colors group">
+    <div className="group flex items-start justify-between gap-2 rounded-md border border-border px-3 py-3 transition-colors hover:bg-secondary/40 sm:gap-4 sm:px-4">
       <Link
         href={`/budgets/${row.id}`}
         className="min-w-0 flex-1 space-y-2 block"
       >
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 min-w-0 flex-wrap">
-            <span className="font-medium truncate">{row.category}</span>
+        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start sm:gap-3">
+          <div className="flex min-w-0 flex-wrap items-start gap-2">
+            <span className="min-w-0 break-words font-medium leading-snug sm:truncate">
+              {row.category}
+            </span>
             <span
               className={
-                "text-[10px] font-mono " + pctLabelClass(row.percentUsed)
+                "shrink-0 font-mono text-xs sm:text-[10px] " +
+                pctLabelClass(row.percentUsed)
               }
             >
               {row.percentUsed.toFixed(0)}%
@@ -144,18 +153,20 @@ function BudgetRow({
                 · {linkedAccount.name}
               </span>
             ) : null}
-            <ChevronRight className="size-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+            <ChevronRight className="hidden size-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 sm:block" />
           </div>
-          <div className="text-right shrink-0">
-            <div className="font-mono tabular-nums text-sm">
+          <div className="flex flex-wrap items-baseline gap-x-1.5 text-left sm:block sm:shrink-0 sm:text-right">
+            <div className="font-mono text-sm tabular-nums">
               {formatMoney(row.spentThisMonth, row.baseCurrency)}{" "}
               <span className="text-muted-foreground">of</span>{" "}
               {formatMoney(row.monthlyLimit, row.baseCurrency)}
             </div>
             <div
               className={
-                "text-[10px] font-mono " +
-                (row.remaining < 0 ? "text-destructive" : "text-muted-foreground")
+                "font-mono text-xs sm:text-[10px] " +
+                (row.remaining < 0
+                  ? "text-destructive"
+                  : "text-muted-foreground")
               }
             >
               {row.remaining < 0
@@ -171,7 +182,7 @@ function BudgetRow({
           />
         </div>
         {row.notes ? (
-          <div className="text-xs text-muted-foreground truncate">
+          <div className="line-clamp-2 break-words text-xs leading-relaxed text-muted-foreground sm:truncate">
             {row.notes}
           </div>
         ) : null}
@@ -179,7 +190,11 @@ function BudgetRow({
       {readOnly ? null : (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="size-8 shrink-0">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="-mr-1 size-10 shrink-0 sm:mr-0 sm:size-8"
+            >
               <MoreHorizontal className="size-4" />
             </Button>
           </DropdownMenuTrigger>
@@ -248,8 +263,7 @@ export function BudgetsManager({
   isFutureMonth = false,
   monthLabel = null,
 }: BudgetsManagerProps) {
-  const overallPct =
-    totalLimit > 0 ? (totalSpent / totalLimit) * 100 : 0;
+  const overallPct = totalLimit > 0 ? (totalSpent / totalLimit) * 100 : 0;
 
   const budgetedCategories = rows.map((r) => r.category);
 
@@ -267,54 +281,54 @@ export function BudgetsManager({
       />
 
       {rows.length > 0 ? (
-      <div className="grid md:grid-cols-3 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Total monthly limit</CardDescription>
-            <CardTitle className="text-2xl font-mono tabular-nums">
-              {formatMoney(totalLimit, baseCurrency)}
-            </CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Spent this month</CardDescription>
-            <CardTitle
-              className={
-                "text-2xl font-mono tabular-nums " +
-                (overallPct > 100 ? "text-destructive" : "")
-              }
-            >
-              {formatMoney(totalSpent, baseCurrency)}
-            </CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>% of total used</CardDescription>
-            <CardTitle
-              className={
-                "text-2xl font-mono tabular-nums " +
-                (overallPct > 100
-                  ? "text-destructive"
-                  : overallPct >= 80
-                    ? "text-amber-400"
-                    : "")
-              }
-            >
-              {overallPct.toFixed(0)}%
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
-              <div
-                className={"h-full " + barClass(overallPct)}
-                style={{ width: `${Math.min(100, overallPct)}%` }}
-              />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+        <div className="grid md:grid-cols-3 gap-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription>Total monthly limit</CardDescription>
+              <CardTitle className="text-2xl font-mono tabular-nums">
+                {formatMoney(totalLimit, baseCurrency)}
+              </CardTitle>
+            </CardHeader>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription>Spent this month</CardDescription>
+              <CardTitle
+                className={
+                  "text-2xl font-mono tabular-nums " +
+                  (overallPct > 100 ? "text-destructive" : "")
+                }
+              >
+                {formatMoney(totalSpent, baseCurrency)}
+              </CardTitle>
+            </CardHeader>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription>% of total used</CardDescription>
+              <CardTitle
+                className={
+                  "text-2xl font-mono tabular-nums " +
+                  (overallPct > 100
+                    ? "text-destructive"
+                    : overallPct >= 80
+                      ? "text-amber-400"
+                      : "")
+                }
+              >
+                {overallPct.toFixed(0)}%
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
+                <div
+                  className={"h-full " + barClass(overallPct)}
+                  style={{ width: `${Math.min(100, overallPct)}%` }}
+                />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       ) : null}
 
       <div className="flex items-center justify-between">
