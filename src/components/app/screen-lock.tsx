@@ -1,17 +1,11 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Lock, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { verifyAdminPassword } from "@/lib/actions/screen-lock";
+import { PasswordInput } from "@/components/app/password-input";
 
 const LOCK_FLAG_KEY = "ff:screen-locked";
 // Reset throttle: don't update the activity timestamp more than
@@ -93,7 +87,8 @@ export function ScreenLockProvider({
       "scroll",
       "touchstart",
     ];
-    for (const e of events) window.addEventListener(e, reset, { passive: true });
+    for (const e of events)
+      window.addEventListener(e, reset, { passive: true });
     const tick = window.setInterval(() => {
       if (locked) return;
       if (Date.now() - lastActivityRef.current >= idleMs) {
@@ -129,7 +124,10 @@ export function ScreenLockProvider({
     <>
       {children}
       {locked ? (
-        <LockOverlay onUnlock={unlock} onPanic={() => triggerPanic(panicRedirectUrl)} />
+        <LockOverlay
+          onUnlock={unlock}
+          onPanic={() => triggerPanic(panicRedirectUrl)}
+        />
       ) : null}
     </>
   );
@@ -199,21 +197,15 @@ function LockOverlay({
           </p>
         </div>
         <form onSubmit={handleSubmit} className="space-y-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="lock-password">Password</Label>
-            <Input
-              id="lock-password"
-              type="password"
-              autoFocus
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={busy}
-              autoComplete="current-password"
-            />
-            {error ? (
-              <p className="text-[12px] text-destructive">{error}</p>
-            ) : null}
-          </div>
+          <PasswordInput
+            id="lock-password"
+            autoFocus
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            disabled={busy}
+            autoComplete="current-password"
+            error={error ?? null}
+          />
           <Button
             type="submit"
             className="w-full"

@@ -19,6 +19,7 @@ import {
 } from "@/lib/auth/session";
 import { getSetting } from "@/lib/db/queries";
 import { loginWithCredentials } from "@/lib/actions/auth";
+import { PasswordInput } from "@/components/app/password-input";
 
 // Reads admin state from DB + auth cookie on every request.
 export const dynamic = "force-dynamic";
@@ -89,16 +90,12 @@ export default async function LoginPage({
                   }
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  name="password"
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                />
-              </div>
+              <PasswordInput
+                name="password"
+                label="Password"
+                required
+                autoComplete={"current-password"}
+              />
               {hasError ? (
                 <Alert variant="destructive">
                   <AlertDescription>
