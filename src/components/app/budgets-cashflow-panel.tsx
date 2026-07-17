@@ -126,7 +126,7 @@ export function BudgetsCashFlowPanel({
             </CardDescription>
           </div>
           {!noIncome ? (
-            <div className="text-left sm:text-right">
+            <div className="text-left md:text-right">
               <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
                 Monthly income
               </div>
@@ -178,7 +178,7 @@ export function BudgetsCashFlowPanel({
             ) : null}
           </div>
 
-          <div className="grid grid-cols-2 gap-x-4 gap-y-5 text-sm sm:grid-cols-5 sm:gap-3 sm:text-xs">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-5 text-sm md:grid-cols-5 md:gap-3 md:text-xs">
             <LegendItem
               swatch="bg-blue-500/80"
               label="Budgeted"
@@ -232,7 +232,7 @@ export function BudgetsCashFlowPanel({
                 hint="Unallocated — could go to savings"
               />
             )}
-            <div className="min-w-0 space-y-1 sm:space-y-0.5">
+            <div className="min-w-0 space-y-1 md:space-y-0.5">
               <div className="flex items-center gap-2">
                 <span className="size-2 rounded-sm bg-secondary" />
                 <span className="font-medium text-muted-foreground">
@@ -242,7 +242,7 @@ export function BudgetsCashFlowPanel({
               <div className="font-mono tabular-nums">
                 {formatMoney(liquidCash, baseCurrency)}
               </div>
-              <div className="text-xs leading-relaxed text-muted-foreground sm:text-[10px]">
+              <div className="text-xs leading-relaxed text-muted-foreground md:text-[10px]">
                 {monthsRunway != null
                   ? `${monthsRunway.toFixed(1)} mo of runway`
                   : "Income covers expenses"}
@@ -361,7 +361,7 @@ function LegendItem({
   emphasize?: boolean;
 }) {
   return (
-    <div className="min-w-0 space-y-1 sm:space-y-0.5">
+    <div className="min-w-0 space-y-1 md:space-y-0.5">
       <div className="flex items-center gap-2">
         <span className={"size-2 rounded-sm " + swatch} />
         <span
@@ -376,13 +376,13 @@ function LegendItem({
       <div className="font-mono tabular-nums">
         {formatMoney(amount, currency)}
         {share != null ? (
-          <span className="ml-1 text-xs text-muted-foreground sm:text-[10px]">
+          <span className="ml-1 text-xs text-muted-foreground md:text-[10px]">
             ({share.toFixed(0)}%)
           </span>
         ) : null}
       </div>
       {hint ? (
-        <div className="text-xs leading-relaxed text-muted-foreground sm:text-[10px]">
+        <div className="text-xs leading-relaxed text-muted-foreground md:text-[10px]">
           {hint}
         </div>
       ) : null}

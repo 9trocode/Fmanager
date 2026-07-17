@@ -166,26 +166,30 @@
      page having to solve the same clipping and keyboard problems itself. */
   @media (max-width: 767px) {
     [data-slot="dialog-content"] {
+      top: calc(env(safe-area-inset-top, 0px) + 1rem) !important;
+      translate: -50% 0 !important;
       max-height: calc(
-        100dvh -
-          max(
-            2rem,
-            env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)
-          )
-      );
+        100dvh - env(safe-area-inset-top, 0px) -
+          env(safe-area-inset-bottom, 0px) - 2rem
+      ) !important;
       overflow-y: auto;
       overscroll-behavior: contain;
     }
 
     [data-slot="alert-dialog-content"] {
+      top: calc(env(safe-area-inset-top, 0px) + 1rem) !important;
+      translate: -50% 0 !important;
       width: calc(
         100% -
           max(
             2rem,
             env(safe-area-inset-left, 0px) + env(safe-area-inset-right, 0px)
           )
-      );
-      max-height: calc(100dvh - 2rem);
+      ) !important;
+      max-height: calc(
+        100dvh - env(safe-area-inset-top, 0px) -
+          env(safe-area-inset-bottom, 0px) - 2rem
+      ) !important;
       overflow-y: auto;
     }
 

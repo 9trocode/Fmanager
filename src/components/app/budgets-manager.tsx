@@ -127,19 +127,19 @@ function BudgetRow({
   const widthPct = Math.min(100, Math.max(0, row.percentUsed));
 
   return (
-    <div className="group flex items-start justify-between gap-2 rounded-md border border-border px-3 py-3 transition-colors hover:bg-secondary/40 sm:gap-4 sm:px-4">
+    <div className="group flex items-start justify-between gap-2 rounded-md border border-border px-3 py-3 transition-colors hover:bg-secondary/40 md:gap-4 md:px-4">
       <Link
         href={`/budgets/${row.id}`}
         className="min-w-0 flex-1 space-y-2 block"
       >
-        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start sm:gap-3">
+        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-start md:gap-3">
           <div className="flex min-w-0 flex-wrap items-start gap-2">
-            <span className="min-w-0 break-words font-medium leading-snug sm:truncate">
+            <span className="min-w-0 break-words font-medium leading-snug md:truncate">
               {row.category}
             </span>
             <span
               className={
-                "shrink-0 font-mono text-xs sm:text-[10px] " +
+                "shrink-0 font-mono text-xs md:text-[10px] " +
                 pctLabelClass(row.percentUsed)
               }
             >
@@ -153,9 +153,9 @@ function BudgetRow({
                 · {linkedAccount.name}
               </span>
             ) : null}
-            <ChevronRight className="hidden size-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 sm:block" />
+            <ChevronRight className="hidden size-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 md:block" />
           </div>
-          <div className="flex flex-wrap items-baseline gap-x-1.5 text-left sm:block sm:shrink-0 sm:text-right">
+          <div className="flex flex-wrap items-baseline gap-x-1.5 text-left md:block md:shrink-0 md:text-right">
             <div className="font-mono text-sm tabular-nums">
               {formatMoney(row.spentThisMonth, row.baseCurrency)}{" "}
               <span className="text-muted-foreground">of</span>{" "}
@@ -163,7 +163,7 @@ function BudgetRow({
             </div>
             <div
               className={
-                "font-mono text-xs sm:text-[10px] " +
+                "font-mono text-xs md:text-[10px] " +
                 (row.remaining < 0
                   ? "text-destructive"
                   : "text-muted-foreground")
@@ -182,7 +182,7 @@ function BudgetRow({
           />
         </div>
         {row.notes ? (
-          <div className="line-clamp-2 break-words text-xs leading-relaxed text-muted-foreground sm:truncate">
+          <div className="line-clamp-2 break-words text-xs leading-relaxed text-muted-foreground md:truncate">
             {row.notes}
           </div>
         ) : null}
@@ -193,7 +193,7 @@ function BudgetRow({
             <Button
               variant="ghost"
               size="icon"
-              className="-mr-1 size-10 shrink-0 sm:mr-0 sm:size-8"
+              className="-mr-1 size-10 shrink-0 md:mr-0 md:size-8"
             >
               <MoreHorizontal className="size-4" />
             </Button>

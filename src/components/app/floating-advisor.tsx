@@ -99,10 +99,10 @@ export function FloatingAdvisor() {
         type="button"
         onClick={() => setOpen(true)}
         aria-label="Open advisor"
-        className="fixed right-[calc(env(safe-area-inset-right,0px)+3.75rem)] top-[calc(env(safe-area-inset-top,0px)+0.375rem)] z-50 inline-flex size-11 items-center justify-center gap-2 rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/20 transition-transform hover:scale-[1.03] active:scale-[0.98] sm:bottom-[calc(env(safe-area-inset-bottom,0px)+1rem)] sm:right-[calc(env(safe-area-inset-right,0px)+1rem)] sm:top-auto sm:h-12 sm:w-auto sm:px-4"
+        className="fixed right-[calc(env(safe-area-inset-right,0px)+3.75rem)] top-[calc(env(safe-area-inset-top,0px)+0.375rem)] z-50 inline-flex size-11 items-center justify-center gap-2 rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/20 transition-transform hover:scale-[1.03] active:scale-[0.98] md:bottom-[calc(env(safe-area-inset-bottom,0px)+1rem)] md:right-[calc(env(safe-area-inset-right,0px)+1rem)] md:top-auto md:h-12 md:w-auto md:px-4"
       >
-        <Sparkles className="size-5 sm:size-4" />
-        <span className="hidden sm:inline text-sm font-medium">Advisor</span>
+        <Sparkles className="size-5 md:size-4" />
+        <span className="hidden text-sm font-medium md:inline">Advisor</span>
       </button>
       <SheetContent
         side="right"
