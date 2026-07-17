@@ -11,6 +11,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
 import { AddAccountDialog } from "@/components/app/add-account-dialog";
+import { AddInvestmentDialog } from "@/components/app/add-investment-dialog";
 import { AddGrantDialog } from "@/components/app/add-grant-dialog";
 import { HeroBackground } from "@/components/app/hero-background";
 import { NetWorthBreakdown } from "@/components/app/networth-breakdown";
@@ -180,6 +181,7 @@ export default async function NetWorthPage({
         description="Your full balance sheet across currencies, with company equity shown three ways: without it, at its current value, or at target exit."
         actions={
           <>
+            <AddInvestmentDialog />
             <AddAccountDialog />
             <AddGrantDialog />
           </>
@@ -190,9 +192,10 @@ export default async function NetWorthPage({
         <EmptyState
           icon={Briefcase}
           title="No data yet"
-          description="Add an account or equity grant to see your net worth across scenarios and currencies."
+          description="Add an investment, account, or equity grant to see your net worth across scenarios and currencies."
           action={
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
+              <AddInvestmentDialog />
               <AddAccountDialog />
               <AddGrantDialog />
             </div>

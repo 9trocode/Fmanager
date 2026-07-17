@@ -7,6 +7,7 @@ import { AlertsBanner } from "@/components/app/alerts-banner";
 import { resolveMonthKey } from "@/lib/month-filter";
 import { EmptyState } from "@/components/app/empty-state";
 import { AddAccountDialog } from "@/components/app/add-account-dialog";
+import { AddInvestmentDialog } from "@/components/app/add-investment-dialog";
 import { AddGrantDialog } from "@/components/app/add-grant-dialog";
 import { getSettings } from "@/lib/db/queries";
 import { getAdminProfile, getCurrentUser } from "@/lib/auth/session";
@@ -127,7 +128,8 @@ export default async function DashboardPage({
           title="Empty house"
           description="Add an account, a recurring expense, or a transaction to bring this page to life."
           action={
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
+              <AddInvestmentDialog />
               <AddAccountDialog />
               <AddGrantDialog />
             </div>

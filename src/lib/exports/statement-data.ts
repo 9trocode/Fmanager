@@ -276,7 +276,12 @@ export async function buildMonthlyStatement(
       const acct = accountById.get(a.id);
       if (!acct) continue;
       if (acct.type === "cash") cash += a.inBase;
-      if (acct.type === "brokerage" || acct.type === "crypto" || acct.type === "retirement") {
+      if (
+        acct.type === "investment" ||
+        acct.type === "brokerage" ||
+        acct.type === "crypto" ||
+        acct.type === "retirement"
+      ) {
         investments += a.inBase;
       }
     }

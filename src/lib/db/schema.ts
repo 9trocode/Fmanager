@@ -35,6 +35,7 @@ const ownerUserId = () =>
 
 export const accountTypes = [
   "cash",
+  "investment",
   "brokerage",
   "crypto",
   "real_estate",
@@ -878,4 +879,3 @@ export const chatMessages = sqliteTable(
     ),
   }),
 );
-

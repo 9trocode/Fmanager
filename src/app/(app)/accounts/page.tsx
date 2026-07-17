@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
 import { AddAccountDialog } from "@/components/app/add-account-dialog";
+import { AddInvestmentDialog } from "@/components/app/add-investment-dialog";
 import {
   listAccountsWithEffective,
   listFlows,
@@ -182,7 +183,7 @@ export default async function AccountsPage({
         description={
           isPastMonth
             ? `Balances as of ${asOfDate} (end of ${monthLabelFromKey(selectedMonth!)}). Latest snapshot at or before that date plus signed transactions through it. Switch back to the current month in the sidebar for live balances.`
-            : "Cash, brokerage, crypto, real estate. One row per account, snapshots track changes over time."
+            : "Cash, investments, brokerage, crypto, real estate. One row per account, snapshots track changes over time."
         }
         actions={
           <>
@@ -191,6 +192,7 @@ export default async function AccountsPage({
                 as of {asOfDate}
               </Badge>
             ) : null}
+            <AddInvestmentDialog />
             <AddAccountDialog />
           </>
         }
@@ -201,7 +203,12 @@ export default async function AccountsPage({
           icon={Wallet}
           title="No accounts yet"
           description="Add your first account. Each one holds a balance in a single currency."
-          action={<AddAccountDialog />}
+          action={
+            <div className="flex flex-wrap gap-2">
+              <AddInvestmentDialog />
+              <AddAccountDialog />
+            </div>
+          }
         />
       ) : (
         <div className="grid gap-3">

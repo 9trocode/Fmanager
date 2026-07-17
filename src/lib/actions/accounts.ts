@@ -7,7 +7,8 @@ import { db, schema } from "@/lib/db";
 import { accountTypes } from "@/lib/db/schema";
 import { assertAdmin } from "@/lib/auth/session";
 import { getOwner, ownedBy } from "@/lib/db/scope";
-import { localToday } from "@/lib/dates";
+import { isValidYmdOnOrBefore, localToday } from "@/lib/dates";
+import { SUPPORTED_CURRENCIES } from "@/lib/format";
 
 function revalidate(path?: string) {
   if (path) revalidatePath(path);
@@ -75,35 +76,53 @@ export async function createAccount(formData: FormData) {
   const institution = String(formData.get("institution") ?? "").trim() || null;
   const notes = String(formData.get("notes") ?? "").trim() || null;
   const openingBalance = parseAmount(formData.get("opening_balance"));
-  const asOf =
-    String(formData.get("as_of") ?? "").trim() ||
-    localToday();
+  const today = localToday();
+  const asOf = String(formData.get("as_of") ?? "").trim() || today;
+  if (!isValidYmdOnOrBefore(asOf, today)) {
+    throw new Error("As-of date must be today or earlier.");
+  }
+  if (type === "investment") {
+    if (openingBalance < 0) {
+      throw new Error("Investment value cannot be negative.");
+    }
+    if (
+      !SUPPORTED_CURRENCIES.includes(
+        currency as (typeof SUPPORTED_CURRENCIES)[number],
+      )
+    ) {
+      throw new Error(`Unsupported investment currency: ${currency}`);
+    }
+  }
   const details = parseDetailFields(formData);
 
   const owner = await getOwner();
-  const [created] = await db
-    .insert(schema.accounts)
-    .values({
-      name,
-      type,
-      currency,
-      institution,
-      notes,
-      ...details,
-      ownerUserId: owner,
-    })
-    .returning();
+  db.transaction((tx) => {
+    const created = tx
+      .insert(schema.accounts)
+      .values({
+        name,
+        type,
+        currency,
+        institution,
+        notes,
+        ...details,
+        ownerUserId: owner,
+      })
+      .returning()
+      .get();
+    if (!created) throw new Error("Account creation failed.");
 
-  if (created) {
-    await db.insert(schema.valueSnapshots).values({
-      accountId: created.id,
-      value: openingBalance,
-      currency,
-      asOf,
-      source: "manual",
-      ownerUserId: owner,
-    });
-  }
+    tx.insert(schema.valueSnapshots)
+      .values({
+        accountId: created.id,
+        value: openingBalance,
+        currency,
+        asOf,
+        source: "manual",
+        ownerUserId: owner,
+      })
+      .run();
+  });
 
   revalidate();
 }

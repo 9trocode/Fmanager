@@ -13,7 +13,10 @@ import { db, schema } from "@/lib/db";
 import { and, eq, gt, inArray, lte, or, sql } from "drizzle-orm";
 import { convert, prefetchRates } from "@/lib/fx";
 import { getOwner, ownedBy } from "@/lib/db/scope";
-import { isLiability } from "@/lib/account-types";
+import {
+  isLiability,
+  netWorthContribution,
+} from "@/lib/account-types";
 import { monthlyEquivalent } from "@/lib/flows";
 import {
   SCENARIOS,
@@ -213,6 +216,7 @@ export type NetWorthSummary = {
 function emptyCategory(): Record<CategoryKey, number> {
   return {
     cash: 0,
+    investment: 0,
     brokerage: 0,
     crypto: 0,
     real_estate: 0,
@@ -278,7 +282,7 @@ export const computeNetWorth = cache(async function computeNetWorthImpl(
   for (const a of accounts) {
     if (a.effectiveValue == null) continue;
     hasData = true;
-    const signed = isLiability(a.type) ? -a.effectiveValue : a.effectiveValue;
+    const signed = netWorthContribution(a.type, a.effectiveValue);
     const inBase = rates.convert(signed, a.currency, baseCurrency);
     for (const s of SCENARIOS) {
       byCategory[s][a.type] += inBase;
@@ -304,6 +308,7 @@ export const computeNetWorth = cache(async function computeNetWorthImpl(
 
 export const CATEGORY_LABEL: Record<CategoryKey, string> = {
   cash: "Cash",
+  investment: "Investments",
   brokerage: "Brokerage",
   crypto: "Crypto",
   real_estate: "Real estate",
@@ -316,6 +321,7 @@ export const CATEGORY_LABEL: Record<CategoryKey, string> = {
 
 export const CATEGORY_DISPLAY_ORDER: CategoryKey[] = [
   "cash",
+  "investment",
   "brokerage",
   "crypto",
   "retirement",
