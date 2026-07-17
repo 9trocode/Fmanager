@@ -99,15 +99,7 @@ export function FloatingAdvisor() {
         type="button"
         onClick={() => setOpen(true)}
         aria-label="Open advisor"
-        style={{
-          // Tailwind doesn't have a built-in safe-area utility; inline
-          // the env() so iOS Safari's home-indicator doesn't overlap the
-          // button. Falls back to 16px when safe-area is 0 (Android,
-          // desktop browsers).
-          bottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)",
-          right: "calc(env(safe-area-inset-right, 0px) + 16px)",
-        }}
-        className="fixed z-30 inline-flex items-center justify-center gap-2 rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:scale-[1.03] active:scale-[0.98] transition-transform size-12 sm:size-auto sm:px-4 sm:h-12"
+        className="fixed right-[calc(env(safe-area-inset-right,0px)+3.75rem)] top-[calc(env(safe-area-inset-top,0px)+0.375rem)] z-50 inline-flex size-11 items-center justify-center gap-2 rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/20 transition-transform hover:scale-[1.03] active:scale-[0.98] sm:bottom-[calc(env(safe-area-inset-bottom,0px)+1rem)] sm:right-[calc(env(safe-area-inset-right,0px)+1rem)] sm:top-auto sm:h-12 sm:w-auto sm:px-4"
       >
         <Sparkles className="size-5 sm:size-4" />
         <span className="hidden sm:inline text-sm font-medium">Advisor</span>
@@ -122,8 +114,8 @@ export function FloatingAdvisor() {
             Advisor
           </SheetTitle>
           <SheetDescription className="text-xs">
-            Ask anything, log transactions, or get a runway check — same
-            advisor as the dedicated page.
+            Ask anything, log transactions, or get a runway check — same advisor
+            as the dedicated page.
           </SheetDescription>
         </SheetHeader>
         <div className="flex-1 min-h-0">
