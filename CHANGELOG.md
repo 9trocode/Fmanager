@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.4.0](https://github.com/9trocode/Cairn/compare/v1.3.0...v1.4.0) (2026-07-17)
+
+
+### Features
+
+* add debt repayment planning ([cfc4a8b](https://github.com/9trocode/Cairn/commit/cfc4a8b26f8b67deeb03643a2cd97304481b9510))
+* **investments:** include recorded values in net worth ([6de4669](https://github.com/9trocode/Cairn/commit/6de46690b55c0dca0547d4c1f856010839f15f61))
+
+
+### Bug Fixes
+
+* **budgets:** improve mobile readability ([1ca6098](https://github.com/9trocode/Cairn/commit/1ca60987a54b8da3a1e29664f081d76cc8889e90))
+* **deps:** patch transitive security vulnerabilities ([a298396](https://github.com/9trocode/Cairn/commit/a298396b00cb771f3e3917d5846df4dfafc82527))
+* **members:** cascade isolated data on removal ([d10f7d1](https://github.com/9trocode/Cairn/commit/d10f7d1cd46178130fefbd9c9f444c9ab625b486))
+* **ui:** align mobile breakpoints and safe areas ([87401ee](https://github.com/9trocode/Cairn/commit/87401eea6636972e76cd761f6f5ccfbd908e1d98))
+* **ui:** harden mobile overlays and dense surfaces ([8ceb290](https://github.com/9trocode/Cairn/commit/8ceb290a5d28140508c6dec133a2d55184a5dcf0))
+* **ui:** keep mobile controls clear of content ([a1524a4](https://github.com/9trocode/Cairn/commit/a1524a4d306f46dc1c6f7778c836d9cbb506ea67))
+
 ## [1.3.0](https://github.com/9trocode/Cairn/compare/v1.2.0...v1.3.0) (2026-05-16)
 
 
